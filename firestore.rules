@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: scans
+    // Document ID: auto-generated
+    // Fields:
+    //   - uid: string (required) - The user ID of the person who ran the scan.
+    //   - rating: string (required) - The overall rating (e.g., SAFE, OKAY, DANGER).
+    //   - score: number (required) - The numerical score of the scan.
+    //   - tldr: string (required) - A brief summary of the scan results.
+    //   - pillars: map (required) - Detailed breakdown of scan pillars.
+    //   - createdAt: timestamp (required) - When the scan was created.
+    //
+    // Collection: users
+    // Document ID: userId (uid)
+    // Fields:
+    //   - role: string (optional) - The role of the user (e.g., 'admin', 'user').
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "markshadow843@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+
+    function isValidScan(data) {
+      return data.keys().hasAll(['uid', 'rating', 'score', 'tldr', 'pillars', 'createdAt']) &&
+             data.uid is string &&
+             data.rating is string &&
+             data.score is number &&
+             data.tldr is string &&
+             data.pillars is map &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'credits', 'lastResetMonth']) &&
+             data.uid is string &&
+             data.credits is number &&
+             data.lastResetMonth is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data)) || isAdmin();
+    }
+
+    match /scans/{scanId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidScan(request.resource.data) && (request.auth.uid == request.resource.data.uid || isAdmin());
+      allow update: if isAuthenticated() && isValidScan(request.resource.data) && (request.auth.uid == resource.data.uid || isAdmin()) && (request.auth.uid == request.resource.data.uid || isAdmin());
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+  }
+}

@@ -1,0 +1,264 @@
+/* ── TLDR Shield – Content Script Styles ── */
+
+/* Floating trigger button */
+#tldr-shield-trigger {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  z-index: 2147483647;
+  background: #4f46e5;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 50px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  box-shadow: 0 10px 30px rgba(79, 70, 229, 0.45);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  user-select: none;
+  text-decoration: none !important;
+}
+
+#tldr-shield-trigger:hover {
+  transform: translateY(-4px) scale(1.04);
+  background: #4338ca;
+  box-shadow: 0 16px 40px rgba(79, 70, 229, 0.55);
+}
+
+.tldr-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.tldr-text {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* Spinner while analyzing */
+.tldr-spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: tldr-spin 0.75s linear infinite;
+}
+
+@keyframes tldr-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Result Overlay Panel ── */
+#tldr-shield-result {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2147483647;
+  width: 340px;
+  background: #0f172a;
+  color: #f1f5f9;
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.07);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+  animation: tldr-slide-in 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes tldr-slide-in {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.tldr-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+
+.tldr-panel-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #a5b4fc;
+}
+
+.tldr-panel-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+}
+.tldr-panel-close:hover {
+  background: rgba(255,255,255,0.08);
+  color: #f1f5f9;
+}
+
+.tldr-rating-badge {
+  margin: 14px 18px 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  text-align: center;
+  border: 2px solid;
+}
+
+.tldr-rating-badge.safe {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #6ee7b7;
+}
+.tldr-rating-badge.okay {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+}
+.tldr-rating-badge.risky {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+.tldr-rating-label {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tldr-rating-score {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.tldr-tldr {
+  margin: 12px 18px;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.tldr-pillars {
+  padding: 0 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tldr-pillar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.04);
+  font-size: 11px;
+}
+
+.tldr-pillar-name {
+  font-weight: 700;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tldr-pillar-status {
+  font-weight: 800;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.05em;
+}
+
+.tldr-pillar-status.violation {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+.tldr-pillar-status.clear {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+.tldr-truncation-warning {
+  margin: 0 14px 10px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 10px;
+  font-size: 10px;
+  color: #fcd34d;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.tldr-panel-footer {
+  padding: 10px 18px 14px;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  font-size: 10px;
+  color: #475569;
+  text-align: center;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ── Quick scan → Deep scan upgrade prompt ── */
+.tldr-deep-prompt {
+  margin: 10px 18px 14px;
+  padding: 12px 14px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tldr-deep-prompt-text {
+  font-size: 11px;
+  color: #a5b4fc;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.tldr-deep-btn {
+  background: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, transform 0.15s;
+  letter-spacing: 0.02em;
+}
+
+.tldr-deep-btn:hover {
+  background: #4338ca;
+  transform: translateY(-1px);
+}

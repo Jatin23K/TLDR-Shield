@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TLDR Shield</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      background: #0f172a;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      font-size: 13px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .logo { font-size: 22px; line-height: 1; }
+    .title { font-weight: 900; font-size: 16px; color: #a5b4fc; letter-spacing: 0.02em; }
+    .title span { color: #f1f5f9; }
+
+    /* ── Status box ── */
+    .status-box {
+      margin: 14px 16px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #status-text {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+      flex: 1;
+    }
+    .status-indicator {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #334155;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-indicator.scanning {
+      background: #818cf8;
+      animation: pulse 1s ease-in-out infinite;
+    }
+    .status-indicator.done { background: #34d399; }
+    .status-indicator.error { background: #f87171; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ── Primary scan button ── */
+    #scan-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: calc(100% - 32px);
+      margin: 0 16px;
+      padding: 13px;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+      letter-spacing: 0.04em;
+    }
+    #scan-btn:hover { background: #4338ca; transform: translateY(-1px); }
+    #scan-btn:active { transform: translateY(0); }
+    #scan-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── Toggles section ── */
+    .toggles {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+    }
+    .toggle-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 6px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .toggle-item:hover { border-color: rgba(255,255,255,0.15); }
+    .toggle-label {
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+    .toggle-switch {
+      width: 32px; height: 16px;
+      border-radius: 8px;
+      background: #334155;
+      position: relative;
+      transition: background 0.25s;
+      flex-shrink: 0;
+    }
+    .toggle-switch.on { background: #4f46e5; }
+    .toggle-switch.on.eli5 { background: #10b981; }
+    .toggle-switch.on.dp   { background: #ef4444; }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      width: 12px; height: 12px;
+      background: white;
+      border-radius: 50%;
+      top: 2px; left: 2px;
+      transition: transform 0.25s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .toggle-switch.on::after { transform: translateX(16px); }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: rgba(255,255,255,0.07);
+      margin: 8px 16px;
+    }
+
+    /* ── Settings section ── */
+    .settings {
+      padding: 10px 16px;
+    }
+    .settings-label {
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #475569;
+      margin-bottom: 6px;
+    }
+    .url-input-wrap {
+      display: flex;
+      gap: 6px;
+    }
+    #api-url-input {
+      flex: 1;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: #cbd5e1;
+      font-size: 11px;
+      outline: none;
+      font-family: 'Courier New', monospace;
+      transition: border-color 0.2s;
+    }
+    #api-url-input:focus { border-color: #4f46e5; }
+    #save-url-btn {
+      background: #1e293b;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #a5b4fc;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #save-url-btn:hover { background: #334155; }
+    #url-saved-msg {
+      font-size: 10px;
+      color: #34d399;
+      margin-top: 5px;
+      display: none;
+    }
+
+    /* ── Footer links ── */
+    .footer {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      padding: 10px 16px 14px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+    .footer a {
+      font-size: 10px;
+      color: #475569;
+      text-decoration: none;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      transition: color 0.2s;
+    }
+    .footer a:hover { color: #a5b4fc; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <span class="logo">🛡️</span>
+    <span class="title"><span>TLDR</span> Shield</span>
+  </div>
+
+  <div class="status-box">
+    <div class="status-indicator" id="status-dot"></div>
+    <p id="status-text">Ready to analyze the active tab.</p>
+  </div>
+
+  <button id="scan-btn">⚡ Scan Current Page</button>
+
+  <div class="toggles">
+    <div class="toggle-item" id="eli5-toggle" title="Explain Like I'm Five — simplifies legal jargon">
+      <span class="toggle-label">👶 ELI5</span>
+      <div class="toggle-switch eli5" id="eli5-switch"></div>
+    </div>
+    <div class="toggle-item" id="dp-toggle" title="Detect manipulative dark patterns in the text">
+      <span class="toggle-label">⚠️ Dark Patterns</span>
+      <div class="toggle-switch dp" id="dp-switch"></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="settings">
+    <p class="settings-label">⚙️ Backend URL</p>
+    <div class="url-input-wrap">
+      <input
+        type="text"
+        id="api-url-input"
+        placeholder="https://your-backend.run.app/api/analyze"
+        spellcheck="false"
+        autocomplete="off"
+      />
+      <button id="save-url-btn">Save</button>
+    </div>
+    <p id="url-saved-msg">✓ Saved!</p>
+  </div>
+
+  <div class="footer">
+    <a href="#" id="open-dashboard">Open Dashboard</a>
+    <a href="chrome://extensions/" target="_blank">Extensions</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

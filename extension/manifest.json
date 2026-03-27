@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "TLDR Shield",
+  "version": "1.0",
+  "description": "Automatically detect and analyze Terms and Conditions as you browse.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": ["*://*.run.app/*", "http://localhost:3000/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

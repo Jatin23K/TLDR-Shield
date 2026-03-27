@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "Scan": {
+      "title": "Scan",
+      "description": "A privacy policy scan result.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user ID of the person who ran the scan."
+        },
+        "rating": {
+          "type": "string",
+          "description": "The overall rating (e.g., SAFE, OKAY, DANGER)."
+        },
+        "score": {
+          "type": "number",
+          "description": "The numerical score of the scan."
+        },
+        "tldr": {
+          "type": "string",
+          "description": "A brief summary of the scan results."
+        },
+        "pillars": {
+          "type": "object",
+          "description": "Detailed breakdown of scan pillars."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the scan was created."
+        }
+      },
+      "required": ["uid", "rating", "score", "tldr", "pillars", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile with credit tracking.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user ID."
+        },
+        "credits": {
+          "type": "number",
+          "description": "Remaining scan credits."
+        },
+        "lastResetMonth": {
+          "type": "string",
+          "description": "The last month (YYYY-MM) the credits were reset."
+        },
+        "role": {
+          "type": "string",
+          "description": "User role (e.g., admin)."
+        }
+      },
+      "required": ["uid", "credits", "lastResetMonth"]
+    }
+  },
+  "firestore": {
+    "/scans/{scanId}": {
+      "schema": "Scan",
+      "description": "Collection of privacy policy scans."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and credits."
+    }
+  }
+}
