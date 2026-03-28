@@ -150,19 +150,19 @@ function Nav({ page, onNav, user, onSignIn, onSignOut }: {
 // ── Landing ───────────────────────────────────────────────────────────────────
 
 const FEATURES = [
-  { icon: Bot,          color: 'text-violet-400',  bg: 'from-violet-500/10 to-violet-500/[0.03]',  border: 'border-violet-500/15',  title: 'AI Training',     desc: 'Detects whether your data can be used to train AI models — often buried in vague "improvement" clauses.' },
-  { icon: ShoppingCart, color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Data Selling',    desc: 'Flags if your personal data is sold, rented, or shared with third-party advertisers or data brokers.' },
-  { icon: Eye,          color: 'text-sky-400',     bg: 'from-sky-500/10 to-sky-500/[0.03]',        border: 'border-sky-500/15',     title: 'Transparency',    desc: 'Checks whether the policy is written in plain language, easy to find, and free of deceptive ambiguity.' },
-  { icon: Clock,        color: 'text-amber-400',   bg: 'from-amber-500/10 to-amber-500/[0.03]',    border: 'border-amber-500/15',   title: 'Data Retention',  desc: 'Reveals how long your data is stored after you delete your account — some retain it for years.' },
-  { icon: FileText,     color: 'text-emerald-400', bg: 'from-emerald-500/10 to-emerald-500/[0.03]',border: 'border-emerald-500/15', title: 'Ownership',       desc: 'Determines if you keep full rights to your content or if the platform claims a perpetual licence.' },
-  { icon: Lock,         color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Dark Patterns',   desc: 'Catches forced arbitration clauses, class-action waivers, auto-renewal traps, and buried opt-outs.' },
+  { icon: Bot,          color: 'text-violet-400',  bg: 'from-violet-500/10 to-violet-500/[0.03]',  border: 'border-violet-500/15',  title: 'AI Training',       desc: 'Can they use your photos, messages, or posts to train their AI? We catch this — usually hidden under words like "improving our services".' },
+  { icon: ShoppingCart, color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Selling Your Info', desc: 'Are they selling your name, email, or habits to other companies? We flag it so you know before you sign up.' },
+  { icon: Eye,          color: 'text-sky-400',     bg: 'from-sky-500/10 to-sky-500/[0.03]',        border: 'border-sky-500/15',     title: 'Honest Writing',    desc: 'Is the policy written so a normal person can understand it? Or is it full of confusing legal words on purpose?' },
+  { icon: Clock,        color: 'text-amber-400',   bg: 'from-amber-500/10 to-amber-500/[0.03]',    border: 'border-amber-500/15',   title: 'How Long They Keep Your Data', desc: 'When you delete your account, does your data actually go away? Many companies keep it for years. We tell you exactly.' },
+  { icon: FileText,     color: 'text-emerald-400', bg: 'from-emerald-500/10 to-emerald-500/[0.03]',border: 'border-emerald-500/15', title: 'Who Owns What You Post', desc: 'When you upload a photo or write something, do you still own it? Or does the platform get to use it forever, for free?' },
+  { icon: Lock,         color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Hidden Traps',      desc: 'Rules that stop you from taking them to court, subscriptions that auto-renew silently, opt-outs buried 10 pages deep. We find them all.' },
 ];
 
 
 const STEPS = [
-  { n: '01', title: 'Install the Extension', desc: 'One click from the Chrome Web Store. Sign in with Google to activate your free credits.' },
-  { n: '02', title: 'Browse Normally', desc: 'TLDR Shield auto-detects T&C pages and shows a floating badge.' },
-  { n: '03', title: 'Get Your Verdict', desc: 'See SAFE, OKAY, or RISKY with a plain-English explanation instantly.' },
+  { n: '01', title: 'Add it to Chrome', desc: 'One click install. Sign in with Google and you get 400 free credits straight away — no card needed.' },
+  { n: '02', title: 'Just browse the web', desc: 'Whenever you land on a Terms & Conditions or Privacy Policy page, TLDR Shield spots it automatically and shows a small badge.' },
+  { n: '03', title: 'Read one word, not thousands', desc: 'Click the badge. Get a simple SAFE, OKAY, or RISKY verdict — with a plain explanation of exactly what they\'re asking you to agree to.' },
 ];
 
 function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: User | null; onNav: (p: Page) => void }) {
@@ -184,7 +184,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
             {/* Eyebrow */}
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold tracking-wider uppercase mb-8">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-              AI-Powered Privacy Protection
+              Your privacy bodyguard
             </div>
 
             {/* Headline */}
@@ -197,8 +197,8 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
             </h1>
 
             <p className="text-lg text-slate-400 max-w-lg mx-auto leading-relaxed mb-10">
-              TLDR Shield scans Terms & Conditions and Privacy Policies in seconds —
-              giving you a clear verdict before you click <em className="text-slate-300 not-italic">"I Agree"</em>.
+              Every time you see a Terms & Conditions page, TLDR Shield reads the whole thing in seconds
+              and tells you if it's safe — before you click <em className="text-slate-300 not-italic">"I Agree"</em>.
             </p>
 
             {/* CTAs */}
@@ -242,7 +242,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
       <section className="pb-28 px-6 max-w-5xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">What We Check</p>
-          <h2 className="text-3xl font-black tracking-[-0.03em]">6 pillars. Every scan. No fine print missed.</h2>
+          <h2 className="text-3xl font-black tracking-[-0.03em]">6 things companies hide. We find all of them.</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {FEATURES.map((f, i) => (
@@ -262,7 +262,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
       <section className="pb-28 px-6 max-w-4xl mx-auto">
         <div className="text-center mb-16">
           <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">How it works</p>
-          <h2 className="text-3xl font-black tracking-[-0.03em]">Three steps to privacy clarity</h2>
+          <h2 className="text-3xl font-black tracking-[-0.03em]">Set up once. Protected every time you browse.</h2>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
           {/* Connector line */}
@@ -286,8 +286,8 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.12),transparent_70%)]" />
           <div className="relative">
             <ShieldCheck className="w-11 h-11 text-indigo-400 mx-auto mb-5" />
-            <h2 className="text-2xl font-black tracking-[-0.03em] mb-3">Ready to browse with confidence?</h2>
-            <p className="text-slate-400 text-[13px] mb-8 max-w-xs mx-auto">400 free credits every month. Quick scan costs 10 credits, Deep scan costs 20. You own your data — access or delete it any time.</p>
+            <h2 className="text-2xl font-black tracking-[-0.03em] mb-3">Stop clicking "I Agree" blindly.</h2>
+            <p className="text-slate-400 text-[13px] mb-8 max-w-xs mx-auto">Free to start — 400 credits every month. A quick check uses 10, a deep check uses 20. Your data is yours. View or delete it any time.</p>
             <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-3 px-8 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/20 hover:-translate-y-0.5">
               <Chrome className="w-5 h-5" />
@@ -352,7 +352,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
           </div>
           <h1 className="text-2xl font-black tracking-[-0.03em] mb-3">Your scan history</h1>
           <p className="text-slate-500 text-sm leading-relaxed mb-8">
-            Sign in to save scan verdicts across devices and review past results.
+            Sign in with Google to save your scan results. You can look back at any site you've checked — and delete anything you want, any time.
           </p>
           <button onClick={onSignIn}
             className="w-full flex items-center justify-center gap-3 py-3.5 bg-white hover:bg-slate-100 text-slate-900 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-black/20">
