@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Shield, ShieldCheck, ShieldX, Chrome, Zap, Brain,
   LogIn, LogOut, Trash2, Clock, AlertTriangle, CheckCircle,
-  Eye, Lock, FileText, Cpu, ArrowRight, Star,
+  Eye, Lock, FileText, Cpu, ArrowRight, Star, Bot, ShoppingCart,
 } from 'lucide-react';
 import { auth, db, signIn, signOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -150,12 +150,12 @@ function Nav({ page, onNav, user, onSignIn, onSignOut }: {
 // ── Landing ───────────────────────────────────────────────────────────────────
 
 const FEATURES = [
-  { icon: Zap, color: 'text-amber-400', bg: 'from-amber-500/10 to-amber-500/[0.03]', border: 'border-amber-500/15', title: 'Quick Scan', desc: 'Instant SAFE / OKAY / RISKY verdict in ~4 seconds. AI reads it so you don\'t have to.' },
-  { icon: Brain, color: 'text-violet-400', bg: 'from-violet-500/10 to-violet-500/[0.03]', border: 'border-violet-500/15', title: 'Deep Scan', desc: 'Full clause-by-clause breakdown with verbatim citations across 6 privacy pillars.' },
-  { icon: Eye, color: 'text-sky-400', bg: 'from-sky-500/10 to-sky-500/[0.03]', border: 'border-sky-500/15', title: 'Auto-Detect', desc: 'Detects T&C pages as you browse using URL, headings, and modal signals.' },
-  { icon: Lock, color: 'text-rose-400', bg: 'from-rose-500/10 to-rose-500/[0.03]', border: 'border-rose-500/15', title: 'Dark Patterns', desc: 'Catches forced arbitration, class-action waivers, and buried opt-outs.' },
-  { icon: FileText, color: 'text-emerald-400', bg: 'from-emerald-500/10 to-emerald-500/[0.03]', border: 'border-emerald-500/15', title: 'Long Doc Support', desc: 'Splits massive T&C into blocks, analyzes in parallel, aggregates into one verdict.' },
-  { icon: Cpu, color: 'text-indigo-400', bg: 'from-indigo-500/10 to-indigo-500/[0.03]', border: 'border-indigo-500/15', title: 'Powered by LLaMA', desc: 'meta/llama-3.3-70b — a 98+/100 accuracy privacy model via NVIDIA NIM.' },
+  { icon: Bot,          color: 'text-violet-400',  bg: 'from-violet-500/10 to-violet-500/[0.03]',  border: 'border-violet-500/15',  title: 'AI Training',     desc: 'Detects whether your data can be used to train AI models — often buried in vague "improvement" clauses.' },
+  { icon: ShoppingCart, color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Data Selling',    desc: 'Flags if your personal data is sold, rented, or shared with third-party advertisers or data brokers.' },
+  { icon: Eye,          color: 'text-sky-400',     bg: 'from-sky-500/10 to-sky-500/[0.03]',        border: 'border-sky-500/15',     title: 'Transparency',    desc: 'Checks whether the policy is written in plain language, easy to find, and free of deceptive ambiguity.' },
+  { icon: Clock,        color: 'text-amber-400',   bg: 'from-amber-500/10 to-amber-500/[0.03]',    border: 'border-amber-500/15',   title: 'Data Retention',  desc: 'Reveals how long your data is stored after you delete your account — some retain it for years.' },
+  { icon: FileText,     color: 'text-emerald-400', bg: 'from-emerald-500/10 to-emerald-500/[0.03]',border: 'border-emerald-500/15', title: 'Ownership',       desc: 'Determines if you keep full rights to your content or if the platform claims a perpetual licence.' },
+  { icon: Lock,         color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Dark Patterns',   desc: 'Catches forced arbitration clauses, class-action waivers, auto-renewal traps, and buried opt-outs.' },
 ];
 
 const PILLARS_DEMO = [
@@ -336,8 +336,8 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
       {/* ── Features ── */}
       <section className="pb-28 px-6 max-w-5xl mx-auto">
         <div className="text-center mb-16">
-          <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">Features</p>
-          <h2 className="text-3xl font-black tracking-[-0.03em]">Everything you need to browse safely</h2>
+          <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">What We Check</p>
+          <h2 className="text-3xl font-black tracking-[-0.03em]">6 pillars. Every scan. No fine print missed.</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {FEATURES.map((f, i) => (
