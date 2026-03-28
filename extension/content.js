@@ -498,6 +498,59 @@ function removeResultPanel() {
   document.getElementById('tldr-shield-result')?.remove();
 }
 
+function showOutOfCreditsPanel(resetDate) {
+  removeResultPanel();
+  const panel = document.createElement('div');
+  panel.id = 'tldr-shield-result';
+  panel.style.cssText = `
+    position:fixed; bottom:24px; right:24px; z-index:2147483647;
+    width:320px; background:#0f1117; border:1px solid rgba(239,68,68,0.4);
+    border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,0.6); font-family:system-ui,sans-serif;
+    padding:20px; color:#f1f5f9; animation: tldrSlideIn 0.3s ease;
+  `;
+  panel.innerHTML = `
+    <style>
+      @keyframes tldrSlideIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+      #tldr-oc-buy a { text-decoration:none; }
+      #tldr-oc-buy a:hover { opacity:0.9; }
+    </style>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:20px;">⚡</span>
+        <span style="font-weight:700;font-size:14px;color:#f87171;">Out of credits</span>
+      </div>
+      <button id="tldr-oc-close" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0;line-height:1;">×</button>
+    </div>
+    <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;line-height:1.5;">
+      You've used all your credits for this month.
+    </p>
+    <p style="margin:0 0 16px;font-size:13px;color:#64748b;">
+      🔄 Free credits reset on <strong style="color:#94a3b8;">${resetDate}</strong>
+    </p>
+    <div id="tldr-oc-buy" style="display:flex;flex-direction:column;gap:8px;">
+      <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.08em;text-transform:uppercase;">Top up now</p>
+      <a href="http://localhost:3000" target="_blank" style="
+        display:flex;align-items:center;justify-content:space-between;
+        background:rgba(79,70,229,0.12);border:1px solid rgba(79,70,229,0.3);
+        border-radius:10px;padding:10px 14px;cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:600;
+      ">
+        <span>1,000 credits</span>
+        <span style="color:#818cf8;font-weight:700;">$7</span>
+      </a>
+      <a href="http://localhost:3000" target="_blank" style="
+        display:flex;align-items:center;justify-content:space-between;
+        background:rgba(79,70,229,0.18);border:1px solid rgba(99,102,241,0.5);
+        border-radius:10px;padding:10px 14px;cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:600;
+      ">
+        <span>2,000 credits <span style="font-size:10px;background:rgba(16,185,129,0.15);color:#34d399;border-radius:4px;padding:1px 5px;margin-left:4px;">BEST VALUE</span></span>
+        <span style="color:#818cf8;font-weight:700;">$12</span>
+      </a>
+    </div>
+  `;
+  document.body.appendChild(panel);
+  panel.querySelector('#tldr-oc-close').addEventListener('click', () => panel.remove());
+}
+
 function showResultPanel(data) {
   removeResultPanel();
 
@@ -655,6 +708,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // keep message channel open for async response
   }
 
+  if (message.type === 'OUT_OF_CREDITS') {
+    const btn = document.getElementById('tldr-shield-trigger');
+    if (btn) setTriggerIdle(btn);
+    showOutOfCreditsPanel(message.resetDate || 'the 1st of next month');
+    return;
+  }
+
   if (message.type !== 'ANALYSIS_RESULT') return;
 
   const btn = document.getElementById('tldr-shield-trigger');
@@ -728,4 +788,23 @@ observer.observe(document.body, {
 
 // Popstate / hashchange for SPA navigation (pushState is caught by MutationObserver)
 window.addEventListener('popstate', () => setTimeout(runDetection, 500));
+
+// ── Auth Token Bridge ─────────────────────────────────────────────────────────
+// The TLDR Shield web app calls window.postMessage after sign-in/sign-out.
+// We relay the token to background.js which stores it in chrome.storage.local.
+// background.js then passes it as Authorization: Bearer <token> on every scan.
+window.addEventListener('message', (e) => {
+  if (e.source !== window) return; // only trust messages from this page
+  if (e.data?.type === 'TLDR_AUTH_TOKEN') {
+    chrome.runtime.sendMessage({
+      type: 'STORE_AUTH',
+      token: e.data.token,
+      uid:   e.data.uid,
+      email: e.data.email,
+    });
+  }
+  if (e.data?.type === 'TLDR_AUTH_SIGNOUT') {
+    chrome.runtime.sendMessage({ type: 'CLEAR_AUTH' });
+  }
+});
 window.addEventListener('hashchange', () => setTimeout(runDetection, 500));

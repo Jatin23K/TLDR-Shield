@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { auth, db, signIn, signOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, Timestamp, setDoc } from 'firebase/firestore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -87,9 +87,10 @@ function ScoreRing({ score, r = 'RISKY' }: { score: number; r: 'SAFE' | 'OKAY' |
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
-function Nav({ page, onNav, user, onSignIn, onSignOut }: {
+function Nav({ page, onNav, user, onSignIn, onSignOut, credits }: {
   page: Page; onNav: (p: Page) => void;
   user: User | null; onSignIn: () => void; onSignOut: () => void;
+  credits: number | null;
 }) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -122,6 +123,19 @@ function Nav({ page, onNav, user, onSignIn, onSignOut }: {
               }`}>
               <Clock className="w-3.5 h-3.5" />History
             </button>
+          )}
+
+          {user && credits !== null && (
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold border ${
+              credits > 100
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : credits > 20
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+            }`}>
+              <Zap className="w-3 h-3" />
+              {credits} credits
+            </div>
           )}
 
           {user ? (
@@ -500,16 +514,62 @@ function Toast({ message, type, onClose }: { message: string; type: 'success' | 
 
 // ── App Root ──────────────────────────────────────────────────────────────────
 
+// Posts the Firebase ID token to the extension content script via window.postMessage.
+// The extension's content.js listens for this and relays it to background.js for storage.
+async function syncTokenToExtension(user: User | null) {
+  if (!user) {
+    window.postMessage({ type: 'TLDR_AUTH_SIGNOUT' }, window.location.origin);
+    return;
+  }
+  try {
+    const token = await user.getIdToken();
+    window.postMessage({
+      type: 'TLDR_AUTH_TOKEN',
+      token,
+      uid: user.uid,
+      email: user.email,
+    }, window.location.origin);
+  } catch { /* silent — extension may not be installed */ }
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>('landing');
   const [user, setUser] = useState<User | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  useEffect(() => { return onAuthStateChanged(auth, u => setUser(u)); }, []);
+  // Auth state + token sync to extension
+  useEffect(() => {
+    return onAuthStateChanged(auth, u => {
+      setUser(u);
+      syncTokenToExtension(u);
+    });
+  }, []);
+
+  // Live credits subscription from Firestore users/{uid}
+  useEffect(() => {
+    if (!user) { setCredits(null); return; }
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const userRef = doc(db, 'users', user.uid);
+    const unsub = onSnapshot(userRef, (snap) => {
+      if (!snap.exists()) {
+        // First-time user — create their record with 400 free credits
+        setDoc(userRef, { uid: user.uid, credits: 400, lastResetMonth: currentMonth }, { merge: true });
+        setCredits(400);
+      } else {
+        const d = snap.data();
+        // Show fresh credits if a new month started
+        setCredits(d.lastResetMonth !== currentMonth ? 400 : (d.credits ?? 400));
+      }
+    });
+    return unsub;
+  }, [user]);
 
   const handleSignIn = async () => {
-    try { await signIn(); showToast('Signed in', 'success'); }
-    catch { showToast('Sign-in failed. Try again.', 'error'); }
+    try {
+      await signIn();
+      showToast('Signed in', 'success');
+    } catch { showToast('Sign-in failed. Try again.', 'error'); }
   };
   const handleSignOut = async () => {
     await signOut(); setPage('landing'); showToast('Signed out', 'success');
@@ -518,7 +578,7 @@ export default function App() {
 
   return (
     <div className="bg-[#080b14]">
-      <Nav page={page} onNav={setPage} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} />
+      <Nav page={page} onNav={setPage} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} credits={credits} />
 
       <AnimatePresence mode="wait">
         {page === 'landing' ? (

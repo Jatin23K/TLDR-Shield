@@ -80,5 +80,22 @@ service cloud.firestore {
       allow update: if isAuthenticated() && isValidScan(request.resource.data) && (request.auth.uid == resource.data.uid || isAdmin()) && (request.auth.uid == request.resource.data.uid || isAdmin());
       allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
     }
+
+    // ── Shared Community Cache ──────────────────────────────────────────────
+    // Written exclusively by the backend server via Firebase Admin SDK (bypasses rules).
+    // Contains NO user identifiers — fully anonymous scan results.
+    // Public read so clients can eventually query cache metadata (e.g. "last scanned X ago").
+    // Client writes are blocked — only the server may write.
+    //
+    // Document structure:
+    //   result: map       — the analysis result (rating, score, tldr, pillars)
+    //   tier: string      — 'quick' | 'deep'
+    //   scannedAt: timestamp
+    //   expiresAt: timestamp  — quick=48h, deep=7d (Firestore TTL policy targets this field)
+    //   scanCount: number — how many times this result was requested
+    match /shared_cache/{hash} {
+      allow read: if true;
+      allow write: if false; // server-only via Admin SDK
+    }
   }
 }

@@ -19,13 +19,39 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'ANALYZE_TEXT') {
-    analyzeText(message.text, sender.tab?.id, message.forceDeep ?? false);
+    analyzeText(message.text, sender.tab?.id, message.forceDeep ?? false, message.tier ?? null);
+  }
+  // Auth token storage — sent by content.js after web app sign-in
+  if (message.type === 'STORE_AUTH') {
+    chrome.storage.local.set({
+      authToken:       message.token,
+      authUid:         message.uid,
+      authEmail:       message.email,
+      // Firebase ID tokens expire after 1 hour; store expiry so we know when to prompt re-login
+      authTokenExpiry: Date.now() + 55 * 60 * 1000,
+    });
+  }
+  if (message.type === 'CLEAR_AUTH') {
+    chrome.storage.local.remove(['authToken', 'authUid', 'authEmail', 'authTokenExpiry']);
+  }
+  // Allow popup to read auth state
+  if (message.type === 'GET_AUTH') {
+    chrome.storage.local.get(
+      ['authEmail', 'authUid', 'authTokenExpiry'],
+      (data) => {
+        const valid = data.authEmail && data.authTokenExpiry > Date.now();
+        sender.tab
+          ? chrome.tabs.sendMessage(sender.tab.id, { type: 'AUTH_STATE', ...data, valid })
+          : chrome.runtime.sendMessage({ type: 'AUTH_STATE', ...data, valid });
+      }
+    );
+    return true;
   }
   // Allow popup to ping for status
   if (message.type === 'PING') return true;
 });
 
-async function analyzeText(text, tabId, forceDeep = false) {
+async function analyzeText(text, tabId, forceDeep = false, tierOverride = null) {
   if (!tabId) return;
 
   // FIX #3: Keep the service worker alive for the duration of the scan.
@@ -47,10 +73,15 @@ async function analyzeText(text, tabId, forceDeep = false) {
     const url = apiUrl || DEFAULT_API_URL;
 
     // Tier selection:
-    //   forceDeep=true  → user clicked "Run Deep Scan" from quick result panel
-    //   text > 30k      → auto-promote to deep for large documents
-    //   otherwise       → quick (instant badge)
-    const autoTier = forceDeep || text.length > 30000 ? 'deep' : 'quick';
+    //   tierOverride     → user explicitly chose quick/deep in popup
+    //   forceDeep=true   → user clicked "Run Deep Scan" from quick result panel
+    //   text > 30k       → auto-promote to deep for large documents
+    //   otherwise        → quick
+    const autoTier = tierOverride ?? (forceDeep || text.length > 30000 ? 'deep' : 'quick');
+
+    // Read stored auth token (set when user signs in on the TLDR Shield web app)
+    const { authToken, authTokenExpiry } = await chrome.storage.local.get(['authToken', 'authTokenExpiry']);
+    const validToken = authToken && authTokenExpiry > Date.now() ? authToken : null;
 
     // Allow up to 90s for multi-block parallel analysis
     const controller = new AbortController();
@@ -60,7 +91,10 @@ async function analyzeText(text, tabId, forceDeep = false) {
     try {
       response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(validToken ? { 'Authorization': `Bearer ${validToken}` } : {}),
+        },
         body: JSON.stringify({
           text:         text,
           tier:         autoTier,
@@ -71,6 +105,27 @@ async function analyzeText(text, tabId, forceDeep = false) {
       });
     } finally {
       clearTimeout(timeout);
+    }
+
+    // Handle auth errors before trying to parse SSE stream
+    if (response.status === 401) {
+      chrome.tabs.sendMessage(tabId, {
+        type: 'ANALYSIS_RESULT',
+        error: 'Sign in required. Open TLDR Shield and sign in with Google to start scanning.',
+      });
+      return;
+    }
+    if (response.status === 402) {
+      let resetDate = 'the 1st of next month';
+      let creditsLeft = 0;
+      try {
+        const d = await response.json();
+        if (d.resetDate) resetDate = d.resetDate;
+        if (typeof d.creditsLeft === 'number') creditsLeft = d.creditsLeft;
+      } catch (_) {}
+      chrome.storage.local.set({ authCredits: 0 });
+      chrome.tabs.sendMessage(tabId, { type: 'OUT_OF_CREDITS', resetDate, creditsLeft });
+      return;
     }
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -100,6 +155,10 @@ async function analyzeText(text, tabId, forceDeep = false) {
     }
 
     if (result) {
+      // Persist updated credit balance so popup shows it immediately
+      if (typeof result.creditsLeft === 'number') {
+        chrome.storage.local.set({ authCredits: result.creditsLeft });
+      }
       chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', data: result });
     } else {
       chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: 'No result returned' });

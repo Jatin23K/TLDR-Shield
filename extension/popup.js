@@ -15,10 +15,27 @@ const eli5Switch   = document.getElementById('eli5-switch');
 const dpToggle     = document.getElementById('dp-toggle');
 const dpSwitch     = document.getElementById('dp-switch');
 const openDashBtn  = document.getElementById('open-dashboard');
+const authBanner   = document.getElementById('auth-banner');
+const userRow      = document.getElementById('user-row');
+const userEmail    = document.getElementById('user-email');
+const signInBtn    = document.getElementById('signin-btn');
+const signOutBtn   = document.getElementById('signout-btn');
+const creditsPill  = document.getElementById('credits-pill');
+const creditsVal   = document.getElementById('credits-val');
 
 // ── State ───────────────────────────────────────────────────────────────────
 let eli5Mode    = true;
 let darkPatterns = true;
+let selectedTier = 'quick'; // 'quick' | 'deep'
+
+// ── Tier selector ────────────────────────────────────────────────────────────
+document.querySelectorAll('.tier-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    selectedTier = btn.dataset.tier;
+    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
 
 function setStatus(msg, type = 'idle') {
   statusText.textContent = msg;
@@ -32,6 +49,61 @@ function updateToggleUI() {
   eli5Switch.className = 'toggle-switch eli5' + (eli5Mode    ? ' on' : '');
   dpSwitch.className   = 'toggle-switch dp'   + (darkPatterns ? ' on' : '');
 }
+
+// ── Auth state ───────────────────────────────────────────────────────────────
+function renderAuthState({ authEmail, authTokenExpiry } = {}) {
+  const signedIn = authEmail && authTokenExpiry > Date.now();
+  authBanner.style.display = signedIn ? 'none'  : 'block';
+  userRow.style.display    = signedIn ? 'flex'  : 'none';
+  scanBtn.disabled         = !signedIn;
+  if (signedIn) {
+    userEmail.textContent = authEmail;
+  }
+}
+
+chrome.storage.local.get(
+  ['authEmail', 'authTokenExpiry', 'authCredits', 'authToken', 'apiUrl'],
+  (data) => {
+    renderAuthState(data);
+    if (data.authCredits != null) {
+      creditsPill.style.display = 'block';
+      creditsVal.textContent = data.authCredits + ' credits';
+    }
+    // Fetch live credits from server if signed in
+    const validToken = data.authToken && data.authTokenExpiry > Date.now() ? data.authToken : null;
+    if (validToken) {
+      const base = (data.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
+      fetch(base + '/api/credits', { headers: { 'Authorization': 'Bearer ' + validToken } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (d && typeof d.credits === 'number') {
+            chrome.storage.local.set({ authCredits: d.credits });
+            creditsPill.style.display = 'block';
+            creditsVal.textContent = d.credits + ' credits';
+          }
+        })
+        .catch(() => {});
+    }
+  }
+);
+
+// Sign in — opens TLDR Shield web app so user can authenticate
+signInBtn.addEventListener('click', () => {
+  chrome.storage.local.get({ apiUrl: DEFAULT_API_URL }, ({ apiUrl }) => {
+    const dashUrl = (apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
+    chrome.tabs.create({ url: dashUrl });
+    window.close();
+  });
+});
+
+// Sign out — clear stored token
+signOutBtn.addEventListener('click', () => {
+  chrome.storage.local.remove(['authToken', 'authUid', 'authEmail', 'authTokenExpiry', 'authCredits'], () => {
+    renderAuthState({});
+    creditsPill.style.display = 'none';
+    setStatus('Signed out.', 'idle');
+  });
+});
 
 // ── Load saved settings ─────────────────────────────────────────────────────
 chrome.storage.local.get(
@@ -127,7 +199,7 @@ scanBtn.addEventListener('click', async () => {
     }
 
     setStatus('Reasoning through document…', 'scanning');
-    chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text: pageText });
+    chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text: pageText, tier: selectedTier });
     // Re-enable after sending so user can close popup freely
     setTimeout(() => {
       setStatus('Analysis running — check the page for results.', 'scanning');

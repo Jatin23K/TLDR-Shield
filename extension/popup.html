@@ -87,6 +87,27 @@
     #scan-btn:active { transform: translateY(0); }
     #scan-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+    /* ── Tier selector ── */
+    .tier-btn {
+      flex: 1;
+      padding: 8px 6px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 9px;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      width: 50%;
+    }
+    .tier-btn:hover { border-color: rgba(255,255,255,0.15); color: #94a3b8; }
+    .tier-btn.active { background: rgba(79,70,229,0.15); border-color: #4f46e5; color: #a5b4fc; }
+
     /* ── Toggles section ── */
     .toggles {
       display: flex;
@@ -218,11 +239,38 @@
   <div class="header">
     <span class="logo">🛡️</span>
     <span class="title"><span>TLDR</span> Shield</span>
+    <div id="credits-pill" style="display:none; margin-left:auto; font-size:11px; font-weight:800; padding:4px 10px; border-radius:20px; background:rgba(16,185,129,0.12); color:#34d399; border:1px solid rgba(16,185,129,0.25);">
+      ⚡ <span id="credits-val">–</span>
+    </div>
   </div>
 
-  <div class="status-box">
+  <!-- Auth banner — shown when not signed in -->
+  <div id="auth-banner" style="display:none; margin:12px 16px 0; padding:12px 14px; background:rgba(79,70,229,0.1); border:1px solid rgba(79,70,229,0.25); border-radius:12px;">
+    <p style="font-size:12px; color:#a5b4fc; font-weight:600; margin-bottom:8px;">Sign in to scan pages and track credits.</p>
+    <button id="signin-btn" style="width:100%; padding:9px; background:#4f46e5; color:white; border:none; border-radius:9px; font-size:12px; font-weight:800; cursor:pointer; letter-spacing:0.04em;">
+      Sign in with Google →
+    </button>
+  </div>
+
+  <!-- Signed-in user row -->
+  <div id="user-row" style="display:none; margin:10px 16px 0; padding:8px 12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:10px; display:flex; align-items:center; gap:8px;">
+    <span id="user-email" style="font-size:11px; color:#64748b; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+    <button id="signout-btn" style="font-size:10px; font-weight:700; color:#475569; background:none; border:none; cursor:pointer; padding:2px 6px; border-radius:6px; transition:color 0.2s;">Sign out</button>
+  </div>
+
+  <div class="status-box" style="margin-top:12px;">
     <div class="status-indicator" id="status-dot"></div>
     <p id="status-text">Ready to analyze the active tab.</p>
+  </div>
+
+  <!-- Tier selector -->
+  <div style="display:flex; gap:6px; margin:0 16px 8px;">
+    <button class="tier-btn active" id="tier-quick" data-tier="quick" title="Quick scan — 10 credits">
+      ⚡ Quick <span style="font-size:9px; opacity:0.6; font-weight:600;">10 cr</span>
+    </button>
+    <button class="tier-btn" id="tier-deep" data-tier="deep" title="Deep scan — 20 credits">
+      🔬 Deep <span style="font-size:9px; opacity:0.6; font-weight:600;">20 cr</span>
+    </button>
   </div>
 
   <button id="scan-btn">⚡ Scan Current Page</button>

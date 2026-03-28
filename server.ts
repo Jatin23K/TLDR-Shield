@@ -7,11 +7,184 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
+import { readFileSync } from "fs";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ─── Firestore Shared Community Cache ────────────────────────────────────────
+// L1 = in-memory LRU (per-instance, resets on restart)
+// L2 = Firestore shared_cache (persistent, shared across ALL users & instances)
+//
+// When User A scans Spotify ToS → result stored in Firestore (anonymously, no UID).
+// When User B scans the same page within the TTL window → served from L2 instantly.
+// User deleting their scan history does NOT affect the shared cache (fully decoupled).
+//
+// Requires Firebase Admin SDK credentials:
+//   - Production (Cloud Run): Application Default Credentials (automatic)
+//   - Local dev: set GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+//     OR run: gcloud auth application-default login
+import type { Firestore } from 'firebase-admin/firestore';
+
+let firestoreDb: Firestore | null = null;
+
+(async () => {
+    try {
+        const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+        const { getFirestore } = await import('firebase-admin/firestore');
+
+        // Load project config (same file the frontend uses)
+        const appletConfig = JSON.parse(readFileSync(new URL('./firebase-applet-config.json', import.meta.url), 'utf8'));
+        const projectId: string = appletConfig.projectId;
+        const databaseId: string = appletConfig.firestoreDatabaseId ?? '(default)';
+
+        if (getApps().length === 0) {
+            const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+            if (saPath) {
+                // Explicit service account JSON (local dev or CI)
+                const sa = JSON.parse(readFileSync(saPath, 'utf8'));
+                initializeApp({ credential: cert(sa), projectId });
+            } else {
+                // Application Default Credentials: automatic on Cloud Run / GKE.
+                // For local dev: run  gcloud auth application-default login
+                initializeApp({ projectId });
+            }
+        }
+
+        const db = getFirestore(databaseId);
+
+        // Connectivity test — if credentials aren't configured the ping throws
+        await db.collection(SHARED_CACHE_COLLECTION).limit(1).get();
+
+        firestoreDb = db;
+        console.log('[TLDR Shield] Firestore shared cache: CONNECTED (project=' + projectId + ', db=' + databaseId + ')');
+    } catch (err: any) {
+        console.warn(
+            '[TLDR Shield] Firestore unavailable — running with in-memory cache only.\n' +
+            '  To enable shared cache locally:\n' +
+            '    Option A: gcloud auth application-default login\n' +
+            '    Option B: set FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json\n' +
+            '  Error: ' + (err?.message ?? err)
+        );
+    }
+})();
+
+// ─── Credit System ────────────────────────────────────────────────────────────
+const CREDIT_COST: Record<string, number> = { quick: 10, deep: 20 };
+const FREE_CREDITS = 400;
+
+// Verify a Firebase ID token from Authorization: Bearer <token> header
+// Returns the UID on success, null on failure (not signed in or invalid token)
+async function getUidFromRequest(req: express.Request): Promise<string | null> {
+    const authHeader = (req.headers.authorization ?? '').toString();
+    if (!authHeader.startsWith('Bearer ')) return null;
+    const token = authHeader.slice(7).trim();
+    if (!token) return null;
+    try {
+        const { getAuth } = await import('firebase-admin/auth');
+        const decoded = await getAuth().verifyIdToken(token);
+        return decoded.uid;
+    } catch {
+        return null;
+    }
+}
+
+// Atomically check credits and deduct if sufficient.
+// Also handles monthly reset (lastResetMonth !== current month → reset to 400).
+async function checkAndDeductCredits(
+    uid: string,
+    cost: number,
+): Promise<{ ok: boolean; creditsLeft: number; error?: string }> {
+    if (!firestoreDb) {
+        // Firestore unavailable — allow scan but can't track credits
+        return { ok: true, creditsLeft: -1 };
+    }
+    const currentMonth = new Date().toISOString().slice(0, 7); // "2026-03"
+    const userRef = firestoreDb.collection('users').doc(uid);
+    try {
+        return await firestoreDb.runTransaction(async (tx) => {
+            const snap = await tx.get(userRef);
+            let credits = FREE_CREDITS;
+            let lastResetMonth = '';
+            if (snap.exists) {
+                const d = snap.data()!;
+                credits = typeof d.credits === 'number' ? d.credits : FREE_CREDITS;
+                lastResetMonth = d.lastResetMonth ?? '';
+            }
+            // Monthly reset — new month = fresh 400 credits
+            if (lastResetMonth !== currentMonth) {
+                credits = FREE_CREDITS;
+                lastResetMonth = currentMonth;
+            }
+            if (credits < cost) {
+                return {
+                    ok: false,
+                    creditsLeft: credits,
+                    error: `Not enough credits. This scan costs ${cost} credits and you have ${credits} left. Credits reset on the 1st of each month.`,
+                };
+            }
+            const newCredits = credits - cost;
+            tx.set(userRef, { uid, credits: newCredits, lastResetMonth }, { merge: true });
+            return { ok: true, creditsLeft: newCredits };
+        });
+    } catch (err: any) {
+        console.error('[TLDR Shield] Credit transaction failed:', err?.message);
+        return { ok: true, creditsLeft: -1 }; // fail open so NIM still works
+    }
+}
+
+// TTL per tier: quick = 48 h, deep = 7 days
+const SHARED_CACHE_TTL_MS: Record<string, number> = {
+    quick: 48 * 60 * 60 * 1000,
+    deep:   7 * 24 * 60 * 60 * 1000,
+};
+const SHARED_CACHE_COLLECTION = 'shared_cache';
+
+// Firestore helpers imported lazily once credentials are confirmed working
+let _Timestamp: any = null;
+let _FieldValue: any = null;
+async function getFirestoreHelpers() {
+    if (!_Timestamp) {
+        const m = await import('firebase-admin/firestore');
+        _Timestamp = m.Timestamp;
+        _FieldValue = m.FieldValue;
+    }
+    return { Timestamp: _Timestamp, FieldValue: _FieldValue };
+}
+
+async function getSharedCache(hash: string): Promise<any | null> {
+    if (!firestoreDb) return null;
+    try {
+        const doc = await firestoreDb.collection(SHARED_CACHE_COLLECTION).doc(hash).get();
+        if (!doc.exists) return null;
+        const data = doc.data()!;
+        // Manual TTL check (Firestore TTL policy on expiresAt field cleans up async)
+        if (data.expiresAt.toMillis() < Date.now()) return null;
+        return data.result ?? null;
+    } catch (err: any) {
+        console.warn(`[TLDR Shield] Firestore read failed: ${err?.message}`);
+        return null;
+    }
+}
+
+async function setSharedCache(hash: string, result: any, tier: string): Promise<void> {
+    if (!firestoreDb) return;
+    try {
+        const { Timestamp, FieldValue } = await getFirestoreHelpers();
+        const ttl = SHARED_CACHE_TTL_MS[tier] ?? SHARED_CACHE_TTL_MS.quick;
+        await firestoreDb.collection(SHARED_CACHE_COLLECTION).doc(hash).set({
+            result,
+            tier,
+            scannedAt: Timestamp.now(),
+            expiresAt: Timestamp.fromMillis(Date.now() + ttl),
+            scanCount: FieldValue.increment(1),
+        }, { merge: true });
+    } catch (err: any) {
+        console.warn(`[TLDR Shield] Firestore write failed: ${err?.message}`);
+    }
+}
 
 // NIM API key pool — rotated on rate-limit or server errors
 const NIM_KEYS = [
@@ -419,7 +592,7 @@ async function startServer() {
         next();
     };
 
-    // FIX #14: Health check — includes memory, cache and key metrics for observability
+    // Health check — memory, cache, key metrics, and Firestore status
     app.get("/health", (_req, res) => {
         const mem = process.memoryUsage();
         res.json({
@@ -431,11 +604,29 @@ async function startServer() {
                 rssMB: Math.round(mem.rss / 1024 / 1024),
             },
             cache: { size: analysisCache.size, max: MAX_CACHE },
+            sharedCache: { connected: firestoreDb !== null },
             nimKeys: NIM_KEYS.length,
         });
     });
 
-    // FIX #6: /debug/models endpoint removed
+    // Credits balance — returns current credits for the signed-in user
+    app.get("/api/credits", analyzeRateLimit, apiKeyGuard, async (req, res) => {
+        const requestId = crypto.randomUUID();
+        res.setHeader('X-Request-ID', requestId);
+        const uid = await getUidFromRequest(req);
+        if (!uid) return res.status(401).json({ error: 'Sign in required.', requestId });
+        if (!firestoreDb) return res.json({ credits: FREE_CREDITS, requestId });
+        try {
+            const snap = await firestoreDb.collection('users').doc(uid).get();
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            if (!snap.exists) return res.json({ credits: FREE_CREDITS, requestId });
+            const d = snap.data()!;
+            const credits = d.lastResetMonth !== currentMonth ? FREE_CREDITS : (d.credits ?? FREE_CREDITS);
+            res.json({ credits, requestId });
+        } catch (err: any) {
+            res.status(500).json({ error: 'Could not fetch credits.', requestId });
+        }
+    });
 
     app.post("/api/analyze", analyzeRateLimit, apiKeyGuard, async (req, res) => {
         // Request correlation ID — included in every response and logged for tracing
@@ -453,11 +644,38 @@ async function startServer() {
             return res.status(400).json({ error: 'Invalid tier. Use "quick" or "deep".', requestId });
         }
 
-        // FIX #7: Minimum text check — reject meaningless inputs
+        // Minimum text check — reject meaningless inputs
         const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
         if (wordCount < 20) {
             return res.status(400).json({
                 error: 'Text is too short to analyze. Please paste at least a paragraph of the legal document.',
+                requestId,
+            });
+        }
+
+        // ── Auth check — require a signed-in Firebase user ─────────────────────
+        const uid = await getUidFromRequest(req);
+        if (!uid) {
+            return res.status(401).json({
+                error: 'Sign in required. Please sign in to TLDR Shield to scan pages.',
+                requestId,
+            });
+        }
+
+        const effectiveTier = tier === 'deep' ? 'deep' : 'quick';
+        const cost = CREDIT_COST[effectiveTier];
+
+        // ── Credit check — deduct before calling NIM ───────────────────────────
+        const creditResult = await checkAndDeductCredits(uid, cost);
+        if (!creditResult.ok) {
+            // Calculate the 1st of next month as the reset date
+            const now = new Date();
+            const resetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+                .toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+            return res.status(402).json({
+                error: creditResult.error,
+                creditsLeft: creditResult.creditsLeft,
+                resetDate,
                 requestId,
             });
         }
@@ -468,7 +686,6 @@ async function startServer() {
         const truncatedPercent = wasTruncated ? Math.round((1 - MAX_TOTAL / text.length) * 100) : 0;
         const processedText = text.substring(0, MAX_TOTAL);
 
-        const effectiveTier = tier === 'deep' ? 'deep' : 'quick';
         const model = effectiveTier === 'deep' ? MODELS.deep : MODELS.quick;
         const steps = effectiveTier === 'deep' ? DEEP_STEPS : QUICK_STEPS;
 
@@ -492,9 +709,9 @@ async function startServer() {
 
         console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan — ${processedText.length} chars | ip=${req.ip}`);
 
-        // Return cached result immediately
+        // ── L1: in-memory cache (sub-ms) ──────────────────────────────────────
         if (analysisCache.has(hash)) {
-            console.log(`[TLDR Shield] [${requestId}] Cache hit`);
+            console.log(`[TLDR Shield] [${requestId}] L1 cache hit (in-memory)`);
             sendUpdate({
                 ...analysisCache.get(hash),
                 status: 'Complete',
@@ -503,6 +720,26 @@ async function startServer() {
                 latencyMs: 0,
                 model: model.id,
                 requestId,
+                creditsLeft: creditResult.creditsLeft,
+            });
+            return res.end();
+        }
+
+        // ── L2: Firestore shared community cache (~50ms) ───────────────────────
+        sendUpdate({ status: 'Checking community cache...' });
+        const sharedResult = await getSharedCache(hash);
+        if (sharedResult) {
+            console.log(`[TLDR Shield] [${requestId}] L2 cache hit (Firestore shared)`);
+            setCacheEntry(hash, sharedResult); // promote to L1
+            sendUpdate({
+                ...sharedResult,
+                status: 'Complete',
+                cached: true,
+                truncated: wasTruncated,
+                latencyMs: 0,
+                model: model.id,
+                requestId,
+                creditsLeft: creditResult.creditsLeft,
             });
             return res.end();
         }
@@ -616,11 +853,12 @@ async function startServer() {
             else if (result.score >= 75 && result.rating === 'RISKY') result.rating = 'OKAY';
 
             const latencyMs = Date.now() - analysisStart;
-            // FIX #19: Include truncation % so UI can tell user how much was skipped
-            const finalResult = { ...result, truncated: wasTruncated, truncatedPercent, chunked: isMultiChunk, chunkCount: chunks.length, latencyMs, model: model.id, requestId };
-            console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan complete — ${latencyMs}ms | chunks=${chunks.length} | rating=${result.rating} | score=${result.score}`);
+            const finalResult = { ...result, truncated: wasTruncated, truncatedPercent, chunked: isMultiChunk, chunkCount: chunks.length, latencyMs, model: model.id, requestId, creditsLeft: creditResult.creditsLeft };
+            console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan complete — ${latencyMs}ms | chunks=${chunks.length} | rating=${result.rating} | score=${result.score} | credits_left=${creditResult.creditsLeft}`);
             sendUpdate({ ...finalResult, status: 'Complete', cached: false });
+            // Write to L1 (sync) and L2 Firestore shared cache (async, fire-and-forget)
             setCacheEntry(hash, result);
+            setSharedCache(hash, result, effectiveTier);
             res.end();
 
         } catch (error: any) {
@@ -634,7 +872,9 @@ async function startServer() {
             } else {
                 userMessage = 'Analysis failed. Please try again.';
             }
-            sendUpdate({ error: userMessage, requestId });
+            // Always include truncation metadata in error responses so the client knows
+            // how much of the document was actually processed even on failure.
+            sendUpdate({ error: userMessage, requestId, truncated: wasTruncated, truncatedPercent });
             res.end();
         }
     });
