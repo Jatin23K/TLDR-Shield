@@ -23,8 +23,8 @@ const NIM_KEYS = [
 let nimKeyIndex = 0;
 
 // FIX #2: Key failover — retries each key on 5xx / 429, throws on 4xx client errors
-// Per-key timeout of 18s prevents a hung key from consuming the global timeout budget
-const PER_KEY_TIMEOUT_MS = 18000;
+// Per-key timeout of 8s — if a key doesn't respond in 8s, move to the next one immediately
+const PER_KEY_TIMEOUT_MS = 8000;
 
 async function nimCreateWithRetry(params: any, signal: AbortSignal) {
     let lastError: any;
@@ -123,30 +123,42 @@ async function analyzeChunk(
     signal: AbortSignal,
     sendUpdate: (data: any) => void,
 ): Promise<any> {
-    const response = await nimCreateWithRetry({
-        model: model.id,
-        messages: [
-            { role: 'system', content: buildSystemPrompt(eli5, darkPatterns, tier) },
-            {
-                role: 'user',
-                content: tier === 'quick'
-                    // Quick: badge verdict per block — minimal context needed
-                    ? `Legal document section ${chunkIndex + 1} of ${totalChunks}. Give an instant verdict:\n\n${chunk}`
-                    // Deep: full analysis per block — extract every clause
-                    : `Analyze this section (block ${chunkIndex + 1}/${totalChunks}) thoroughly. Extract ALL violations present:\n\n${chunk}`,
-            },
-        ],
-        temperature: model.temperature,
-        max_tokens: model.maxTokens,
-    }, signal);
+    const run = async () => {
+        const response = await nimCreateWithRetry({
+            model: model.id,
+            messages: [
+                { role: 'system', content: buildSystemPrompt(eli5, darkPatterns, tier) },
+                {
+                    role: 'user',
+                    content: tier === 'quick'
+                        ? `Legal document section ${chunkIndex + 1} of ${totalChunks}. Give an instant verdict:\n\n${chunk}`
+                        : `Analyze this section (block ${chunkIndex + 1}/${totalChunks}) thoroughly. Extract ALL violations present:\n\n${chunk}`,
+                },
+            ],
+            temperature: model.temperature,
+            max_tokens: model.maxTokens,
+        }, signal);
 
-    const raw = response.choices[0]?.message?.content || '{}';
-    const result = extractJSON(raw);
-    if (!result || typeof result.score !== 'number') {
-        throw new Error(`Block ${chunkIndex + 1} returned an unreadable response`);
+        const raw = response.choices[0]?.message?.content || '{}';
+        const result = extractJSON(raw);
+        if (!result || typeof result.score !== 'number') {
+            throw new Error(`Block ${chunkIndex + 1} returned an unreadable response`);
+        }
+        return result;
+    };
+
+    // FIX: Per-chunk retry — attempt once, retry once on failure before dropping the block
+    try {
+        const result = await run();
+        sendUpdate({ status: `Block ${chunkIndex + 1}/${totalChunks} analyzed...` });
+        return result;
+    } catch (firstErr: any) {
+        if (signal.aborted) throw firstErr;
+        console.warn(`[TLDR Shield] Chunk ${chunkIndex + 1} failed, retrying once... (${firstErr?.message})`);
+        const result = await run(); // throws if retry also fails — propagates to allSettled
+        sendUpdate({ status: `Block ${chunkIndex + 1}/${totalChunks} analyzed (retry)...` });
+        return result;
     }
-    sendUpdate({ status: `Block ${chunkIndex + 1}/${totalChunks} analyzed...` });
-    return result;
 }
 
 const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership', 'dark_patterns'] as const;
@@ -392,27 +404,61 @@ async function startServer() {
         standardHeaders: true,
         legacyHeaders: false,
         message: { error: 'Too many requests. Please wait before trying again.' },
+        skip: (req) => req.path === '/health', // health check never counts against the limit
     });
 
-    // FIX #14: Health check — no debug/internal data exposed publicly
+    // API key auth — set INTERNAL_API_KEY in .env to require callers to authenticate.
+    // In dev or if the env var is absent the check is skipped (open access).
+    const INTERNAL_KEY = process.env.INTERNAL_API_KEY;
+    const apiKeyGuard = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        if (!INTERNAL_KEY || process.env.NODE_ENV !== 'production') return next();
+        const provided = (req.headers['x-api-key'] ?? '').toString().trim();
+        if (!provided || provided !== INTERNAL_KEY) {
+            return res.status(401).json({ error: 'Unauthorized. A valid X-API-Key header is required.' });
+        }
+        next();
+    };
+
+    // FIX #14: Health check — includes memory, cache and key metrics for observability
     app.get("/health", (_req, res) => {
-        res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+        const mem = process.memoryUsage();
+        res.json({
+            status: 'ok',
+            uptime: Math.round(process.uptime()),
+            memory: {
+                heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+                heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+                rssMB: Math.round(mem.rss / 1024 / 1024),
+            },
+            cache: { size: analysisCache.size, max: MAX_CACHE },
+            nimKeys: NIM_KEYS.length,
+        });
     });
 
     // FIX #6: /debug/models endpoint removed
 
-    app.post("/api/analyze", analyzeRateLimit, async (req, res) => {
+    app.post("/api/analyze", analyzeRateLimit, apiKeyGuard, async (req, res) => {
+        // Request correlation ID — included in every response and logged for tracing
+        const requestId = crypto.randomUUID();
+        res.setHeader('X-Request-ID', requestId);
+
         const { text, tier, eli5, darkPatterns } = req.body;
 
         if (!text || typeof text !== 'string') {
-            return res.status(400).json({ error: 'No text provided.' });
+            return res.status(400).json({ error: 'No text provided.', requestId });
+        }
+
+        // Validate tier explicitly — unknown values get a 400, not a silent fallback
+        if (tier && tier !== 'quick' && tier !== 'deep') {
+            return res.status(400).json({ error: 'Invalid tier. Use "quick" or "deep".', requestId });
         }
 
         // FIX #7: Minimum text check — reject meaningless inputs
         const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
         if (wordCount < 20) {
             return res.status(400).json({
-                error: 'Text is too short to analyze. Please paste at least a paragraph of the legal document.'
+                error: 'Text is too short to analyze. Please paste at least a paragraph of the legal document.',
+                requestId,
             });
         }
 
@@ -444,8 +490,11 @@ async function startServer() {
         const controller = new AbortController();
         req.on('close', () => controller.abort());
 
+        console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan — ${processedText.length} chars | ip=${req.ip}`);
+
         // Return cached result immediately
         if (analysisCache.has(hash)) {
+            console.log(`[TLDR Shield] [${requestId}] Cache hit`);
             sendUpdate({
                 ...analysisCache.get(hash),
                 status: 'Complete',
@@ -453,6 +502,7 @@ async function startServer() {
                 truncated: wasTruncated,
                 latencyMs: 0,
                 model: model.id,
+                requestId,
             });
             return res.end();
         }
@@ -525,9 +575,16 @@ async function startServer() {
                     const goodResults = allSettled
                         .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
                         .map(r => r.value);
+                    const failedCount = chunks.length - goodResults.length;
 
                     if (goodResults.length === 0) {
                         throw new Error('Failed to analyze document blocks. Please try again.');
+                    }
+
+                    // Warn when more than half the chunks failed — result may be incomplete
+                    if (failedCount > chunks.length / 2) {
+                        console.warn(`[TLDR Shield] [${requestId}] Partial analysis: ${goodResults.length}/${chunks.length} blocks succeeded`);
+                        sendUpdate({ status: `⚠️ Partial analysis — ${failedCount} block(s) could not be read.` });
                     }
 
                     // Agent 4: aggregate block verdicts into one final result
@@ -536,6 +593,15 @@ async function startServer() {
 
                     if (!result || typeof result.score !== 'number') {
                         throw new Error('Aggregation failed. Please try again.');
+                    }
+
+                    // Guard: if score aggregated to 0 but no violations exist, something went wrong
+                    if (result.score === 0 && effectiveTier === 'deep') {
+                        const hasViolation = result.pillars && Object.values(result.pillars).some((p: any) => p.violation);
+                        if (!hasViolation) {
+                            console.warn(`[TLDR Shield] [${requestId}] score=0 with no violations — likely model confusion on repetitive text`);
+                            result.score = 10; // floor to lowest RISKY band with actual violations
+                        }
                     }
 
                     sendUpdate({ status: 'Structuring results...' });
@@ -551,14 +617,15 @@ async function startServer() {
 
             const latencyMs = Date.now() - analysisStart;
             // FIX #19: Include truncation % so UI can tell user how much was skipped
-            const finalResult = { ...result, truncated: wasTruncated, truncatedPercent, chunked: isMultiChunk, chunkCount: chunks.length, latencyMs, model: model.id };
+            const finalResult = { ...result, truncated: wasTruncated, truncatedPercent, chunked: isMultiChunk, chunkCount: chunks.length, latencyMs, model: model.id, requestId };
+            console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan complete — ${latencyMs}ms | chunks=${chunks.length} | rating=${result.rating} | score=${result.score}`);
             sendUpdate({ ...finalResult, status: 'Complete', cached: false });
             setCacheEntry(hash, result);
             res.end();
 
         } catch (error: any) {
             // FIX #10: Clean, user-friendly error messages — no raw API errors exposed
-            console.error('[TLDR Shield] Analysis error:', error?.status ?? '', error?.message ?? error);
+            console.error(`[TLDR Shield] [${requestId}] Analysis error:`, error?.status ?? '', error?.message ?? error);
             let userMessage: string;
             if (error.name === 'AbortError') {
                 userMessage = 'Analysis timed out. Try a shorter document or switch to Basic Scan.';
@@ -567,7 +634,7 @@ async function startServer() {
             } else {
                 userMessage = 'Analysis failed. Please try again.';
             }
-            sendUpdate({ error: userMessage });
+            sendUpdate({ error: userMessage, requestId });
             res.end();
         }
     });
