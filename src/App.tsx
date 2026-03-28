@@ -168,7 +168,7 @@ const PILLARS_DEMO = [
 ];
 
 const STEPS = [
-  { n: '01', title: 'Install the Extension', desc: 'One click from the Chrome Web Store. No account required.' },
+  { n: '01', title: 'Install the Extension', desc: 'One click from the Chrome Web Store. Sign in with Google to activate your free credits.' },
   { n: '02', title: 'Browse Normally', desc: 'TLDR Shield auto-detects T&C pages and shows a floating badge.' },
   { n: '03', title: 'Get Your Verdict', desc: 'See SAFE, OKAY, or RISKY with a plain-English explanation instantly.' },
 ];
@@ -235,9 +235,9 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
 
             {/* Social proof */}
             <div className="flex items-center justify-center gap-5 mt-8 text-slate-600 text-xs font-medium">
-              <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-emerald-500/70" />No account required</span>
+              <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-emerald-500/70" />You own your data</span>
               <span className="w-px h-3 bg-white/10" />
-              <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-emerald-500/70" />Free forever</span>
+              <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-emerald-500/70" />400 free credits/month</span>
               <span className="w-px h-3 bg-white/10" />
               <span className="flex items-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-500/70" />98+ accuracy</span>
             </div>
@@ -365,7 +365,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
           <div className="relative">
             <ShieldCheck className="w-11 h-11 text-indigo-400 mx-auto mb-5" />
             <h2 className="text-2xl font-black tracking-[-0.03em] mb-3">Ready to browse with confidence?</h2>
-            <p className="text-slate-400 text-[13px] mb-8 max-w-xs mx-auto">Free forever. No account required to scan. Works on any website.</p>
+            <p className="text-slate-400 text-[13px] mb-8 max-w-xs mx-auto">400 free credits every month. Quick scan costs 10 credits, Deep scan costs 20. You own your data — access or delete it any time.</p>
             <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-3 px-8 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/20 hover:-translate-y-0.5">
               <Chrome className="w-5 h-5" />
