@@ -514,6 +514,15 @@ function showResultPanel(data) {
     dark_patterns:     'Dark Patterns',
   };
 
+  const PILLAR_DESCS = {
+    ai_training:       'Is your data used to train AI models?',
+    data_selling:      'Is your data sold or shared with 3rd parties?',
+    transparency:      'Are policies clearly written and accessible?',
+    data_retention:    'How long is your data kept after deletion?',
+    content_ownership: 'Do you retain rights to your own content?',
+    dark_patterns:     'Hidden opt-outs, forced arbitration clauses?',
+  };
+
   const panel = document.createElement('div');
   panel.id = 'tldr-shield-result';
 
@@ -587,9 +596,18 @@ function showResultPanel(data) {
       row.className = 'tldr-pillar-row';
       if (val.citation) row.title = val.citation;
 
-      const nameEl = document.createElement('span');
-      nameEl.className = 'tldr-pillar-name';
-      nameEl.textContent = label;
+      const nameEl = document.createElement('div');
+      nameEl.className = 'tldr-pillar-name-wrap';
+
+      const nameText = document.createElement('span');
+      nameText.className = 'tldr-pillar-name';
+      nameText.textContent = label;
+      nameEl.appendChild(nameText);
+
+      const descText = document.createElement('span');
+      descText.className = 'tldr-pillar-desc';
+      descText.textContent = PILLAR_DESCS[key] ?? '';
+      nameEl.appendChild(descText);
 
       const statusEl = document.createElement('span');
       statusEl.className = `tldr-pillar-status ${val.violation ? 'violation' : 'clear'}`;
@@ -602,37 +620,6 @@ function showResultPanel(data) {
 
     panel.appendChild(pillarsEl);
 
-  } else if (isQuick) {
-    // ── Quick badge: prompt user to run Deep Scan for full details ──
-    const deepPrompt = document.createElement('div');
-    deepPrompt.className = 'tldr-deep-prompt';
-
-    const deepMsg = document.createElement('div');
-    deepMsg.className = 'tldr-deep-prompt-text';
-    deepMsg.textContent = 'Want full clause breakdown & citations?';
-
-    const deepBtn = document.createElement('button');
-    deepBtn.className = 'tldr-deep-btn';
-    deepBtn.textContent = '🔬 Run Deep Scan';
-    deepBtn.onclick = async () => {
-      panel.remove();
-      const text = await extractPageText();
-      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, forceDeep: true });
-      // Show scanning button again
-      let trigger = document.getElementById('tldr-shield-trigger');
-      if (!trigger) {
-        createTriggerButton();
-        trigger = document.getElementById('tldr-shield-trigger');
-      }
-      if (trigger) {
-        trigger.style.display = 'flex';
-        setTriggerScanning(trigger);
-      }
-    };
-
-    deepPrompt.appendChild(deepMsg);
-    deepPrompt.appendChild(deepBtn);
-    panel.appendChild(deepPrompt);
   }
 
   // ── Footer ──
