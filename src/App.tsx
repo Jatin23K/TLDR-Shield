@@ -159,12 +159,12 @@ const FEATURES = [
 ];
 
 const PILLARS_DEMO = [
-  { label: 'AI Training', violation: true },
-  { label: 'Data Selling', violation: true },
-  { label: 'Transparency', violation: false },
-  { label: 'Data Retention', violation: true },
-  { label: 'Ownership', violation: true },
-  { label: 'Dark Patterns', violation: true },
+  { label: 'AI Training', desc: 'Is your data used to train AI models?', violation: true },
+  { label: 'Data Selling', desc: 'Is your data sold or shared with 3rd parties?', violation: true },
+  { label: 'Transparency', desc: 'Are policies clearly written and accessible?', violation: false },
+  { label: 'Data Retention', desc: 'How long is your data kept after deletion?', violation: true },
+  { label: 'Ownership', desc: 'Do you retain rights to your own content?', violation: true },
+  { label: 'Dark Patterns', desc: 'Hidden opt-outs, forced arbitration clauses?', violation: true },
 ];
 
 const STEPS = [
@@ -289,23 +289,18 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
             {/* Pillars */}
             <div className="px-4 pb-4 flex flex-col gap-1">
               {PILLARS_DEMO.map(p => (
-                <div key={p.label} className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.025] hover:bg-white/[0.04] transition-colors">
-                  <span className="text-slate-400 text-[11px] font-semibold uppercase tracking-[0.07em]">{p.label}</span>
-                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider ${
+                <div key={p.label} className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.025] hover:bg-white/[0.04] transition-colors gap-3">
+                  <div className="min-w-0">
+                    <p className="text-slate-300 text-[11px] font-semibold uppercase tracking-[0.07em]">{p.label}</p>
+                    <p className="text-slate-600 text-[9.5px] leading-tight mt-0.5 truncate">{p.desc}</p>
+                  </div>
+                  <span className={`shrink-0 text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider ${
                     p.violation ? 'bg-rose-500/15 text-rose-300 border border-rose-500/20' : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20'
                   }`}>
                     {p.violation ? 'VIOLATION' : 'CLEAR'}
                   </span>
                 </div>
               ))}
-            </div>
-
-            {/* Deep scan btn */}
-            <div className="px-4 pb-4">
-              <div className="p-3 rounded-xl bg-indigo-500/[0.07] border border-indigo-500/15 text-center">
-                <p className="text-indigo-300/70 text-[11px] mb-2">Want full clause breakdown & citations?</p>
-                <div className="inline-flex items-center gap-1.5 text-indigo-300 text-xs font-bold">🔬 Run Deep Scan</div>
-              </div>
             </div>
 
             {/* Footer */}
