@@ -311,6 +311,26 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
         </motion.div>
       </section>
 
+      {/* ── Features ── */}
+      <section className="pb-28 px-6 max-w-5xl mx-auto">
+        <div className="text-center mb-16">
+          <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">What We Check</p>
+          <h2 className="text-3xl font-black tracking-[-0.03em]">6 pillars. Every scan. No fine print missed.</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {FEATURES.map((f, i) => (
+            <motion.div key={f.title} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 * i }}
+              className={`group p-5 rounded-2xl bg-gradient-to-br ${f.bg} border ${f.border} hover:border-opacity-40 transition-all duration-300`}>
+              <div className={`w-9 h-9 rounded-xl bg-white/[0.04] flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
+                <f.icon className={`w-4 h-4 ${f.color}`} />
+              </div>
+              <h3 className="font-bold text-white text-[14px] mb-1.5">{f.title}</h3>
+              <p className="text-slate-500 text-[13px] leading-relaxed">{f.desc}</p>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
       {/* ── How it works ── */}
       <section className="pb-28 px-6 max-w-4xl mx-auto">
         <div className="text-center mb-16">
@@ -328,26 +348,6 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
               </div>
               <h3 className="font-bold text-white mb-2 text-[15px]">{s.title}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Features ── */}
-      <section className="pb-28 px-6 max-w-5xl mx-auto">
-        <div className="text-center mb-16">
-          <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">What We Check</p>
-          <h2 className="text-3xl font-black tracking-[-0.03em]">6 pillars. Every scan. No fine print missed.</h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {FEATURES.map((f, i) => (
-            <motion.div key={f.title} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 * i }}
-              className={`group p-5 rounded-2xl bg-gradient-to-br ${f.bg} border ${f.border} hover:border-opacity-40 transition-all duration-300`}>
-              <div className={`w-9 h-9 rounded-xl bg-white/[0.04] flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
-                <f.icon className={`w-4 h-4 ${f.color}`} />
-              </div>
-              <h3 className="font-bold text-white text-[14px] mb-1.5">{f.title}</h3>
-              <p className="text-slate-500 text-[13px] leading-relaxed">{f.desc}</p>
             </motion.div>
           ))}
         </div>
