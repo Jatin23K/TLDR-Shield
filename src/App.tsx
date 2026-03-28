@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Shield, ShieldCheck, ShieldX, Chrome, Zap, Brain,
+  Shield, ShieldCheck, Chrome, Zap, Brain,
   LogIn, LogOut, Trash2, Clock, AlertTriangle, CheckCircle,
   Eye, Lock, FileText, Cpu, ArrowRight, Star, Bot, ShoppingCart,
 } from 'lucide-react';
@@ -158,14 +158,6 @@ const FEATURES = [
   { icon: Lock,         color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Dark Patterns',   desc: 'Catches forced arbitration clauses, class-action waivers, auto-renewal traps, and buried opt-outs.' },
 ];
 
-const PILLARS_DEMO = [
-  { label: 'AI Training', desc: 'Is your data used to train AI models?', violation: true },
-  { label: 'Data Selling', desc: 'Is your data sold or shared with 3rd parties?', violation: true },
-  { label: 'Transparency', desc: 'Are policies clearly written and accessible?', violation: false },
-  { label: 'Data Retention', desc: 'How long is your data kept after deletion?', violation: true },
-  { label: 'Ownership', desc: 'Do you retain rights to your own content?', violation: true },
-  { label: 'Dark Patterns', desc: 'Hidden opt-outs, forced arbitration clauses?', violation: true },
-];
 
 const STEPS = [
   { n: '01', title: 'Install the Extension', desc: 'One click from the Chrome Web Store. Sign in with Google to activate your free credits.' },
@@ -245,71 +237,6 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
         </div>
       </section>
 
-      {/* ── Extension Preview ── */}
-      <section className="pb-28 px-6 flex justify-center">
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-          className="relative"
-        >
-          {/* Glow behind card */}
-          <div className="absolute inset-0 -m-6 bg-gradient-radial from-rose-500/10 via-transparent to-transparent blur-2xl" />
-
-          {/* Card */}
-          <div className="relative w-[320px] rounded-[22px] bg-[#0e1220] border border-white/[0.07] shadow-2xl shadow-black/60 overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-                  <Shield className="w-3 h-3 text-white" />
-                </div>
-                <span className="text-indigo-300 font-black text-xs tracking-[0.12em] uppercase">TLDR Shield</span>
-              </div>
-              <button className="w-6 h-6 rounded-lg bg-white/[0.05] flex items-center justify-center text-slate-500 hover:text-slate-300 text-xs transition-colors">✕</button>
-            </div>
-
-            {/* Badge */}
-            <div className="mx-4 mt-4 p-4 rounded-[14px] bg-rose-500/[0.08] border border-rose-500/20 text-center">
-              <div className="flex items-center justify-center gap-3 mb-1">
-                <ShieldX className="w-5 h-5 text-rose-400" />
-                <span className="text-rose-300 font-black text-xl tracking-widest">RISKY</span>
-              </div>
-              <div className="text-4xl font-black text-rose-300 mb-1">5<span className="text-xl text-rose-400/50">/100</span></div>
-              <div className="text-rose-400/50 text-[11px] font-semibold tracking-wider">🔬 DEEP SCAN · MEGACORP INC.</div>
-            </div>
-
-            {/* TL;DR */}
-            <div className="mx-4 my-3 p-3 bg-white/[0.03] rounded-xl border border-white/[0.04]">
-              <p className="text-slate-400 text-[11px] leading-relaxed italic">
-                "Grants perpetual rights to your content, shares data with 847 partners, retains data for 10 years post-deletion, and waives class-action rights."
-              </p>
-            </div>
-
-            {/* Pillars */}
-            <div className="px-4 pb-4 flex flex-col gap-1">
-              {PILLARS_DEMO.map(p => (
-                <div key={p.label} className="flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.025] hover:bg-white/[0.04] transition-colors gap-3">
-                  <div className="min-w-0">
-                    <p className="text-slate-300 text-[11px] font-semibold uppercase tracking-[0.07em]">{p.label}</p>
-                    <p className="text-slate-600 text-[9.5px] leading-tight mt-0.5 truncate">{p.desc}</p>
-                  </div>
-                  <span className={`shrink-0 text-[10px] font-black px-2.5 py-0.5 rounded-full tracking-wider ${
-                    p.violation ? 'bg-rose-500/15 text-rose-300 border border-rose-500/20' : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20'
-                  }`}>
-                    {p.violation ? 'VIOLATION' : 'CLEAR'}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Footer */}
-            <div className="px-4 pb-3 text-center text-slate-700 text-[9px] uppercase tracking-[0.15em] border-t border-white/[0.04] pt-3">
-              TL;DR Shield · Privacy Analysis
-            </div>
-          </div>
-        </motion.div>
-      </section>
 
       {/* ── Features ── */}
       <section className="pb-28 px-6 max-w-5xl mx-auto">
