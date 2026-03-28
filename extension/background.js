@@ -149,7 +149,12 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null) 
         if (!trimmed.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(trimmed.slice(6));
-          if (data.rating) result = data;
+          if (data.rating) {
+            result = data;
+          } else if (data.status) {
+            // Forward progress steps to content script so user sees activity
+            chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_PROGRESS', status: data.status }).catch(() => {});
+          }
         } catch (_) { /* partial chunk, ignore */ }
       }
     }

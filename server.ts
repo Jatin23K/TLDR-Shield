@@ -500,6 +500,9 @@ Output ONLY valid JSON — no markdown fences, no text outside the JSON:
   "rating": "SAFE" | "OKAY" | "RISKY",
   "score": <integer 0-100>,
   "tldr": "<2-3 sentence plain-English summary. Name specific risks.>",
+  "deductions": [
+    { "reason": "<specific clause or practice that cost points>", "points": <integer deducted> }
+  ],
   "pillars": {
     "ai_training":       { "violation": boolean, "citation": "string" },
     "data_selling":      { "violation": boolean, "citation": "string" },
@@ -507,7 +510,13 @@ Output ONLY valid JSON — no markdown fences, no text outside the JSON:
     "data_retention":    { "violation": boolean, "citation": "string" },
     "content_ownership": { "violation": boolean, "citation": "string" }${darkField}
   }
-}`;
+}
+
+DEDUCTIONS RULES:
+- Include one entry per reason the score is below 100.
+- Each reason must reference the SPECIFIC clause or policy language responsible.
+- Points values must sum to exactly (100 - score).
+- If score is 100, return an empty array: "deductions": []`;
 }
 
 // FIX #11: Progress steps streamed to client during model inference

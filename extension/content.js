@@ -435,29 +435,89 @@ async function extractPageText() {
 // TRIGGER BUTTON — shown when confidence ≥ threshold
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Shield icon SVG
+const SHIELD_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 2L4 6V12C4 16.4 7.4 20.5 12 22C16.6 20.5 20 16.4 20 12V6L12 2Z" fill="#38bdf8"/>
+  <path d="M9 12L11 14L15 10" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
 function setTriggerIdle(btn) {
   btn.dataset.scanning = 'false';
-  btn.replaceChildren();
-  const icon = document.createElement('div');
-  icon.className = 'tldr-icon';
-  icon.textContent = '🛡️';
-  const label = document.createElement('div');
-  label.className = 'tldr-text';
-  label.textContent = 'Analyze with TLDR Shield';
-  btn.appendChild(icon);
-  btn.appendChild(label);
+  btn.innerHTML = SHIELD_SVG;
+  btn.title = 'Analyze with TLDR Shield';
 }
 
 function setTriggerScanning(btn) {
   btn.dataset.scanning = 'true';
-  btn.replaceChildren();
-  const spinner = document.createElement('div');
-  spinner.className = 'tldr-spinner';
-  const label = document.createElement('div');
-  label.className = 'tldr-text';
-  label.textContent = 'Analyzing…';
-  btn.appendChild(spinner);
-  btn.appendChild(label);
+  btn.innerHTML = '<div class="tldr-spinner"></div>';
+  btn.title = 'Analyzing…';
+}
+
+function removeContextMenu() {
+  document.getElementById('tldr-context-menu')?.remove();
+}
+
+function showContextMenu(x, y) {
+  removeContextMenu();
+  const menu = document.createElement('div');
+  menu.id = 'tldr-context-menu';
+  // Render off-screen first to measure real size
+  menu.style.visibility = 'hidden';
+  menu.style.left = '0px';
+  menu.style.top  = '0px';
+
+  const host = location.hostname;
+
+  const disableSite = document.createElement('button');
+  disableSite.textContent = `Disable on ${host}`;
+  disableSite.className = 'tldr-menu-danger';
+  disableSite.onclick = () => {
+    chrome.storage.local.get({ disabledSites: [] }, ({ disabledSites }) => {
+      if (!disabledSites.includes(host)) disabledSites.push(host);
+      chrome.storage.local.set({ disabledSites });
+    });
+    removeTriggerButton();
+    removeContextMenu();
+  };
+
+  const disableAll = document.createElement('button');
+  disableAll.textContent = 'Disable on all sites';
+  disableAll.className = 'tldr-menu-danger';
+  disableAll.onclick = () => {
+    chrome.storage.local.set({ disabledAll: true });
+    removeTriggerButton();
+    removeContextMenu();
+  };
+
+  menu.appendChild(disableSite);
+  menu.appendChild(disableAll);
+  document.body.appendChild(menu);
+
+  // Measure then reposition so it never clips off screen
+  const mw = menu.offsetWidth  || 210;
+  const mh = menu.offsetHeight || 90;
+  const left = (x + mw > window.innerWidth)  ? x - mw : x;
+  const top  = (y + mh > window.innerHeight) ? y - mh : y;
+  menu.style.left       = Math.max(4, left) + 'px';
+  menu.style.top        = Math.max(4, top)  + 'px';
+  menu.style.visibility = 'visible';
+
+  // Close on outside click
+  setTimeout(() => document.addEventListener('click', removeContextMenu, { once: true }), 0);
+}
+
+function snapBtn(btn, side, top) {
+  btn.style.top    = Math.min(Math.max(top, 60), window.innerHeight - 80) + 'px';
+  btn.style.bottom = 'auto';
+  if (side === 'left') {
+    btn.style.left  = '0';
+    btn.style.right = 'auto';
+    btn.classList.add('tldr-left-side');
+  } else {
+    btn.style.right = '0';
+    btn.style.left  = 'auto';
+    btn.classList.remove('tldr-left-side');
+  }
 }
 
 function createTriggerButton() {
@@ -468,8 +528,52 @@ function createTriggerButton() {
   btn.setAttribute('role', 'button');
   btn.setAttribute('aria-label', 'Analyze with TLDR Shield');
   setTriggerIdle(btn);
+  // Hide until position is known — prevents flash at wrong location
+  btn.style.visibility = 'hidden';
+  document.body.appendChild(btn);
 
-  btn.onclick = async () => {
+  // ── Restore saved position then reveal ───────────────────────────────────
+  chrome.storage.local.get({ fabSide: 'right', fabTop: 180 }, ({ fabSide, fabTop }) => {
+    snapBtn(btn, fabSide, fabTop);
+    btn.style.visibility = 'visible';
+  });
+
+  // ── Drag logic (pointer capture — works across all browsers/pages) ──────
+  let moved = false, offsetY = 0;
+
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    moved   = false;
+    offsetY = e.clientY - btn.getBoundingClientRect().top;
+    btn.setPointerCapture(e.pointerId);
+    btn.classList.add('tldr-dragging');
+    btn.style.bottom = 'auto';
+    btn.style.right  = 'auto';
+    btn.style.left   = Math.max(0, e.clientX - 24) + 'px';
+    btn.style.top    = Math.min(Math.max(e.clientY - offsetY, 60), window.innerHeight - 80) + 'px';
+    e.preventDefault();
+  });
+
+  btn.addEventListener('pointermove', (e) => {
+    if (!btn.hasPointerCapture(e.pointerId)) return;
+    moved = true;
+    btn.style.left = Math.max(0, e.clientX - 24) + 'px';
+    btn.style.top  = Math.min(Math.max(e.clientY - offsetY, 60), window.innerHeight - 80) + 'px';
+  });
+
+  btn.addEventListener('pointerup', (e) => {
+    if (!btn.hasPointerCapture(e.pointerId)) return;
+    btn.releasePointerCapture(e.pointerId);
+    btn.classList.remove('tldr-dragging');
+    const side = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
+    const top  = parseInt(btn.style.top);
+    snapBtn(btn, side, top);
+    chrome.storage.local.set({ fabSide: side, fabTop: top });
+  });
+
+  // ── Click to scan (only if not dragged) ──────────────────────────────────
+  btn.addEventListener('click', async () => {
+    if (moved) { moved = false; return; }
     if (btn.dataset.scanning === 'true') return;
     setTriggerScanning(btn);
     try {
@@ -479,13 +583,18 @@ function createTriggerButton() {
       console.error('[TLDR Shield] Extraction error:', err);
       setTriggerIdle(btn);
     }
-  };
+  });
 
-  document.body.appendChild(btn);
+  // ── Right-click context menu ──────────────────────────────────────────────
+  btn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showContextMenu(e.clientX, e.clientY);
+  });
 }
 
 function removeTriggerButton() {
   document.getElementById('tldr-shield-trigger')?.remove();
+  removeContextMenu();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -675,6 +784,29 @@ function showResultPanel(data) {
 
   }
 
+  // ── Score deductions (deep scan only, when score < 100) ──
+  if (Array.isArray(data.deductions) && data.deductions.length > 0) {
+    const dedEl = document.createElement('div');
+    dedEl.style.cssText = 'margin:10px 0 4px; padding:10px 14px; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15); border-radius:10px;';
+
+    const dedTitle = document.createElement('div');
+    dedTitle.style.cssText = 'font-size:10px; font-weight:700; letter-spacing:0.08em; color:#f87171; margin-bottom:7px; text-transform:uppercase;';
+    dedTitle.textContent = `Why not 100? (−${100 - data.score} pts)`;
+    dedEl.appendChild(dedTitle);
+
+    data.deductions.forEach(d => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:5px;';
+      row.innerHTML = `
+        <span style="font-size:11px; color:#94a3b8; line-height:1.4; flex:1;">${d.reason}</span>
+        <span style="font-size:11px; font-weight:700; color:#f87171; white-space:nowrap;">−${d.points} pts</span>
+      `;
+      dedEl.appendChild(row);
+    });
+
+    panel.appendChild(dedEl);
+  }
+
   // ── Footer ──
   const footer = document.createElement('div');
   footer.className = 'tldr-panel-footer';
@@ -708,6 +840,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // keep message channel open for async response
   }
 
+  if (message.type === 'ANALYSIS_PROGRESS') {
+    let prog = document.getElementById('tldr-progress-panel');
+    if (!prog) {
+      prog = document.createElement('div');
+      prog.id = 'tldr-progress-panel';
+      prog.style.cssText = `
+        position:fixed; bottom:24px; right:24px; z-index:2147483647;
+        background:#0f172a; border:1px solid rgba(255,255,255,0.08);
+        border-radius:12px; padding:12px 16px; font-family:system-ui,sans-serif;
+        color:#94a3b8; font-size:12px; display:flex; align-items:center; gap:10px;
+        box-shadow:0 4px 20px rgba(0,0,0,0.4); max-width:280px;
+      `;
+      document.body.appendChild(prog);
+    }
+    prog.innerHTML = `
+      <div style="width:14px;height:14px;border:2px solid rgba(99,102,241,0.3);border-top-color:#6366f1;border-radius:50%;animation:tldr-spin 0.75s linear infinite;flex-shrink:0;"></div>
+      <span>${message.status}</span>
+    `;
+    return;
+  }
+
   if (message.type === 'OUT_OF_CREDITS') {
     const btn = document.getElementById('tldr-shield-trigger');
     if (btn) setTriggerIdle(btn);
@@ -722,21 +875,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.error) {
     if (btn) {
       btn.style.display = 'flex';
-      btn.replaceChildren();
-      const icon  = document.createElement('div');
-      icon.className = 'tldr-icon';
-      icon.textContent = '⚠️';
-      const label = document.createElement('div');
-      label.className = 'tldr-text';
-      label.textContent = message.error;
-      btn.appendChild(icon);
-      btn.appendChild(label);
-      // Allow retry after 3s
-      setTimeout(() => setTriggerIdle(btn), 3000);
+      btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`;
+      btn.title = message.error;
+      setTimeout(() => setTriggerIdle(btn), 4000);
     }
     return;
   }
 
+  // Remove progress panel when result arrives
+  document.getElementById('tldr-progress-panel')?.remove();
   if (btn) btn.style.display = 'none';
   showResultPanel(message.data);
 });
@@ -759,12 +906,11 @@ function runDetection() {
   removeTriggerButton();
   removeResultPanel();
 
-  const { score, reasons } = computeConfidence();
-
-  if (score >= CONFIDENCE_THRESHOLD) {
+  // Always show FAB on every page (user can disable per-site or globally via right-click)
+  chrome.storage.local.get({ disabledAll: false, disabledSites: [] }, ({ disabledAll, disabledSites }) => {
+    if (disabledAll || disabledSites.includes(location.hostname)) return;
     createTriggerButton();
-    console.debug(`[TLDR Shield] Detected T&C (score=${score}, signals=${reasons.join(',')})`);
-  }
+  });
 }
 
 // Run on initial page load
