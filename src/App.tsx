@@ -103,7 +103,7 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits }: {
     <nav className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
       scrolled ? 'bg-[#080b14]/90 backdrop-blur-2xl border-b border-white/[0.05] shadow-xl shadow-black/30' : 'bg-transparent'
     }`}>
-      <div className="max-w-6xl mx-auto flex items-center justify-between px-6 h-16">
+      <div className="w-full flex items-center justify-between px-6 sm:px-12 lg:px-20 xl:px-32 h-[60px]">
         {/* Logo */}
         <button onClick={() => onNav('landing')} className="flex items-center gap-2.5">
           <div className="relative w-8 h-8 rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
@@ -126,15 +126,30 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits }: {
           )}
 
           {user && credits !== null && (
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold border ${
-              credits > 100
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+            <div className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[12px] font-black overflow-hidden
+              ${credits > 100
+                ? 'shadow-[0_0_16px_rgba(52,211,153,0.18)] border border-emerald-400/25'
                 : credits > 20
-                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-            }`}>
-              <Zap className="w-3 h-3" />
-              {credits} credits
+                ? 'shadow-[0_0_16px_rgba(251,191,36,0.18)] border border-amber-400/25'
+                : 'shadow-[0_0_16px_rgba(248,113,113,0.18)] border border-rose-400/25'
+              }`}>
+              {/* gradient bg */}
+              <div className={`absolute inset-0 ${
+                credits > 100
+                  ? 'bg-gradient-to-r from-emerald-500/[0.14] to-teal-500/[0.08]'
+                  : credits > 20
+                  ? 'bg-gradient-to-r from-amber-500/[0.14] to-yellow-500/[0.08]'
+                  : 'bg-gradient-to-r from-rose-500/[0.14] to-red-500/[0.08]'
+              }`} />
+              {/* top shine */}
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+              <div className="relative flex items-center gap-2">
+                <Zap className={`w-3 h-3 ${credits > 100 ? 'text-emerald-300' : credits > 20 ? 'text-amber-300' : 'text-rose-300'}`}
+                  style={{ filter: `drop-shadow(0 0 4px ${credits > 100 ? 'rgba(52,211,153,0.8)' : credits > 20 ? 'rgba(251,191,36,0.8)' : 'rgba(248,113,113,0.8)'})` }} />
+                <span className={`tracking-tight ${credits > 100 ? 'text-emerald-300' : credits > 20 ? 'text-amber-300' : 'text-rose-300'}`}>
+                  {credits.toLocaleString()} <span className="font-medium opacity-70">credits</span>
+                </span>
+              </div>
             </div>
           )}
 
@@ -183,144 +198,216 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
   return (
     <div className="min-h-screen bg-[#080b14] text-white overflow-x-hidden">
 
-      {/* Background orbs */}
+      {/* Background orbs — full-viewport, decorative only */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[900px] h-[600px] bg-indigo-600/[0.07] rounded-full blur-[120px]" />
-        <div className="absolute top-[60vh] -left-40 w-[500px] h-[500px] bg-violet-600/[0.05] rounded-full blur-[100px]" />
-        <div className="absolute top-[40vh] -right-40 w-[400px] h-[400px] bg-indigo-500/[0.04] rounded-full blur-[100px]" />
+        <div className="absolute -top-40 left-1/4 w-[1200px] h-[700px] bg-indigo-600/[0.06] rounded-full blur-[140px]" />
+        <div className="absolute top-[55vh] -left-60 w-[700px] h-[700px] bg-violet-600/[0.05] rounded-full blur-[120px]" />
+        <div className="absolute top-[35vh] right-0 w-[600px] h-[600px] bg-indigo-500/[0.04] rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[1400px] h-[400px] bg-violet-700/[0.03] rounded-full blur-[100px]" />
       </div>
 
-      {/* ── Hero ── */}
-      <section className="relative pt-44 pb-24 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+      {/* ── Hero — full-width 2-col split layout ── */}
+      <section className="relative w-full pt-32 pb-20">
+        {/* full-bleed subtle grid */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.025)_1px,transparent_1px)] bg-[size:80px_80px] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,black,transparent)]" />
 
-            {/* Eyebrow */}
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold tracking-wider uppercase mb-8">
+        <div className="relative w-full px-6 sm:px-12 lg:px-20 xl:px-32 flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+
+          {/* ── Left: copy ── */}
+          <motion.div initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.55 }}
+            className="flex-1 min-w-0">
+
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold tracking-wider uppercase mb-7">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
               AI-Powered Privacy Protection
             </div>
 
-            {/* Headline */}
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-[-0.04em] leading-[0.92] mb-6">
-              Stop agreeing to things
-              <br />
+            <h1 className="text-5xl sm:text-6xl lg:text-[64px] xl:text-[76px] 2xl:text-[88px] font-black tracking-[-0.04em] leading-[0.93] mb-6">
+              Stop agreeing<br />to things<br />
               <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-500 bg-clip-text text-transparent">
                 you haven't read.
               </span>
             </h1>
 
-            <p className="text-lg text-slate-400 max-w-lg mx-auto leading-relaxed mb-10">
+            <p className="text-base sm:text-lg text-slate-400 max-w-lg leading-relaxed mb-9">
               TLDR Shield reads the full Terms & Conditions or Privacy Policy in seconds
-              and gives you a clear verdict — so you know what you're signing up for before you click <em className="text-slate-300 not-italic">"I Agree"</em>.
+              and gives you a clear SAFE, OKAY or RISKY verdict — so you know exactly what you're agreeing to.
             </p>
 
-            {/* CTAs */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <div className="flex flex-col sm:flex-row items-start gap-3 mb-9">
               <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer"
-                className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:-translate-y-0.5">
+                className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5">
                 <Chrome className="w-5 h-5" />
                 Add to Chrome — Free
                 <ArrowRight className="w-4 h-4 opacity-60 group-hover:translate-x-0.5 transition-transform" />
               </a>
-
               {user ? (
                 <button onClick={() => onNav('history')}
                   className="flex items-center gap-2 px-7 py-3.5 rounded-2xl font-bold text-[15px] text-slate-300 bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.14] transition-all">
-                  <Clock className="w-4 h-4 opacity-70" />
-                  View Scan History
+                  <Clock className="w-4 h-4 opacity-70" />View Scan History
                 </button>
               ) : (
                 <button onClick={onSignIn}
                   className="flex items-center gap-2 px-7 py-3.5 rounded-2xl font-bold text-[15px] text-slate-300 bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.08] hover:border-white/[0.14] transition-all">
-                  <LogIn className="w-4 h-4 opacity-70" />
-                  Save Scan History
+                  <LogIn className="w-4 h-4 opacity-70" />Save Scan History
                 </button>
               )}
             </div>
 
-            {/* Social proof */}
-            <div className="flex items-center justify-center gap-5 mt-8 text-slate-600 text-xs font-medium">
+            <div className="flex flex-wrap items-center gap-5 text-slate-600 text-xs font-medium">
               <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-emerald-500/70" />You own your data</span>
               <span className="w-px h-3 bg-white/10" />
               <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-emerald-500/70" />400 free credits/month</span>
               <span className="w-px h-3 bg-white/10" />
-              <span className="flex items-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-500/70" />98+ accuracy</span>
+              <span className="flex items-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-500/70" />98%+ accuracy</span>
             </div>
           </motion.div>
+
+          {/* ── Right: mock result card ── */}
+          <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.55, delay: 0.1 }}
+            className="flex-1 min-w-0 w-full lg:max-w-[520px] xl:max-w-[580px]">
+            <div className="relative rounded-3xl overflow-hidden border border-white/[0.07] bg-[#0e1120] shadow-2xl shadow-black/50">
+              {/* window chrome */}
+              <div className="flex items-center gap-1.5 px-5 py-3.5 border-b border-white/[0.06] bg-white/[0.02]">
+                <span className="w-3 h-3 rounded-full bg-rose-500/60" />
+                <span className="w-3 h-3 rounded-full bg-amber-500/60" />
+                <span className="w-3 h-3 rounded-full bg-emerald-500/60" />
+                <span className="ml-3 text-slate-600 text-[11px] font-mono">spotify.com/legal/privacy-policy</span>
+              </div>
+              {/* header */}
+              <div className="px-5 pt-5 pb-4 border-b border-white/[0.05]">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-indigo-400" />
+                    <span className="text-white font-black text-sm tracking-tight">TLDR Shield</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 text-[11px] font-black border border-rose-500/20 tracking-wider">RISKY</span>
+                </div>
+                <p className="text-slate-500 text-[11px]">Deep Scan · 4 issues found</p>
+              </div>
+              {/* score bar */}
+              <div className="px-5 py-4 border-b border-white/[0.05]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-slate-400 text-[11px] font-semibold">Privacy Score</span>
+                  <span className="text-rose-400 font-black text-sm">34 / 100</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-full w-[34%] rounded-full bg-gradient-to-r from-rose-500 to-rose-400" />
+                </div>
+              </div>
+              {/* pillars */}
+              <div className="px-5 py-4 flex flex-col gap-2.5">
+                {[
+                  { label: 'AI Training', score: 10, color: 'text-rose-400', bar: 'bg-rose-500', w: '10%' },
+                  { label: 'Data Sharing', score: 25, color: 'text-rose-400', bar: 'bg-rose-500', w: '25%' },
+                  { label: 'Data Retention', score: 40, color: 'text-amber-400', bar: 'bg-amber-400', w: '40%' },
+                  { label: 'Content Ownership', score: 55, color: 'text-amber-400', bar: 'bg-amber-400', w: '55%' },
+                  { label: 'Policy Clarity', score: 60, color: 'text-amber-400', bar: 'bg-amber-400', w: '60%' },
+                  { label: 'Unfair Clauses', score: 20, color: 'text-rose-400', bar: 'bg-rose-500', w: '20%' },
+                ].map(p => (
+                  <div key={p.label} className="flex items-center gap-3">
+                    <span className="text-slate-500 text-[11px] w-36 shrink-0">{p.label}</span>
+                    <div className="flex-1 h-1 rounded-full bg-white/[0.05]">
+                      <div className={`h-full rounded-full ${p.bar}`} style={{ width: p.w }} />
+                    </div>
+                    <span className={`text-[11px] font-bold w-6 text-right ${p.color}`}>{p.score}</span>
+                  </div>
+                ))}
+              </div>
+              {/* summary */}
+              <div className="mx-5 mb-5 px-4 py-3 rounded-2xl bg-rose-500/[0.07] border border-rose-500/15">
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  <span className="text-white font-semibold">TLDR:</span> Spotify can use your listening data to train AI models, share it with third-party advertisers, and retain it indefinitely after account deletion.
+                </p>
+              </div>
+            </div>
+            {/* floating glow under card */}
+            <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-3/4 h-20 bg-indigo-500/10 blur-2xl rounded-full pointer-events-none" />
+          </motion.div>
+
         </div>
       </section>
 
-
-      {/* ── Features ── */}
-      <section className="pb-28 px-6 max-w-5xl mx-auto">
+      {/* ── Features — true full-width section ── */}
+      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
         <div className="text-center mb-16">
           <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">What We Check</p>
-          <h2 className="text-3xl font-black tracking-[-0.03em]">6 checks. Every scan. Nothing gets missed.</h2>
+          <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">6 checks. Every scan. Nothing gets missed.</h2>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 max-w-[1600px] mx-auto">
           {FEATURES.map((f, i) => (
             <motion.div key={f.title} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 * i }}
-              className={`group p-5 rounded-2xl bg-gradient-to-br ${f.bg} border ${f.border} hover:border-opacity-40 transition-all duration-300`}>
-              <div className={`w-9 h-9 rounded-xl bg-white/[0.04] flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
-                <f.icon className={`w-4 h-4 ${f.color}`} />
+              className={`group p-7 rounded-2xl bg-gradient-to-br ${f.bg} border ${f.border} hover:border-opacity-50 transition-all duration-300`}>
+              <div className={`w-11 h-11 rounded-xl bg-white/[0.05] flex items-center justify-center mb-5 group-hover:scale-105 transition-transform`}>
+                <f.icon className={`w-5 h-5 ${f.color}`} />
               </div>
-              <h3 className="font-bold text-white text-[14px] mb-1.5">{f.title}</h3>
+              <h3 className="font-bold text-white text-[15px] mb-2">{f.title}</h3>
               <p className="text-slate-500 text-[13px] leading-relaxed">{f.desc}</p>
             </motion.div>
           ))}
         </div>
       </section>
 
-      {/* ── How it works ── */}
-      <section className="pb-28 px-6 max-w-4xl mx-auto">
-        <div className="text-center mb-16">
-          <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">How it works</p>
-          <h2 className="text-3xl font-black tracking-[-0.03em]">Up and running in three steps.</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-          {/* Connector line */}
-          <div className="hidden md:block absolute top-7 left-[20%] right-[20%] h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
-          {STEPS.map((s, i) => (
-            <motion.div key={s.n} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * i }}
-              className="relative flex flex-col items-center text-center p-6">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-500/10 border border-indigo-500/20 flex items-center justify-center mb-5 text-indigo-300 font-black text-sm tracking-wider">
-                {s.n}
-              </div>
-              <h3 className="font-bold text-white mb-2 text-[15px]">{s.title}</h3>
-              <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── CTA Banner ── */}
-      <section className="pb-28 px-6 max-w-2xl mx-auto">
-        <div className="relative rounded-3xl overflow-hidden border border-indigo-500/15 bg-gradient-to-br from-indigo-600/[0.12] via-violet-600/[0.08] to-purple-600/[0.05] p-10 text-center">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.12),transparent_70%)]" />
-          <div className="relative">
-            <ShieldCheck className="w-11 h-11 text-indigo-400 mx-auto mb-5" />
-            <h2 className="text-2xl font-black tracking-[-0.03em] mb-3">Know what you're agreeing to.</h2>
-            <p className="text-slate-400 text-[13px] mb-8 max-w-xs mx-auto">400 free credits every month. A Quick Scan costs 10 credits, a Deep Scan costs 20. Your data belongs to you — view or delete it at any time.</p>
-            <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 px-8 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/20 hover:-translate-y-0.5">
-              <Chrome className="w-5 h-5" />
-              Add to Chrome
-            </a>
+      {/* ── How it works — full-width with divider ── */}
+      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32 border-t border-white/[0.04]">
+        <div className="max-w-[1600px] mx-auto">
+          <div className="text-center mb-16 pt-24">
+            <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">How it works</p>
+            <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">Up and running in three steps.</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
+            <div className="hidden md:block absolute top-7 left-[16%] right-[16%] h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+            {STEPS.map((s, i) => (
+              <motion.div key={s.n} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * i }}
+                className="relative flex flex-col items-center text-center p-8 rounded-2xl bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.09] transition-all">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-500/10 border border-indigo-500/20 flex items-center justify-center mb-5 text-indigo-300 font-black text-sm tracking-wider">
+                  {s.n}
+                </div>
+                <h3 className="font-bold text-white mb-3 text-[16px]">{s.title}</h3>
+                <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
+              </motion.div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-white/[0.05] py-8 px-6">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-              <Shield className="w-3 h-3 text-white" />
+      {/* ── CTA Banner — full-width with contained card ── */}
+      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
+        <div className="max-w-[1600px] mx-auto">
+          <div className="relative rounded-3xl overflow-hidden border border-indigo-500/15 bg-gradient-to-br from-indigo-600/[0.13] via-violet-600/[0.08] to-purple-600/[0.05] p-12 sm:p-16 text-center">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.14),transparent_65%)]" />
+            {/* decorative corner accents */}
+            <div className="absolute top-0 left-0 w-32 h-32 bg-gradient-to-br from-indigo-500/10 to-transparent rounded-br-full" />
+            <div className="absolute bottom-0 right-0 w-32 h-32 bg-gradient-to-tl from-violet-500/10 to-transparent rounded-tl-full" />
+            <div className="relative max-w-xl mx-auto">
+              <ShieldCheck className="w-12 h-12 text-indigo-400 mx-auto mb-6" />
+              <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] mb-4">Know what you're agreeing to.</h2>
+              <p className="text-slate-400 text-[14px] mb-10 leading-relaxed">400 free credits every month. A Quick Scan costs 10 credits, a Deep Scan costs 20. Your data belongs to you — view or delete it at any time.</p>
+              <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
+                <Chrome className="w-5 h-5" />
+                Add to Chrome — It's Free
+              </a>
             </div>
-            <span className="text-slate-500 text-sm font-semibold">TLDR Shield</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer — full-width */}
+      <footer className="w-full border-t border-white/[0.05] py-8 px-6 sm:px-12 lg:px-20 xl:px-32">
+        <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <Shield className="w-3.5 h-3.5 text-white" />
+            </div>
+            <span className="text-slate-400 text-sm font-bold">TLDR Shield</span>
           </div>
           <p className="text-slate-700 text-xs">© {new Date().getFullYear()} TLDR Shield · AI-powered privacy analysis</p>
+          <div className="flex items-center gap-4 text-slate-700 text-xs">
+            <span>Privacy</span>
+            <span>Terms</span>
+            <span>Contact</span>
+          </div>
         </div>
       </footer>
     </div>
@@ -381,11 +468,11 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
   const counts = { SAFE: scans.filter(s => s.rating === 'SAFE').length, OKAY: scans.filter(s => s.rating === 'OKAY').length, RISKY: scans.filter(s => s.rating === 'RISKY').length };
 
   return (
-    <div className="min-h-screen bg-[#080b14] text-white pt-24 pb-20 px-6">
+    <div className="min-h-screen bg-[#080b14] text-white pt-28 pb-20 px-6 sm:px-12 lg:px-20 xl:px-32">
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-indigo-600/[0.05] rounded-full blur-[100px]" />
+        <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-indigo-600/[0.05] rounded-full blur-[100px]" />
       </div>
-      <div className="relative max-w-2xl mx-auto">
+      <div className="relative max-w-[1600px] mx-auto">
 
         {/* Header */}
         <div className="mb-8">
@@ -395,7 +482,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
 
         {/* Stats row */}
         {scans.length > 0 && (
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-3 gap-3 mb-6 max-w-sm">
             {(['SAFE', 'OKAY', 'RISKY'] as const).map(r => {
               const c = rating[r];
               return (
@@ -443,7 +530,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
         )}
 
         {/* Scan cards */}
-        <div className="flex flex-col gap-2.5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
           <AnimatePresence>
             {filtered.map((scan, i) => {
               const c = rating[scan.rating];

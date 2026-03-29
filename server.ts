@@ -256,7 +256,7 @@ const MODELS = {
     deep: {
         id: DEEP_MODEL_ID,
         label: "Deep scan model",
-        maxTokens: 900,      // full prompt with verbatim citations → ~5-10s with llama-3.3-70b
+        maxTokens: 1400,     // increased: verbatim citations need room — ~6-12s with llama-3.3-70b
         temperature: 0.2,
         timeoutMs: 30000,
         stepIntervalMs: 1200,
@@ -270,7 +270,7 @@ const CHUNK_THRESHOLD  = 12000;  // chars — single-call below this (~3k tokens
 const CHUNK_SIZE       = 10000;  // chars per block (~2.5k tokens, safe for 128k ctx)
 const CHUNK_OVERLAP    = 1500;   // FIX #13: 1500 chars (~250 words) preserves multi-paragraph clause context
 const MAX_CHUNKS       = 8;      // safety cap → max ~80k chars analyzed per request
-const CHUNK_CONCURRENCY = 2;     // FIX #8: max parallel NIM calls — prevents key exhaustion on large docs
+const CHUNK_CONCURRENCY = 1;     // sequential — prevents all 3 keys being rate-limited simultaneously
 
 function chunkText(text: string): string[] {
     if (text.length <= CHUNK_THRESHOLD) return [text];
@@ -336,8 +336,36 @@ async function analyzeChunk(
 
 const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership', 'dark_patterns'] as const;
 
+function applyConsistencyCrossCheck(pillars: Record<string, any>, allDeductionText: string): void {
+    const PILLAR_DEDUCTION_KEYWORDS: Record<string, string[]> = {
+        ai_training:       ['ai/', 'ml ', 'machine learning', 'artificial intelligence', 'ai training', 'train', 'ai model'],
+        data_selling:      ['sell', 'shar', 'third party', 'third-party', 'advertis', 'partner'],
+        transparency:      ['vague', 'unclear', 'ambiguous', 'mislead', 'confus', 'transparen'],
+        data_retention:    ['retention', 'retain', 'delet', 'storage', 'keep data', 'store data'],
+        content_ownership: ['content own', 'ip right', 'intellectual property', 'content license', 'copyright', 'content restrict'],
+        dark_patterns:     ['dark pattern', 'arbitration', 'opt-out', 'buried', 'forced', 'deceptive', 'manipulat'],
+    };
+    for (const key of PILLAR_KEYS) {
+        if (pillars[key]?.violation === false) {
+            const keywords = PILLAR_DEDUCTION_KEYWORDS[key] ?? [];
+            if (keywords.some(kw => allDeductionText.includes(kw))) {
+                pillars[key] = { ...pillars[key], violation: true };
+            }
+        }
+    }
+}
+
 function aggregateResults(results: any[], tier: 'quick' | 'deep'): any {
-    if (results.length === 1) return results[0];
+    if (results.length === 1) {
+        // Single chunk — still apply consistency cross-check
+        const r = results[0];
+        if (r.pillars && r.deductions) {
+            const deductionText = (r.deductions as any[])
+                .map((d: any) => d.reason ?? '').join(' ').toLowerCase();
+            applyConsistencyCrossCheck(r.pillars, deductionText);
+        }
+        return r;
+    }
 
     // Worst-case score across all blocks — one bad block tanks the whole doc
     const worstScore = Math.min(...results.map(r => typeof r.score === 'number' ? r.score : 100));
@@ -365,6 +393,13 @@ function aggregateResults(results: any[], tier: 'quick' | 'deep'): any {
             pillars[key] = { violation: false, citation: withCitation?.pillars[key]?.citation ?? 'Not addressed in document.' };
         }
     }
+
+    // ── Consistency cross-check: auto-flip pillars that appear in deductions ──
+    const allDeductionText: string = results
+        .flatMap(r => (r.deductions ?? []).map((d: any) => d.reason ?? ''))
+        .join(' ')
+        .toLowerCase();
+    applyConsistencyCrossCheck(pillars, allDeductionText);
 
     // Synthesize a combined TL;DR that names the worst blocks
     const violationCount = Object.values(pillars).filter((p: any) => p.violation).length;
@@ -445,8 +480,8 @@ function buildSystemPrompt(eli5: boolean, darkPatterns: boolean, tier: 'quick' |
 
     // ── QUICK: instant verdict, badge only ────────────────────────────────────
     if (tier === 'quick') {
-        const extraPillar = darkPatterns ? ', dark_patterns (manipulative/deceptive clauses?)' : '';
-        return `You are a privacy attorney giving an instant verdict. Scan for: ai_training (AI training without opt-out?), data_selling (sharing data with third parties commercially?), transparency (deliberately vague language?), data_retention (retention >1yr post-deletion?), content_ownership (overly broad IP claim?)${extraPillar}.
+        const extraPillar = darkPatterns ? ', dark_patterns (liability cap under $1000 OR class action waiver OR shortened statute of limitations OR forced arbitration?)' : '';
+        return `You are a privacy attorney giving an instant verdict. Be STRICT. Scan for: ai_training (ANY mention of AI/ML training using user content = violation), data_selling (content/data shared with advertisers or third-party companies = violation), transparency (deliberately vague/obscuring language?), data_retention (retention >1yr post-deletion or completely unspecified?), content_ownership (worldwide sublicensable license "for any purpose" beyond platform use = violation)${extraPillar}.
 
 SCORING: 0 violations+clear→90-100 SAFE | 0+vague→75-89 OKAY | 1 low→50-74 OKAY | 1 high or 2→25-49 RISKY | 3-4→10-24 RISKY | 5-6→0-9 RISKY.
 MANDATORY: score<50 MUST be RISKY. score 50-74 MUST be OKAY. score≥75 = SAFE or OKAY.
@@ -462,26 +497,34 @@ Output ONLY valid JSON, no markdown, no pillars detail:
 
     const citationInstruction = eli5
         ? "For 'citation': write a plain-English ELI5 explanation (no legal jargon) of what the policy says about this pillar."
-        : "For 'citation': copy the EXACT verbatim sentence(s) from the document. Do NOT paraphrase. If nothing is stated, write 'Not addressed in document.'";
+        : `CITATION RULE — MANDATORY, NO EXCEPTIONS:
+For 'citation' you MUST paste a verbatim continuous excerpt (20-60 words) copied word-for-word from the source text. Never paraphrase, summarise, or describe the clause — paste it exactly as written.
+WRONG ✗: "The policy states that users grant a license to use their content for AI training, but does not provide a clear opt-out."
+WRONG ✗: "The policy claims broad rights, including a worldwide license to use content."
+RIGHT ✓: "you agree that this license includes the right for us to analyze text and other information you provide and to otherwise provide, promote, and improve the Services, including, for example, for use with and training of our machine learning and artificial intelligence models"
+RIGHT ✓: "You grant us a worldwide, non-exclusive, royalty-free license (with the right to sublicense) to use, copy, reproduce, process, adapt, modify, publish, transmit, display, upload, download, and distribute such Content"
+If nothing is stated verbatim in the document, write exactly: 'Not addressed in document.'`;
 
     const darkPillar = darkPatterns
-        ? "\n6. dark_patterns — Manipulative language, confusing opt-out flows, pre-ticked consent boxes, or deceptive framing."
+        ? "\n6. dark_patterns — Unfair or one-sided clauses: liability capped at trivially small amounts (e.g. $100), forced class action waivers, shortened statutes of limitations, one-sided termination rights, hidden arbitration clauses, pre-ticked consent, or manipulative opt-out flows."
         : "";
 
-    return `You are a senior privacy attorney and data protection expert.
+    return `You are a senior privacy attorney and data protection expert. Be STRICT — err on the side of flagging violations when evidence exists.
 
 Analyze the legal text against these privacy pillars:
-1. ai_training      — Data used for AI/ML training WITHOUT a simple, accessible opt-out?
-2. data_selling     — Personal data shared or sold to third parties for their own commercial use?
-3. transparency     — Language deliberately vague, contradictory, or designed to obscure practices?
-4. data_retention   — Deletion rights denied, or retention exceeds 1 year post-account-deletion?
-5. content_ownership — Broad IP rights claimed over user content beyond what is needed to operate the service?${darkPillar}
+1. ai_training      — User content or data used for AI/ML model training, fine-tuning, or improvement, with no clear user opt-out? VIOLATION EXAMPLES: "for use with and training of our machine learning and artificial intelligence models", "to train our AI", "improve our AI systems using your data". Even if bundled into a broad license clause, if AI training is mentioned = VIOLATION.
+2. data_selling     — Content or personal data shared with third parties (advertisers, partners, other companies) beyond what is strictly needed to operate the service? VIOLATION EXAMPLES: content syndicated/distributed to "other companies, organizations or individuals", advertising partners targeting users with their data, data shared for "commercial use". Sharing for advertising = VIOLATION.
+3. transparency     — Language deliberately vague, contradictory, or designed to obscure practices? VIOLATION EXAMPLES: key rights buried in dense legalese, critical data practices only referenced via external links, no plain-language explanation of data use.
+4. data_retention   — No stated deletion timeline, or retention exceeds 1 year post-account-deletion? Delegating entirely to another document without specifics = borderline violation.
+5. content_ownership — Broad IP rights beyond what is needed to show your content on the platform? VIOLATION EXAMPLES: worldwide royalty-free sublicensable license "for any purpose", right to modify/adapt/redistribute content, no compensation for commercial reuse of content.${darkPillar}
 
 VIOLATION RULES:
-- Mark violation=true ONLY with CLEAR, EXPLICIT evidence. Absence of a clause ≠ violation.
+- ai_training: ANY mention of using user content/data for AI or ML training = VIOLATION, no exceptions.
+- data_selling: Sharing content with advertisers, partners, or "other companies" for their commercial benefit = VIOLATION.
+- content_ownership: "for any purpose" or sublicensable worldwide license that goes beyond just showing content on the platform = VIOLATION.
+- dark_patterns: $100 or similarly tiny liability cap = VIOLATION. Class action waiver = VIOLATION. Shortened statute of limitations (under 2 years) = VIOLATION. One-sided termination without notice = VIOLATION.
 - transparency: ONLY true if language is actively misleading. Clear, concise policies = no violation.
-- data_retention: ≤90 days post-deletion is acceptable. Over 1 year = violation.
-- content_ownership: "license to display to users" = no violation. "perpetual irrevocable worldwide license beyond platform use" = violation.
+- data_retention: ≤90 days post-deletion is acceptable. Over 1 year or completely unspecified with no reference = violation.
 
 SCORING (use these bands exactly):
 - 0 violations, clear language    → score 90-100, rating "SAFE"
@@ -492,6 +535,15 @@ SCORING (use these bands exactly):
 - 5-6 violations                  → score 0-9,    rating "RISKY"
 
 MANDATORY: score<50 → rating MUST be "RISKY". score 50-74 → rating MUST be "OKAY". score≥75 → "SAFE" or "OKAY".
+
+CONSISTENCY RULE — CRITICAL: Every deduction MUST match a pillar with violation:true.
+If you write a deduction about AI/ML training → ai_training violation MUST be true.
+If you write a deduction about data sharing/selling → data_selling violation MUST be true.
+If you write a deduction about transparency/vague language → transparency violation MUST be true.
+If you write a deduction about data retention → data_retention violation MUST be true.
+If you write a deduction about content/IP ownership → content_ownership violation MUST be true.
+If you write a deduction about dark patterns/unfair clauses → dark_patterns violation MUST be true.
+You CANNOT deduct points for a pillar concern while leaving that pillar's violation as false. That is a contradiction.
 
 ${citationInstruction}
 
@@ -619,6 +671,29 @@ async function startServer() {
     });
 
     // Credits balance — returns current credits for the signed-in user
+    // ── DEV ONLY: clear L1 + L2 cache for a specific URL hash ──────────────
+    app.delete("/api/cache", async (req, res) => {
+        const { url } = req.query as { url?: string };
+        if (!url) {
+            // Clear ALL L1 cache
+            analysisCache.clear();
+            res.json({ cleared: 'l1-all', size: 0 });
+            return;
+        }
+        const hash = crypto.createHash('sha256').update(url).digest('hex');
+        analysisCache.delete(hash);
+        if (firestoreDb) {
+            try {
+                await firestoreDb.collection(SHARED_CACHE_COLLECTION).doc(hash).delete();
+                res.json({ cleared: 'l1+l2', hash });
+            } catch (e: any) {
+                res.json({ cleared: 'l1-only', hash, error: e.message });
+            }
+        } else {
+            res.json({ cleared: 'l1-only', hash });
+        }
+    });
+
     app.get("/api/credits", analyzeRateLimit, apiKeyGuard, async (req, res) => {
         const requestId = crypto.randomUUID();
         res.setHeader('X-Request-ID', requestId);
@@ -816,6 +891,10 @@ async function startServer() {
                             )
                         );
                         allSettled.push(...batchResults);
+                        // Small pause between blocks so NIM rate limits can recover
+                        if (i + CHUNK_CONCURRENCY < chunks.length) {
+                            await new Promise(r => setTimeout(r, 1500));
+                        }
                     }
 
                     const goodResults = allSettled

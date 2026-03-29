@@ -530,6 +530,7 @@ function createTriggerButton() {
   setTriggerIdle(btn);
   // Hide until position is known — prevents flash at wrong location
   btn.style.visibility = 'hidden';
+  btn.style.cursor = 'pointer';
   document.body.appendChild(btn);
 
   // ── Restore saved position then reveal ───────────────────────────────────
@@ -539,23 +540,31 @@ function createTriggerButton() {
   });
 
   // ── Drag logic (pointer capture — works across all browsers/pages) ──────
-  let moved = false, offsetY = 0;
+  let moved = false, dragging = false, offsetY = 0, startX = 0, startY = 0;
 
   btn.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    moved   = false;
-    offsetY = e.clientY - btn.getBoundingClientRect().top;
+    moved    = false;
+    dragging = false;
+    startX   = e.clientX;
+    startY   = e.clientY;
+    offsetY  = e.clientY - btn.getBoundingClientRect().top;
     btn.setPointerCapture(e.pointerId);
-    btn.classList.add('tldr-dragging');
-    btn.style.bottom = 'auto';
-    btn.style.right  = 'auto';
-    btn.style.left   = Math.max(0, e.clientX - 24) + 'px';
-    btn.style.top    = Math.min(Math.max(e.clientY - offsetY, 60), window.innerHeight - 80) + 'px';
     e.preventDefault();
   });
 
   btn.addEventListener('pointermove', (e) => {
     if (!btn.hasPointerCapture(e.pointerId)) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    // Only enter drag mode after moving ≥6px — avoids grab cursor on plain click
+    if (!dragging && Math.sqrt(dx * dx + dy * dy) < 6) return;
+    if (!dragging) {
+      dragging = true;
+      btn.classList.add('tldr-dragging');
+      btn.style.bottom = 'auto';
+      btn.style.right  = 'auto';
+    }
     moved = true;
     btn.style.left = Math.max(0, e.clientX - 24) + 'px';
     btn.style.top  = Math.min(Math.max(e.clientY - offsetY, 60), window.innerHeight - 80) + 'px';
@@ -565,10 +574,14 @@ function createTriggerButton() {
     if (!btn.hasPointerCapture(e.pointerId)) return;
     btn.releasePointerCapture(e.pointerId);
     btn.classList.remove('tldr-dragging');
-    const side = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
-    const top  = parseInt(btn.style.top);
-    snapBtn(btn, side, top);
-    chrome.storage.local.set({ fabSide: side, fabTop: top });
+    btn.style.cursor = 'pointer';
+    if (dragging) {
+      const side = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
+      const top  = parseInt(btn.style.top);
+      snapBtn(btn, side, top);
+      chrome.storage.local.set({ fabSide: side, fabTop: top });
+    }
+    dragging = false;
   });
 
   // ── Click to scan (only if not dragged) ──────────────────────────────────
@@ -580,6 +593,27 @@ function createTriggerButton() {
       const text = await extractPageText();
       chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text });
     } catch (err) {
+      // "Extension context invalidated" = extension was reloaded but this tab still
+      // has the old content script. Show a friendly reload prompt instead of silent fail.
+      if (err?.message?.includes('Extension context invalidated') ||
+          err?.message?.includes('context invalidated')) {
+        setTriggerIdle(btn);
+        btn.title = 'Extension updated — please refresh this page (F5)';
+        btn.style.outline = '2px solid #f59e0b';
+        // Show a small toast on the page
+        const toast = document.createElement('div');
+        toast.style.cssText = `
+          position:fixed; bottom:80px; right:24px; z-index:2147483647;
+          background:#1e1b4b; border:1px solid rgba(245,158,11,0.4);
+          color:#fcd34d; font-family:system-ui,sans-serif; font-size:13px;
+          font-weight:600; padding:10px 16px; border-radius:12px;
+          box-shadow:0 4px 20px rgba(0,0,0,0.5); pointer-events:none;
+        `;
+        toast.textContent = '⟳ Extension updated — refresh this page to scan';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+        return;
+      }
       console.error('[TLDR Shield] Extraction error:', err);
       setTriggerIdle(btn);
     }
@@ -605,6 +639,155 @@ function removeTriggerButton() {
 
 function removeResultPanel() {
   document.getElementById('tldr-shield-result')?.remove();
+  // Clean up any citation highlights
+  document.querySelectorAll('.tldr-citation-highlight').forEach(el => {
+    const parent = el.parentNode;
+    parent.replaceChild(document.createTextNode(el.textContent), el);
+    parent.normalize();
+  });
+}
+
+// Finds citation text in the page DOM, scrolls to it, and highlights it
+function highlightCitation(citation) {
+  if (!citation || citation === 'Not addressed in document.') return false;
+
+  // Remove previous highlights
+  document.querySelectorAll('.tldr-citation-highlight').forEach(el => {
+    const parent = el.parentNode;
+    parent.replaceChild(document.createTextNode(el.textContent), el);
+    parent.normalize();
+  });
+
+  // Clean surrounding quotes the LLM sometimes adds
+  const clean = citation.replace(/^["'"'\u201c\u2018]|["'"'\u201d\u2019]$/g, '').trim();
+
+  // Build candidate search strings — most specific first
+  const candidates = [];
+
+  // 1. Quoted fragments inside the citation — most verbatim, highest priority
+  const quotedRe = /['"'"\u201c\u2018]([^'"'"\u201d\u2019]{12,}?)['"'"\u201d\u2019]/g;
+  let qm;
+  while ((qm = quotedRe.exec(clean)) !== null) candidates.push(qm[1].trim());
+
+  // 2. Exact prefix slices
+  for (const len of [80, 60, 40]) {
+    const s = clean.slice(0, len).trim();
+    if (s.length >= 20) candidates.push(s);
+  }
+
+  // 3. Sliding windows: 7 → 6 → 5 → 4 words (wider net for paraphrased citations)
+  const words = clean.split(/\s+/).filter(w => w.length > 1);
+  for (const size of [7, 6, 5, 4]) {
+    for (let i = 0; i <= words.length - size; i++) {
+      candidates.push(words.slice(i, i + size).join(' '));
+    }
+  }
+
+  // 4. Key legal noun-phrases: consecutive pairs of "meaningful" words (length > 4, not stopwords)
+  // Helps when the citation is a paraphrase but still contains domain-specific terms.
+  const STOPWORDS = new Set(['that','this','with','from','your','their','have','will','shall','which','when','where','they','them','been','were','into','upon','under','over','such','only','also','each','both','more','than','about','other','these','those','some','what','would','could','should','there','after','before','without','within','between','through','whether','during','include','including','including,','using','used','uses','provide','provides','provided','make','makes','made','right','rights','terms','policy','service','services']);
+  const meaningful = words.filter(w => w.length > 4 && !STOPWORDS.has(w.toLowerCase().replace(/[^a-z]/g, '')));
+  for (let i = 0; i < meaningful.length - 1; i++) {
+    candidates.push(`${meaningful[i]} ${meaningful[i + 1]}`);
+  }
+
+  // ── Strategy A: window.find() — searches across DOM element boundaries ────
+  // This is Chrome's native Ctrl+F engine, handles text split across <p>/<em>/<strong>
+  const tryWindowFind = (needle) => {
+    window.getSelection()?.removeAllRanges();
+    const found = window.find(needle, false /*case*/, false /*back*/, true /*wrap*/, false, false, false);
+    if (!found) return false;
+
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+    const range = sel.getRangeAt(0);
+
+    // Make sure match isn't inside our own panel
+    if (range.commonAncestorContainer?.parentElement?.closest(
+      '#tldr-shield-result, #tldr-shield-trigger, #tldr-context-menu, #tldr-progress-panel'
+    )) {
+      window.getSelection()?.removeAllRanges();
+      return false;
+    }
+
+    const span = document.createElement('mark');
+    span.className = 'tldr-citation-highlight';
+    span.style.cssText = 'background:#fef08a;color:#1e1b4b;border-radius:3px;padding:0 2px;box-shadow:0 0 0 2px #fde047;scroll-margin-top:80px;';
+
+    try {
+      range.surroundContents(span);
+    } catch {
+      // Range spans multiple elements — scroll to anchor node without wrapping
+      const anchor = range.startContainer?.parentElement;
+      if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      window.getSelection()?.removeAllRanges();
+      // Still counts as "found" so quote box doesn't open
+      setTimeout(() => {}, 4000);
+      return true;
+    }
+
+    window.getSelection()?.removeAllRanges();
+    span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => {
+      span.style.transition = 'background 0.8s, box-shadow 0.8s';
+      span.style.background = 'transparent';
+      span.style.boxShadow  = 'none';
+    }, 4000);
+    return true;
+  };
+
+  // ── Strategy B: TreeWalker — single text-node exact match ─────────────────
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const tag = node.parentElement?.tagName;
+      if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(tag)) return NodeFilter.FILTER_REJECT;
+      if (node.parentElement?.closest(
+        '#tldr-shield-result, #tldr-shield-trigger, #tldr-context-menu, #tldr-progress-panel'
+      )) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  const tryTreeWalker = (needle) => {
+    const lowerNeedle = needle.toLowerCase();
+    for (const node of textNodes) {
+      const idx = node.textContent.toLowerCase().indexOf(lowerNeedle);
+      if (idx === -1) continue;
+
+      const origText = node.textContent;
+      const span = document.createElement('mark');
+      span.className = 'tldr-citation-highlight';
+      span.textContent = origText.slice(idx, idx + needle.length);
+      span.style.cssText = 'background:#fef08a;color:#1e1b4b;border-radius:3px;padding:0 2px;box-shadow:0 0 0 2px #fde047;scroll-margin-top:80px;';
+
+      const frag = document.createDocumentFragment();
+      if (idx > 0) frag.appendChild(document.createTextNode(origText.slice(0, idx)));
+      frag.appendChild(span);
+      if (idx + needle.length < origText.length) frag.appendChild(document.createTextNode(origText.slice(idx + needle.length)));
+      node.parentNode.replaceChild(frag, node);
+
+      span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => {
+        span.style.transition = 'background 0.8s, box-shadow 0.8s';
+        span.style.background = 'transparent';
+        span.style.boxShadow  = 'none';
+      }, 4000);
+      return true;
+    }
+    return false;
+  };
+
+  // Try all candidates with window.find first, then TreeWalker fallback
+  const seen = new Set();
+  for (const search of candidates) {
+    const key = search.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (tryWindowFind(search) || tryTreeWalker(search)) return true;
+  }
+  return false;
 }
 
 function showOutOfCreditsPanel(resetDate) {
@@ -694,7 +877,10 @@ function showResultPanel(data) {
 
   const brand = document.createElement('div');
   brand.className = 'tldr-panel-brand';
-  brand.textContent = '🛡️ TLDR Shield';
+  const dot = document.createElement('div');
+  dot.className = 'tldr-panel-brand-dot';
+  brand.appendChild(dot);
+  brand.appendChild(document.createTextNode('TLDR Shield'));
 
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tldr-panel-close';
@@ -708,22 +894,30 @@ function showResultPanel(data) {
   const badge = document.createElement('div');
   badge.className = `tldr-rating-badge ${ratingClass}`;
 
+  // Big score number
+  const scoreEl = document.createElement('div');
+  scoreEl.className = 'tldr-score-number';
+  scoreEl.innerHTML = `${score}<span class="tldr-score-denom">/100</span>`;
+
+  // Rating word (SAFE / OKAY / RISKY)
   const ratingLabel = document.createElement('div');
   ratingLabel.className = 'tldr-rating-label';
-  ratingLabel.textContent = `${data.rating ?? 'UNKNOWN'}   ${score}/100`;
+  ratingLabel.textContent = data.rating ?? 'UNKNOWN';
 
+  // Meta line (cached / scan type)
   const ratingMeta = document.createElement('div');
   ratingMeta.className = 'tldr-rating-score';
   if (data.cached) {
-    ratingMeta.textContent = '⚡ Cached Result';
+    ratingMeta.textContent = 'Cached result';
   } else if (data.chunked) {
-    ratingMeta.textContent = `🧩 ${data.chunkCount}-block Analysis`;
+    ratingMeta.textContent = `${data.chunkCount}-block analysis`;
   } else if (isQuick) {
-    ratingMeta.textContent = '⚡ Quick Scan';
+    ratingMeta.textContent = 'Quick scan';
   } else {
-    ratingMeta.textContent = '🔬 Deep Scan';
+    ratingMeta.textContent = 'Deep scan';
   }
 
+  badge.appendChild(scoreEl);
   badge.appendChild(ratingLabel);
   badge.appendChild(ratingMeta);
 
@@ -739,7 +933,7 @@ function showResultPanel(data) {
     panel.appendChild(warn);
   }
 
-  // ── TL;DR ──
+  // ── TLDR Summary ──
   if (data.tldr) {
     const tldrEl = document.createElement('div');
     tldrEl.className = 'tldr-tldr';
@@ -749,6 +943,11 @@ function showResultPanel(data) {
 
   // ── Pillars (Deep scan only) ──
   if (data.pillars && Object.keys(data.pillars).length > 0) {
+    const pillarsLabel = document.createElement('div');
+    pillarsLabel.className = 'tldr-pillars-label';
+    pillarsLabel.textContent = 'Privacy Pillars';
+    panel.appendChild(pillarsLabel);
+
     const pillarsEl = document.createElement('div');
     pillarsEl.className = 'tldr-pillars';
 
@@ -756,7 +955,44 @@ function showResultPanel(data) {
       const label = PILLAR_LABELS[key] ?? key.replace(/_/g, ' ');
       const row   = document.createElement('div');
       row.className = 'tldr-pillar-row';
-      if (val.citation) row.title = val.citation;
+      if (val.citation) {
+        row.style.cursor = 'pointer';
+
+        // Inline citation quote box (hidden by default, toggled on click)
+        const quoteBox = document.createElement('div');
+        quoteBox.className = 'tldr-citation-box';
+        quoteBox.textContent = `"${val.citation}"`;
+
+        row.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = quoteBox.style.display === 'block';
+
+          // Accordion: close every other open quote box first
+          document.querySelectorAll('.tldr-citation-box').forEach(b => {
+            if (b !== quoteBox) b.style.display = 'none';
+          });
+
+          if (isOpen) {
+            // Closing — hide box and remove page highlight
+            quoteBox.style.display = 'none';
+            document.querySelectorAll('.tldr-citation-highlight').forEach(el => {
+              const p = el.parentNode;
+              p.replaceChild(document.createTextNode(el.textContent), el);
+              p.normalize();
+            });
+          } else {
+            // Opening — show box, scroll it into view within the panel, then highlight
+            quoteBox.style.display = 'block';
+            requestAnimationFrame(() => {
+              quoteBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            });
+            highlightCitation(val.citation);
+          }
+        });
+
+        // Append quote box after the row's main content (appended below)
+        row._quoteBox = quoteBox;
+      }
 
       const nameEl = document.createElement('div');
       nameEl.className = 'tldr-pillar-name-wrap';
@@ -777,7 +1013,16 @@ function showResultPanel(data) {
 
       row.appendChild(nameEl);
       row.appendChild(statusEl);
-      pillarsEl.appendChild(row);
+
+      // Wrap row + quoteBox in a container so quoteBox sits below the row
+      if (row._quoteBox) {
+        const wrapper = document.createElement('div');
+        wrapper.appendChild(row);
+        wrapper.appendChild(row._quoteBox);
+        pillarsEl.appendChild(wrapper);
+      } else {
+        pillarsEl.appendChild(row);
+      }
     }
 
     panel.appendChild(pillarsEl);
@@ -787,20 +1032,24 @@ function showResultPanel(data) {
   // ── Score deductions (deep scan only, when score < 100) ──
   if (Array.isArray(data.deductions) && data.deductions.length > 0) {
     const dedEl = document.createElement('div');
-    dedEl.style.cssText = 'margin:10px 0 4px; padding:10px 14px; background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.15); border-radius:10px;';
+    dedEl.className = 'tldr-deductions';
 
     const dedTitle = document.createElement('div');
-    dedTitle.style.cssText = 'font-size:10px; font-weight:700; letter-spacing:0.08em; color:#f87171; margin-bottom:7px; text-transform:uppercase;';
+    dedTitle.className = 'tldr-deductions-title';
     dedTitle.textContent = `Why not 100? (−${100 - data.score} pts)`;
     dedEl.appendChild(dedTitle);
 
     data.deductions.forEach(d => {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:5px;';
-      row.innerHTML = `
-        <span style="font-size:11px; color:#94a3b8; line-height:1.4; flex:1;">${d.reason}</span>
-        <span style="font-size:11px; font-weight:700; color:#f87171; white-space:nowrap;">−${d.points} pts</span>
-      `;
+      row.className = 'tldr-deduction-row';
+      const reason = document.createElement('span');
+      reason.className = 'tldr-deduction-reason';
+      reason.textContent = d.reason;
+      const pts = document.createElement('span');
+      pts.className = 'tldr-deduction-pts';
+      pts.textContent = `−${d.points} pts`;
+      row.appendChild(reason);
+      row.appendChild(pts);
       dedEl.appendChild(row);
     });
 
@@ -810,19 +1059,52 @@ function showResultPanel(data) {
   // ── Footer ──
   const footer = document.createElement('div');
   footer.className = 'tldr-panel-footer';
-  footer.textContent = 'TL;DR Shield · Privacy Analysis';
+  footer.textContent = 'TLDR Shield · Privacy Analysis';
   panel.appendChild(footer);
 
+  // ── Close button ──
   closeBtn.onclick = () => {
     removeResultPanel();
     const btn = document.getElementById('tldr-shield-trigger');
-    if (btn) {
-      btn.style.display = 'flex';
-      setTriggerIdle(btn);
-    }
+    if (btn) { btn.style.display = 'flex'; setTriggerIdle(btn); }
   };
 
   document.body.appendChild(panel);
+
+  // ── Make panel draggable by its header ───────────────────────────────────
+  let pdragging = false, pOffX = 0, pOffY = 0;
+
+  header.addEventListener('pointerdown', (e) => {
+    if (e.target === closeBtn || closeBtn.contains(e.target)) return;
+    if (e.button !== 0) return;
+    pdragging = false;
+    const rect = panel.getBoundingClientRect();
+    pOffX = e.clientX - rect.left;
+    pOffY = e.clientY - rect.top;
+    header.setPointerCapture(e.pointerId);
+    header.classList.add('tldr-panel-dragging');
+    // Switch from bottom/right anchoring to top/left for free positioning
+    panel.style.bottom = 'auto';
+    panel.style.right  = 'auto';
+    panel.style.left   = rect.left + 'px';
+    panel.style.top    = rect.top  + 'px';
+    e.preventDefault();
+  });
+
+  header.addEventListener('pointermove', (e) => {
+    if (!header.hasPointerCapture(e.pointerId)) return;
+    pdragging = true;
+    const x = Math.max(0, Math.min(e.clientX - pOffX, window.innerWidth  - panel.offsetWidth));
+    const y = Math.max(0, Math.min(e.clientY - pOffY, window.innerHeight - panel.offsetHeight));
+    panel.style.left = x + 'px';
+    panel.style.top  = y + 'px';
+  });
+
+  header.addEventListener('pointerup', (e) => {
+    if (!header.hasPointerCapture(e.pointerId)) return;
+    header.releasePointerCapture(e.pointerId);
+    header.classList.remove('tldr-panel-dragging');
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

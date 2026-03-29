@@ -5,306 +5,329 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TLDR Shield</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #09090e;
+      --bg2:       rgba(255,255,255,0.03);
+      --border:    rgba(255,255,255,0.07);
+      --indigo:    #6366f1;
+      --indigo-dk: #4f46e5;
+      --text-1:    #f1f5f9;
+      --text-2:    #94a3b8;
+      --text-3:    #475569;
+      --text-4:    #334155;
+    }
 
     body {
       width: 320px;
-      background: #0f172a;
-      color: #f1f5f9;
+      background: var(--bg);
+      color: var(--text-1);
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
       font-size: 13px;
+      -webkit-font-smoothing: antialiased;
     }
 
     /* ── Header ── */
     .header {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 16px 18px 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.07);
+      gap: 9px;
+      padding: 14px 15px 12px;
+      border-bottom: 1px solid var(--border);
     }
-    .logo { font-size: 22px; line-height: 1; }
-    .title { font-weight: 900; font-size: 16px; color: #a5b4fc; letter-spacing: 0.02em; }
-    .title span { color: #f1f5f9; }
-
-    /* ── Status box ── */
-    .status-box {
-      margin: 14px 16px;
-      padding: 12px 14px;
-      background: rgba(255,255,255,0.04);
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.08);
-      min-height: 44px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    #status-text {
-      font-size: 12px;
-      color: #94a3b8;
-      line-height: 1.5;
-      flex: 1;
-    }
-    .status-indicator {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #334155;
+    .logo-wrap {
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 3px 10px rgba(99,102,241,0.4);
       flex-shrink: 0;
-      transition: background 0.3s;
     }
-    .status-indicator.scanning {
-      background: #818cf8;
-      animation: pulse 1s ease-in-out infinite;
-    }
-    .status-indicator.done { background: #34d399; }
-    .status-indicator.error { background: #f87171; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    /* ── Primary scan button ── */
-    #scan-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      width: calc(100% - 32px);
-      margin: 0 16px;
-      padding: 13px;
-      background: #4f46e5;
-      color: white;
-      border: none;
-      border-radius: 12px;
-      font-size: 13px;
+    .title {
       font-weight: 800;
-      cursor: pointer;
-      transition: background 0.2s, transform 0.15s;
-      letter-spacing: 0.04em;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+      color: var(--text-1);
     }
-    #scan-btn:hover { background: #4338ca; transform: translateY(-1px); }
-    #scan-btn:active { transform: translateY(0); }
-    #scan-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
-    /* ── Tier selector ── */
-    .tier-btn {
-      flex: 1;
-      padding: 8px 6px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 9px;
-      color: #64748b;
-      font-size: 12px;
+    .title-accent { color: #818cf8; }
+    #credits-pill {
+      display: none;
+      margin-left: auto;
+      font-size: 10.5px;
       font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 5px;
-      width: 50%;
+      padding: 3px 9px 3px 7px;
+      border-radius: 20px;
+      background: rgba(99,102,241,0.1);
+      color: #818cf8;
+      border: 1px solid rgba(99,102,241,0.2);
     }
-    .tier-btn:hover { border-color: rgba(255,255,255,0.15); color: #94a3b8; }
-    .tier-btn.active { background: rgba(79,70,229,0.15); border-color: #4f46e5; color: #a5b4fc; }
 
-    /* ── Toggles section ── */
-    .toggles {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 16px;
+    /* ── Auth Banner ── */
+    #auth-banner {
+      display: none;
+      margin: 12px 14px 0;
+      padding: 13px 14px;
+      background: rgba(99,102,241,0.06);
+      border: 1px solid rgba(99,102,241,0.16);
+      border-radius: 12px;
     }
+    #auth-banner p { font-size: 12px; color: #a5b4fc; font-weight: 500; margin-bottom: 10px; line-height: 1.5; }
+    #signin-btn {
+      width: 100%;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 9px;
+      background: var(--indigo-dk);
+      color: white;
+      border: none; border-radius: 9px;
+      font-family: inherit; font-size: 12.5px; font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    #signin-btn:hover { background: #4338ca; transform: translateY(-1px); }
+    .g-icon {
+      width: 15px; height: 15px;
+      background: white; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+
+    /* ── User Row ── */
+    #user-row {
+      display: none;
+      margin: 10px 14px 0;
+      padding: 7px 11px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      align-items: center; gap: 8px;
+    }
+    .user-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #34d399; box-shadow: 0 0 6px rgba(52,211,153,0.6);
+      flex-shrink: 0;
+    }
+    #user-email { font-size: 11px; color: var(--text-3); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #signout-btn {
+      font-size: 9.5px; font-weight: 700; color: var(--text-4);
+      background: none; border: none; cursor: pointer;
+      padding: 2px 6px; border-radius: 5px;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      transition: color 0.15s, background 0.15s;
+    }
+    #signout-btn:hover { color: #f87171; background: rgba(239,68,68,0.08); }
+
+    /* ── Status Box ── */
+    .status-box {
+      margin: 12px 14px;
+      padding: 9px 12px;
+      background: var(--bg2);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+      min-height: 36px;
+    }
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--text-4); flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .status-dot.scanning { background: var(--indigo); box-shadow: 0 0 8px rgba(99,102,241,0.7); animation: p 1s ease-in-out infinite; }
+    .status-dot.done     { background: #34d399; box-shadow: 0 0 6px rgba(52,211,153,0.5); }
+    .status-dot.error    { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+    @keyframes p { 0%,100%{opacity:1}50%{opacity:.3} }
+    #status-text { font-size: 11.5px; color: var(--text-2); line-height: 1.5; flex: 1; }
+
+    /* ── Tier Selector ── */
+    .tier-group { display: flex; gap: 5px; margin: 0 14px 10px; }
+    .tier-btn {
+      flex: 1; padding: 8px 6px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--text-3);
+      font-family: inherit; font-size: 11.5px; font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .tier-btn:hover { border-color: rgba(255,255,255,0.12); color: var(--text-2); }
+    .tier-btn.active { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.35); color: #a5b4fc; }
+    .tier-credit { font-size: 9px; font-weight: 600; opacity: 0.5; }
+
+    /* ── Scan Button ── */
+    #scan-btn {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      width: calc(100% - 28px); margin: 0 14px;
+      padding: 12px;
+      background: linear-gradient(135deg, #4f46e5, #6d28d9);
+      color: white; border: none; border-radius: 11px;
+      font-family: inherit; font-size: 13px; font-weight: 800;
+      cursor: pointer; letter-spacing: 0.02em;
+      transition: opacity 0.15s, transform 0.12s, box-shadow 0.15s;
+      box-shadow: 0 4px 18px rgba(79,70,229,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+    #scan-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(79,70,229,0.4), inset 0 1px 0 rgba(255,255,255,0.1); }
+    #scan-btn:active { transform: translateY(0); }
+    #scan-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* ── Toggles ── */
+    .toggles { display: flex; gap: 5px; padding: 10px 14px; }
     .toggle-item {
       flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      padding: 8px 6px;
-      background: rgba(255,255,255,0.04);
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.07);
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      padding: 8px 10px;
+      background: var(--bg2);
+      border-radius: 9px; border: 1px solid var(--border);
       cursor: pointer;
-      transition: border-color 0.2s;
+      transition: border-color 0.15s, background 0.15s;
     }
-    .toggle-item:hover { border-color: rgba(255,255,255,0.15); }
-    .toggle-label {
-      font-size: 9px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #64748b;
-    }
+    .toggle-item:hover { border-color: rgba(255,255,255,0.11); background: rgba(255,255,255,0.025); }
+    .toggle-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
     .toggle-switch {
-      width: 32px; height: 16px;
-      border-radius: 8px;
-      background: #334155;
-      position: relative;
-      transition: background 0.25s;
-      flex-shrink: 0;
+      width: 28px; height: 15px; border-radius: 8px;
+      background: var(--text-4); position: relative;
+      transition: background 0.2s; flex-shrink: 0;
     }
-    .toggle-switch.on { background: #4f46e5; }
-    .toggle-switch.on.eli5 { background: #10b981; }
-    .toggle-switch.on.dp   { background: #ef4444; }
+    .toggle-switch.on          { background: var(--indigo-dk); }
+    .toggle-switch.on.eli5     { background: #059669; }
+    .toggle-switch.on.dp       { background: #dc2626; }
     .toggle-switch::after {
-      content: '';
-      position: absolute;
-      width: 12px; height: 12px;
-      background: white;
-      border-radius: 50%;
+      content: ''; position: absolute;
+      width: 11px; height: 11px; background: white; border-radius: 50%;
       top: 2px; left: 2px;
-      transition: transform 0.25s;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
     }
-    .toggle-switch.on::after { transform: translateX(16px); }
+    .toggle-switch.on::after { transform: translateX(13px); }
 
     /* ── Divider ── */
-    .divider {
-      height: 1px;
-      background: rgba(255,255,255,0.07);
-      margin: 8px 16px;
-    }
+    .divider { height: 1px; background: var(--border); margin: 0 14px; }
 
-    /* ── Settings section ── */
-    .settings {
-      padding: 10px 16px;
-    }
-    .settings-label {
-      font-size: 9px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #475569;
-      margin-bottom: 6px;
-    }
-    .url-input-wrap {
-      display: flex;
-      gap: 6px;
-    }
+    /* ── Settings ── */
+    .settings { padding: 10px 14px; }
+    .settings-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-4); margin-bottom: 6px; }
+    .url-input-wrap { display: flex; gap: 5px; }
     #api-url-input {
       flex: 1;
-      background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 8px;
-      padding: 8px 10px;
-      color: #cbd5e1;
-      font-size: 11px;
-      outline: none;
-      font-family: 'Courier New', monospace;
-      transition: border-color 0.2s;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 9px;
+      color: var(--text-2); font-size: 10.5px; font-family: 'Courier New', monospace;
+      outline: none; transition: border-color 0.15s;
     }
-    #api-url-input:focus { border-color: #4f46e5; }
+    #api-url-input:focus { border-color: rgba(99,102,241,0.45); }
+    #api-url-input::placeholder { color: var(--text-4); }
     #save-url-btn {
-      background: #1e293b;
-      border: 1px solid rgba(255,255,255,0.1);
-      color: #a5b4fc;
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: background 0.2s;
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      color: var(--text-2); border-radius: 8px; padding: 7px 11px;
+      font-family: inherit; font-size: 11px; font-weight: 700;
+      cursor: pointer; transition: background 0.15s, color 0.15s; white-space: nowrap;
     }
-    #save-url-btn:hover { background: #334155; }
-    #url-saved-msg {
-      font-size: 10px;
-      color: #34d399;
-      margin-top: 5px;
-      display: none;
-    }
+    #save-url-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-1); }
+    #url-saved-msg { font-size: 10px; color: #34d399; margin-top: 5px; display: none; }
 
-    /* ── Footer links ── */
+    /* ── Footer ── */
     .footer {
-      display: flex;
-      justify-content: center;
-      gap: 16px;
-      padding: 10px 16px 14px;
-      border-top: 1px solid rgba(255,255,255,0.07);
+      display: flex; justify-content: center; gap: 18px;
+      padding: 9px 14px 13px;
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
     }
-    .footer a {
-      font-size: 10px;
-      color: #475569;
-      text-decoration: none;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      transition: color 0.2s;
-    }
-    .footer a:hover { color: #a5b4fc; }
+    .footer a { font-size: 9.5px; color: var(--text-4); text-decoration: none; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; transition: color 0.15s; }
+    .footer a:hover { color: #818cf8; }
   </style>
 </head>
 <body>
 
+  <!-- Header -->
   <div class="header">
-    <span class="logo">🛡️</span>
-    <span class="title"><span>TLDR</span> Shield</span>
-    <div id="credits-pill" style="display:none; margin-left:auto; font-size:11px; font-weight:800; padding:4px 10px; border-radius:20px; background:rgba(16,185,129,0.12); color:#34d399; border:1px solid rgba(16,185,129,0.25);">
-      ⚡ <span id="credits-val">–</span>
+    <div class="logo-wrap">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1L13.5 3.5V8C13.5 11.5 10.5 14 8 15C5.5 14 2.5 11.5 2.5 8V3.5L8 1Z"
+          fill="rgba(255,255,255,0.12)" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M5.5 8L7 9.5L10.5 6" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </div>
+    <span class="title"><span class="title-accent">TLDR</span> Shield</span>
+    <div id="credits-pill">⚡ <span id="credits-val">–</span></div>
   </div>
 
-  <!-- Auth banner — shown when not signed in -->
-  <div id="auth-banner" style="display:none; margin:12px 16px 0; padding:12px 14px; background:rgba(79,70,229,0.1); border:1px solid rgba(79,70,229,0.25); border-radius:12px;">
-    <p style="font-size:12px; color:#a5b4fc; font-weight:600; margin-bottom:8px;">Sign in to scan pages and track credits.</p>
-    <button id="signin-btn" style="width:100%; padding:9px; background:#4f46e5; color:white; border:none; border-radius:9px; font-size:12px; font-weight:800; cursor:pointer; letter-spacing:0.04em;">
-      Sign in with Google →
+  <!-- Auth banner -->
+  <div id="auth-banner">
+    <p>Sign in to scan pages and track your monthly credits.</p>
+    <button id="signin-btn">
+      <div class="g-icon">
+        <svg width="10" height="10" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/>
+          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.163 6.656 3.58 9 3.58z"/>
+        </svg>
+      </div>
+      Continue with Google
     </button>
   </div>
 
   <!-- Signed-in user row -->
-  <div id="user-row" style="display:none; margin:10px 16px 0; padding:8px 12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:10px; display:flex; align-items:center; gap:8px;">
-    <span id="user-email" style="font-size:11px; color:#64748b; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-    <button id="signout-btn" style="font-size:10px; font-weight:700; color:#475569; background:none; border:none; cursor:pointer; padding:2px 6px; border-radius:6px; transition:color 0.2s;">Sign out</button>
+  <div id="user-row">
+    <div class="user-dot"></div>
+    <span id="user-email"></span>
+    <button id="signout-btn">Sign out</button>
   </div>
 
-  <div class="status-box" style="margin-top:12px;">
-    <div class="status-indicator" id="status-dot"></div>
+  <!-- Status -->
+  <div class="status-box">
+    <div class="status-dot" id="status-dot"></div>
     <p id="status-text">Ready to analyze the active tab.</p>
   </div>
 
   <!-- Tier selector -->
-  <div style="display:flex; gap:6px; margin:0 16px 8px;">
-    <button class="tier-btn active" id="tier-quick" data-tier="quick" title="Quick scan — 10 credits">
-      ⚡ Quick <span style="font-size:9px; opacity:0.6; font-weight:600;">10 cr</span>
+  <div class="tier-group">
+    <button class="tier-btn active" id="tier-quick" data-tier="quick">
+      ⚡ Quick <span class="tier-credit">10 cr</span>
     </button>
-    <button class="tier-btn" id="tier-deep" data-tier="deep" title="Deep scan — 20 credits">
-      🔬 Deep <span style="font-size:9px; opacity:0.6; font-weight:600;">20 cr</span>
+    <button class="tier-btn" id="tier-deep" data-tier="deep">
+      🔬 Deep <span class="tier-credit">20 cr</span>
     </button>
   </div>
 
-  <button id="scan-btn">⚡ Scan Current Page</button>
+  <!-- Scan button -->
+  <button id="scan-btn">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L19 5.5V12C19 16.5 15.5 20 12 21C8.5 20 5 16.5 5 12V5.5L12 2Z"/>
+      <path d="M9 12L11 14L15 10"/>
+    </svg>
+    Scan Current Page
+  </button>
 
+  <!-- Toggles -->
   <div class="toggles">
-    <div class="toggle-item" id="eli5-toggle" title="Explain Like I'm Five — simplifies legal jargon">
-      <span class="toggle-label">👶 ELI5</span>
+    <div class="toggle-item" id="eli5-toggle">
+      <span class="toggle-label">ELI5 Mode</span>
       <div class="toggle-switch eli5" id="eli5-switch"></div>
     </div>
-    <div class="toggle-item" id="dp-toggle" title="Detect manipulative dark patterns in the text">
-      <span class="toggle-label">⚠️ Dark Patterns</span>
+    <div class="toggle-item" id="dp-toggle">
+      <span class="toggle-label">Dark Patterns</span>
       <div class="toggle-switch dp" id="dp-switch"></div>
     </div>
   </div>
 
   <div class="divider"></div>
 
+  <!-- Settings -->
   <div class="settings">
-    <p class="settings-label">⚙️ Backend URL</p>
+    <p class="settings-label">Backend URL</p>
     <div class="url-input-wrap">
-      <input
-        type="text"
-        id="api-url-input"
+      <input type="text" id="api-url-input"
         placeholder="https://your-backend.run.app/api/analyze"
-        spellcheck="false"
-        autocomplete="off"
-      />
+        spellcheck="false" autocomplete="off" />
       <button id="save-url-btn">Save</button>
     </div>
-    <p id="url-saved-msg">✓ Saved!</p>
+    <p id="url-saved-msg">✓ Saved</p>
   </div>
 
+  <!-- Footer -->
   <div class="footer">
-    <a href="#" id="open-dashboard">Open Dashboard</a>
+    <a href="#" id="open-dashboard">Dashboard</a>
     <a href="chrome://extensions/" target="_blank">Extensions</a>
   </div>
 
