@@ -270,7 +270,7 @@ const CHUNK_THRESHOLD  = 12000;  // chars — single-call below this (~3k tokens
 const CHUNK_SIZE       = 10000;  // chars per block (~2.5k tokens, safe for 128k ctx)
 const CHUNK_OVERLAP    = 1500;   // FIX #13: 1500 chars (~250 words) preserves multi-paragraph clause context
 const MAX_CHUNKS       = 8;      // safety cap → max ~80k chars analyzed per request
-const CHUNK_CONCURRENCY = 1;     // sequential — prevents all 3 keys being rate-limited simultaneously
+const CHUNK_CONCURRENCY = 2;     // 2 parallel chunks — balances speed vs NIM rate limits (3 keys available)
 
 function chunkText(text: string): string[] {
     if (text.length <= CHUNK_THRESHOLD) return [text];
@@ -877,7 +877,7 @@ async function startServer() {
 
                     // Small pause so user sees the split step before parallel work begins
                     await new Promise(r => setTimeout(r, 500));
-                    sendUpdate({ status: `Analyzing ${chunks.length} blocks in parallel...` });
+                    sendUpdate({ status: `Analyzing ${chunks.length} blocks...` });
 
                     // FIX #8: Analyze blocks in batches of CHUNK_CONCURRENCY — avoids
                     // hammering all 3 NIM keys simultaneously with 8 parallel requests.
