@@ -17,9 +17,56 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// ── PDF extraction via offscreen document ─────────────────────────────────
+// chrome.offscreen is MV3 — creates a hidden document that can use ESM + pdf.js
+// without the CSP restrictions that apply to content scripts.
+
+async function ensureOffscreenDocument() {
+  const existing = await chrome.offscreen.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [chrome.runtime.getURL('offscreen.html')],
+  }).catch(() => []);
+  if (existing.length > 0) return;
+  await chrome.offscreen.createDocument({
+    url:    'offscreen.html',
+    reasons: ['DOM_PARSER'],
+    justification: 'Extract text from PDF Terms & Conditions pages',
+  });
+}
+
+async function extractPdfAndAnalyze(pdfUrl, tabId) {
+  try {
+    await ensureOffscreenDocument();
+    chrome.runtime.sendMessage({ type: 'EXTRACT_PDF', url: pdfUrl, tabId });
+  } catch (err) {
+    chrome.tabs.sendMessage(tabId, {
+      type: 'ANALYSIS_RESULT',
+      error: 'Could not read PDF: ' + (err?.message ?? err),
+    });
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender) => {
+  // PDF text extracted by offscreen.js — forward to analysis
+  if (message.type === 'PDF_TEXT') {
+    analyzeText(message.text, message.tabId, true /* forceDeep — PDFs are always large */, 'deep');
+    return;
+  }
+  if (message.type === 'PDF_ERROR') {
+    if (message.tabId) {
+      chrome.tabs.sendMessage(message.tabId, {
+        type: 'ANALYSIS_RESULT',
+        error: 'PDF extraction failed: ' + message.error,
+      });
+    }
+    return;
+  }
   if (message.type === 'ANALYZE_TEXT') {
     analyzeText(message.text, sender.tab?.id, message.forceDeep ?? false, message.tier ?? null);
+  }
+  // PDF page detected by content script — route through offscreen
+  if (message.type === 'ANALYZE_PDF') {
+    extractPdfAndAnalyze(message.url, sender.tab?.id);
   }
   // Auth token storage — sent by content.js after web app sign-in
   if (message.type === 'STORE_AUTH') {
