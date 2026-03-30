@@ -392,17 +392,44 @@ function extractSemanticText() {
   return null;
 }
 
+// ── Readability extraction — strips nav/ads/banners, returns clean legal text ─
+// @mozilla/readability is loaded before this file in manifest.json (lib/Readability.js)
+function extractWithReadability() {
+  try {
+    if (typeof Readability === 'undefined') return null;
+    // Clone the document so Readability's DOM surgery doesn't affect the live page
+    const docClone = document.cloneNode(true);
+    const article  = new Readability(docClone, {
+      charThreshold: 300,         // minimum text chars to accept as content
+      keepClasses:   false,       // strip class noise
+      nbTopCandidates: 10,
+    }).parse();
+    if (!article?.textContent) return null;
+    const text = article.textContent.trim();
+    // Sanity check: must be substantial (>800 chars) to trust over fallbacks
+    return text.length >= 800 ? text : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ── MAIN ENTRY POINT ─────────────────────────────────────────────────────────
 // Priority order:
-//   1. Modal scroll content (Form 4) — most specific
+//   0. Readability — best signal/noise ratio for standard web pages
+//   1. Modal scroll content (Form 4) — visible T&C modals
 //   2. Semantic container → check for pagination (Form 1 + 2)
 //   3. Virtual scroll detection (Form 3) — only if body seems short
 //   4. Raw body fallback
 
 async function extractPageText() {
-  // Form 4: visible modal with scrollable T&C
+  // Form 4: visible modal with scrollable T&C (checked before Readability —
+  // Readability ignores hidden/overflow elements that modals render)
   const modalText = await extractModalScrollContent();
   if (modalText) return cleanText(modalText);
+
+  // Form 0: Readability — strips nav, ads, cookie banners, sidebars
+  const readabilityText = extractWithReadability();
+  if (readabilityText) return cleanText(readabilityText);
 
   // Form 1: standard semantic container
   const semanticText = extractSemanticText();
@@ -590,6 +617,15 @@ function createTriggerButton() {
     if (btn.dataset.scanning === 'true') return;
     setTriggerScanning(btn);
     try {
+      // PDF detection: if the page IS a PDF (Chrome shows it via the built-in viewer
+      // or the URL ends with .pdf), route to offscreen pdf.js extractor instead.
+      const isPdf = document.contentType === 'application/pdf' ||
+                    /\.pdf(\?.*)?$/i.test(location.href) ||
+                    document.querySelector('embed[type="application/pdf"]') !== null;
+      if (isPdf) {
+        chrome.runtime.sendMessage({ type: 'ANALYZE_PDF', url: location.href });
+        return; // background.js will send ANALYSIS_RESULT when done
+      }
       const text = await extractPageText();
       chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text });
     } catch (err) {
@@ -648,144 +684,142 @@ function removeResultPanel() {
 }
 
 // Finds citation text in the page DOM, scrolls to it, and highlights it
+// ── Citation highlighting using mark.js ──────────────────────────────────────
+// mark.js (lib/mark.min.js loaded before this file) handles:
+//   - Text split across inline DOM elements (<strong>, <em>, <span>, <a>)
+//   - React/Vue rendered content (reconciles text node fragments)
+//   - Case-insensitive, diacritic-insensitive matching
+//   - Shadow DOM traversal via iframes option
+//
+// Strategy:
+//   1. Try full citation verbatim (most accurate)
+//   2. Try longest prefix slices (60, 40 chars)
+//   3. Try longest 8→5 word windows (handles partial paraphrase survival)
+//   Each attempt is case-insensitive, partial accuracy mode.
+
+// The scope for mark.js — everything except our own injected UI
+function getMarkScope() {
+  const body = document.body;
+  if (!body) return body;
+  // Create a temporary wrapper including everything except our UI elements
+  // mark.js accepts a single element as context
+  return body;
+}
+
+// Exclude selector: mark.js will skip these containers
+const MARK_EXCLUDE = [
+  '#tldr-shield-result',
+  '#tldr-shield-trigger',
+  '#tldr-context-menu',
+  '#tldr-progress-panel',
+  'script', 'style', 'noscript',
+];
+
 function highlightCitation(citation) {
   if (!citation || citation === 'Not addressed in document.') return false;
+  if (typeof Mark === 'undefined') return highlightCitationFallback(citation);
 
-  // Remove previous highlights
-  document.querySelectorAll('.tldr-citation-highlight').forEach(el => {
-    const parent = el.parentNode;
-    parent.replaceChild(document.createTextNode(el.textContent), el);
-    parent.normalize();
-  });
+  // Clear previous highlights
+  const scope = getMarkScope();
+  const markInstance = new Mark(scope);
+  markInstance.unmark({ exclude: MARK_EXCLUDE });
 
-  // Clean surrounding quotes the LLM sometimes adds
+  // Clean surrounding quotes
   const clean = citation.replace(/^["'"'\u201c\u2018]|["'"'\u201d\u2019]$/g, '').trim();
+  if (!clean) return false;
 
-  // Build candidate search strings — most specific first
+  // Build ordered candidates — most specific first
   const candidates = [];
 
-  // 1. Quoted fragments inside the citation — most verbatim, highest priority
-  const quotedRe = /['"'"\u201c\u2018]([^'"'"\u201d\u2019]{12,}?)['"'"\u201d\u2019]/g;
-  let qm;
-  while ((qm = quotedRe.exec(clean)) !== null) candidates.push(qm[1].trim());
+  // 1. Full citation
+  candidates.push(clean);
 
-  // 2. Exact prefix slices
-  for (const len of [80, 60, 40]) {
+  // 2. Prefix slices (longest → shortest)
+  for (const len of [80, 60, 40, 25]) {
     const s = clean.slice(0, len).trim();
-    if (s.length >= 20) candidates.push(s);
+    if (s.length >= 20 && s !== clean) candidates.push(s);
   }
 
-  // 3. Sliding windows: 7 → 6 → 5 → 4 words (wider net for paraphrased citations)
-  const words = clean.split(/\s+/).filter(w => w.length > 1);
-  for (const size of [7, 6, 5, 4]) {
+  // 3. Sliding word windows (8→5 words)
+  const words = clean.split(/\s+/).filter(Boolean);
+  for (const size of [8, 7, 6, 5]) {
     for (let i = 0; i <= words.length - size; i++) {
       candidates.push(words.slice(i, i + size).join(' '));
     }
   }
 
-  // 4. Key legal noun-phrases: consecutive pairs of "meaningful" words (length > 4, not stopwords)
-  // Helps when the citation is a paraphrase but still contains domain-specific terms.
-  const STOPWORDS = new Set(['that','this','with','from','your','their','have','will','shall','which','when','where','they','them','been','were','into','upon','under','over','such','only','also','each','both','more','than','about','other','these','those','some','what','would','could','should','there','after','before','without','within','between','through','whether','during','include','including','including,','using','used','uses','provide','provides','provided','make','makes','made','right','rights','terms','policy','service','services']);
-  const meaningful = words.filter(w => w.length > 4 && !STOPWORDS.has(w.toLowerCase().replace(/[^a-z]/g, '')));
-  for (let i = 0; i < meaningful.length - 1; i++) {
-    candidates.push(`${meaningful[i]} ${meaningful[i + 1]}`);
-  }
+  // Try each candidate until mark.js finds a match
+  return new Promise((resolve) => {
+    let found = false;
+    let idx   = 0;
 
-  // ── Strategy A: window.find() — searches across DOM element boundaries ────
-  // This is Chrome's native Ctrl+F engine, handles text split across <p>/<em>/<strong>
-  const tryWindowFind = (needle) => {
-    window.getSelection()?.removeAllRanges();
-    const found = window.find(needle, false /*case*/, false /*back*/, true /*wrap*/, false, false, false);
-    if (!found) return false;
+    const tryNext = () => {
+      if (found || idx >= candidates.length) { resolve(found); return; }
+      const needle = candidates[idx++];
+      if (!needle || needle.length < 15) { tryNext(); return; }
 
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return false;
-    const range = sel.getRangeAt(0);
+      markInstance.unmark({ exclude: MARK_EXCLUDE, done: () => {
+        markInstance.mark(needle, {
+          element:    'mark',
+          className:  'tldr-citation-highlight',
+          exclude:    MARK_EXCLUDE,
+          accuracy:   'partially',
+          caseSensitive: false,
+          separateWordSearch: false,
+          ignorePunctuation: [',', '.', ';', ':', '!', '?', '"', "'"],
+          acrossElements: true,
+          done: (count) => {
+            if (count > 0) {
+              found = true;
+              // Scroll first highlight into view
+              const first = document.querySelector('.tldr-citation-highlight');
+              if (first) {
+                first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Fade out after 5s
+                setTimeout(() => {
+                  document.querySelectorAll('.tldr-citation-highlight').forEach(el => {
+                    el.style.transition = 'background 0.9s, box-shadow 0.9s, outline 0.9s';
+                    el.style.background = 'transparent';
+                    el.style.boxShadow  = 'none';
+                    el.style.outline    = 'none';
+                  });
+                }, 5000);
+              }
+              resolve(true);
+            } else {
+              tryNext();
+            }
+          },
+        });
+      }});
+    };
 
-    // Make sure match isn't inside our own panel
-    if (range.commonAncestorContainer?.parentElement?.closest(
-      '#tldr-shield-result, #tldr-shield-trigger, #tldr-context-menu, #tldr-progress-panel'
-    )) {
-      window.getSelection()?.removeAllRanges();
-      return false;
-    }
-
-    const span = document.createElement('mark');
-    span.className = 'tldr-citation-highlight';
-    span.style.cssText = 'background:#fef08a;color:#1e1b4b;border-radius:3px;padding:0 2px;box-shadow:0 0 0 2px #fde047;scroll-margin-top:80px;';
-
-    try {
-      range.surroundContents(span);
-    } catch {
-      // Range spans multiple elements — scroll to anchor node without wrapping
-      const anchor = range.startContainer?.parentElement;
-      if (anchor) anchor.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      window.getSelection()?.removeAllRanges();
-      // Still counts as "found" so quote box doesn't open
-      setTimeout(() => {}, 4000);
-      return true;
-    }
-
-    window.getSelection()?.removeAllRanges();
-    span.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => {
-      span.style.transition = 'background 0.8s, box-shadow 0.8s';
-      span.style.background = 'transparent';
-      span.style.boxShadow  = 'none';
-    }, 4000);
-    return true;
-  };
-
-  // ── Strategy B: TreeWalker — single text-node exact match ─────────────────
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      const tag = node.parentElement?.tagName;
-      if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(tag)) return NodeFilter.FILTER_REJECT;
-      if (node.parentElement?.closest(
-        '#tldr-shield-result, #tldr-shield-trigger, #tldr-context-menu, #tldr-progress-panel'
-      )) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    }
+    tryNext();
   });
-  const textNodes = [];
-  while (walker.nextNode()) textNodes.push(walker.currentNode);
+}
 
-  const tryTreeWalker = (needle) => {
-    const lowerNeedle = needle.toLowerCase();
-    for (const node of textNodes) {
-      const idx = node.textContent.toLowerCase().indexOf(lowerNeedle);
-      if (idx === -1) continue;
-
-      const origText = node.textContent;
-      const span = document.createElement('mark');
-      span.className = 'tldr-citation-highlight';
-      span.textContent = origText.slice(idx, idx + needle.length);
-      span.style.cssText = 'background:#fef08a;color:#1e1b4b;border-radius:3px;padding:0 2px;box-shadow:0 0 0 2px #fde047;scroll-margin-top:80px;';
-
-      const frag = document.createDocumentFragment();
-      if (idx > 0) frag.appendChild(document.createTextNode(origText.slice(0, idx)));
-      frag.appendChild(span);
-      if (idx + needle.length < origText.length) frag.appendChild(document.createTextNode(origText.slice(idx + needle.length)));
-      node.parentNode.replaceChild(frag, node);
-
-      span.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setTimeout(() => {
-        span.style.transition = 'background 0.8s, box-shadow 0.8s';
-        span.style.background = 'transparent';
-        span.style.boxShadow  = 'none';
-      }, 4000);
-      return true;
+// Synchronous fallback used when mark.js is unavailable
+function highlightCitationFallback(citation) {
+  if (!citation || citation === 'Not addressed in document.') return false;
+  document.querySelectorAll('.tldr-citation-highlight').forEach(el => {
+    const parent = el.parentNode;
+    if (parent) { parent.replaceChild(document.createTextNode(el.textContent), el); parent.normalize(); }
+  });
+  const clean = citation.replace(/^["'"'\u201c\u2018]|["'"'\u201d\u2019]$/g, '').trim();
+  window.getSelection()?.removeAllRanges();
+  const found = window.find(clean, false, false, true, false, false, false);
+  if (found) {
+    const sel = window.getSelection();
+    if (sel?.rangeCount) {
+      try {
+        const span = document.createElement('mark');
+        span.className = 'tldr-citation-highlight';
+        sel.getRangeAt(0).surroundContents(span);
+        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (_) {}
+      window.getSelection()?.removeAllRanges();
     }
-    return false;
-  };
-
-  // Try all candidates with window.find first, then TreeWalker fallback
-  const seen = new Set();
-  for (const search of candidates) {
-    const key = search.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (tryWindowFind(search) || tryTreeWalker(search)) return true;
+    return true;
   }
   return false;
 }
@@ -843,11 +877,25 @@ function showOutOfCreditsPanel(resetDate) {
   panel.querySelector('#tldr-oc-close').addEventListener('click', () => panel.remove());
 }
 
+// Inject premium fonts once per page session
+let tldrFontsInjected = false;
+function injectFonts() {
+  if (tldrFontsInjected || document.getElementById('tldr-fonts')) return;
+  tldrFontsInjected = true;
+  const link = document.createElement('link');
+  link.id   = 'tldr-fonts';
+  link.rel  = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,400;0,600;0,700;1,400;1,600&family=JetBrains+Mono:wght@400;500;600&display=swap';
+  document.head.appendChild(link);
+}
+
 function showResultPanel(data) {
   removeResultPanel();
+  injectFonts();
 
   const ratingClass = data.rating?.toLowerCase() ?? 'risky';
-  const score       = data.score ?? '?';
+  const score       = typeof data.score === 'number' ? data.score : null;
+  const scoreDisplay = score !== null ? score : '?';
   const isQuick     = !data.pillars;
 
   const PILLAR_LABELS = {
@@ -890,21 +938,45 @@ function showResultPanel(data) {
   header.appendChild(brand);
   header.appendChild(closeBtn);
 
-  // ── Rating badge ──
+  // ── Rating badge with score ring ──
   const badge = document.createElement('div');
-  badge.className = `tldr-rating-badge ${ratingClass}`;
+  const isExtremeRisk = data.rating === 'RISKY' && score !== null && score <= 15;
+  badge.className = `tldr-rating-badge ${ratingClass}${isExtremeRisk ? ' tldr-extreme' : ''}`;
 
-  // Big score number
-  const scoreEl = document.createElement('div');
-  scoreEl.className = 'tldr-score-number';
-  scoreEl.innerHTML = `${score}<span class="tldr-score-denom">/100</span>`;
+  // Left: animated SVG ring showing score percentage
+  const ringWrap = document.createElement('div');
+  ringWrap.className = 'tldr-score-ring-wrap';
+  const ringEl = document.createElement('div');
+  ringEl.className = 'tldr-score-ring';
+  const CIRCUMFERENCE = 201.06; // 2π × 32
+  const scorePct = score !== null ? Math.max(0, Math.min(100, score)) : 0;
+  const dashOffset = CIRCUMFERENCE * (1 - scorePct / 100);
+  ringEl.innerHTML = `
+    <svg viewBox="0 0 74 74" width="74" height="74">
+      <circle class="tldr-score-ring-track" cx="37" cy="37" r="32"/>
+      <circle class="tldr-score-ring-fill" cx="37" cy="37" r="32"
+              style="stroke-dashoffset:${CIRCUMFERENCE}"/>
+    </svg>
+    <div class="tldr-score-ring-inner">
+      <span class="tldr-score-number">${scoreDisplay}</span>
+      <span class="tldr-score-denom">/100</span>
+    </div>`;
+  ringWrap.appendChild(ringEl);
 
-  // Rating word (SAFE / OKAY / RISKY)
+  // Animate ring fill after insertion (must set via setTimeout so transition fires)
+  setTimeout(() => {
+    const fill = ringEl.querySelector('.tldr-score-ring-fill');
+    if (fill) fill.style.strokeDashoffset = dashOffset;
+  }, 50);
+
+  // Right: labels
+  const labelsEl = document.createElement('div');
+  labelsEl.className = 'tldr-score-labels';
+
   const ratingLabel = document.createElement('div');
   ratingLabel.className = 'tldr-rating-label';
-  ratingLabel.textContent = data.rating ?? 'UNKNOWN';
+  ratingLabel.textContent = isExtremeRisk ? 'EXTREME RISK' : (data.rating ?? 'UNKNOWN');
 
-  // Meta line (cached / scan type)
   const ratingMeta = document.createElement('div');
   ratingMeta.className = 'tldr-rating-score';
   if (data.cached) {
@@ -917,9 +989,23 @@ function showResultPanel(data) {
     ratingMeta.textContent = 'Deep scan';
   }
 
-  badge.appendChild(scoreEl);
-  badge.appendChild(ratingLabel);
-  badge.appendChild(ratingMeta);
+  // Violation count pill
+  if (!isQuick && data.pillars) {
+    const vCount = Object.values(data.pillars).filter(p => p.violation).length;
+    const totalP = Object.keys(data.pillars).length;
+    const vPill  = document.createElement('div');
+    vPill.className = 'tldr-violation-count';
+    vPill.textContent = vCount === 0 ? `${totalP}/${totalP} clear` : `${vCount} violation${vCount > 1 ? 's' : ''}`;
+    labelsEl.appendChild(ratingLabel);
+    labelsEl.appendChild(ratingMeta);
+    labelsEl.appendChild(vPill);
+  } else {
+    labelsEl.appendChild(ratingLabel);
+    labelsEl.appendChild(ratingMeta);
+  }
+
+  badge.appendChild(ringWrap);
+  badge.appendChild(labelsEl);
 
   panel.appendChild(header);
   panel.appendChild(badge);
@@ -1011,6 +1097,16 @@ function showResultPanel(data) {
       statusEl.className = `tldr-pillar-status ${val.violation ? 'violation' : 'clear'}`;
       statusEl.textContent = val.violation ? 'VIOLATION' : 'CLEAR';
 
+      // Confidence badge (only show if server provided it)
+      const conf = val.confidence; // 'HIGH' | 'MEDIUM' | 'LOW' | undefined
+      if (conf) {
+        const confBadge = document.createElement('span');
+        confBadge.className = `tldr-confidence tldr-confidence-${conf.toLowerCase()}`;
+        confBadge.textContent = conf;
+        confBadge.title = conf === 'HIGH' ? 'Explicit verbatim clause found' : conf === 'MEDIUM' ? 'Clause exists but partially ambiguous' : 'Inferred or delegated to external document';
+        nameEl.appendChild(confBadge);
+      }
+
       row.appendChild(nameEl);
       row.appendChild(statusEl);
 
@@ -1056,10 +1152,59 @@ function showResultPanel(data) {
     panel.appendChild(dedEl);
   }
 
+  // ── Report incorrect result button ──
+  const reportBtn = document.createElement('button');
+  reportBtn.className = 'tldr-report-btn';
+  reportBtn.setAttribute('aria-label', 'Report incorrect result');
+  reportBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 1v4M5 8v.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Report incorrect result`;
+  reportBtn.addEventListener('click', () => {
+    if (reportBtn.classList.contains('tldr-reported')) return;
+    reportBtn.textContent = 'Sending…';
+    reportBtn.disabled = true;
+    const payload = {
+      url:    location.href,
+      rating: data.rating,
+      score:  data.score,
+      pillars: data.pillars ? Object.fromEntries(
+        Object.entries(data.pillars).map(([k, v]) => [k, { violation: v.violation, confidence: v.confidence }])
+      ) : null,
+      requestId: data.requestId ?? null,
+      userAgent: navigator.userAgent.slice(0, 120),
+    };
+    // Use stored API URL base (same as analyze endpoint), fallback to Cloud Run URL
+    const DEFAULT_REPORT_BASE = 'https://ais-dev-7hajrqzemtlrs4e54xvhfc-762479635980.asia-southeast1.run.app';
+    const getReportUrl = (cb) => {
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get({ apiUrl: DEFAULT_REPORT_BASE + '/api/analyze' }, ({ apiUrl }) => {
+          cb((apiUrl || '').replace(/\/api\/analyze$/, '') || DEFAULT_REPORT_BASE);
+        });
+      } else {
+        cb(DEFAULT_REPORT_BASE);
+      }
+    };
+    getReportUrl((base) => {
+    fetch(base + '/api/report', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    })
+      .then(() => {
+        reportBtn.textContent = "\u2713 Thanks \u2014 we'll review it";
+        reportBtn.classList.add('tldr-reported');
+        reportBtn.disabled = false;
+      })
+      .catch(() => {
+        reportBtn.textContent = 'Report incorrect result';
+        reportBtn.disabled = false;
+      });
+    }); // getReportUrl callback
+  });   // reportBtn click
+  panel.appendChild(reportBtn);
+
   // ── Footer ──
   const footer = document.createElement('div');
   footer.className = 'tldr-panel-footer';
-  footer.textContent = 'TLDR Shield · Privacy Analysis';
+  footer.textContent = 'TLDR Shield · AI Privacy Analysis';
   panel.appendChild(footer);
 
   // ── Close button ──
@@ -1189,7 +1334,9 @@ function runDetection() {
   removeResultPanel();
 
   // Always show FAB on every page (user can disable per-site or globally via right-click)
+  if (typeof chrome === 'undefined' || !chrome.storage) return;
   chrome.storage.local.get({ disabledAll: false, disabledSites: [] }, ({ disabledAll, disabledSites }) => {
+    if (chrome.runtime.lastError) return; // context invalidated mid-callback
     if (disabledAll || disabledSites.includes(location.hostname)) return;
     createTriggerButton();
   });

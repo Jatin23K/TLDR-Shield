@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import rateLimit from "express-rate-limit";
 import { readFileSync } from "fs";
+import nlp from "compromise";
 
 dotenv.config();
 
@@ -249,7 +250,7 @@ const MODELS = {
         id: QUICK_MODEL_ID,
         label: "Basic scan model",
         maxTokens: 120,      // badge-only: just rating+score+tldr → ~2-3s with llama-3.3-70b
-        temperature: 0.2,
+        temperature: 0,      // deterministic — reduces creative paraphrasing
         timeoutMs: 20000,
         stepIntervalMs: 900,
     },
@@ -257,7 +258,7 @@ const MODELS = {
         id: DEEP_MODEL_ID,
         label: "Deep scan model",
         maxTokens: 1400,     // increased: verbatim citations need room — ~6-12s with llama-3.3-70b
-        temperature: 0.2,
+        temperature: 0,      // deterministic — reduces creative paraphrasing
         timeoutMs: 30000,
         stepIntervalMs: 1200,
     },
@@ -268,21 +269,261 @@ const MODELS = {
 // analyze each block in parallel, then aggregate into one verdict.
 const CHUNK_THRESHOLD  = 12000;  // chars — single-call below this (~3k tokens)
 const CHUNK_SIZE       = 10000;  // chars per block (~2.5k tokens, safe for 128k ctx)
-const CHUNK_OVERLAP    = 1500;   // FIX #13: 1500 chars (~250 words) preserves multi-paragraph clause context
+const CHUNK_OVERLAP    = 2500;   // FIX #13→#20: increased to 2500 chars (~400 words) — prevents clause-boundary splits
 const MAX_CHUNKS       = 8;      // safety cap → max ~80k chars analyzed per request
 const CHUNK_CONCURRENCY = 2;     // 2 parallel chunks — balances speed vs NIM rate limits (3 keys available)
 
+// FIX #20: Sentence-aware chunking using compromise NLP.
+// Splits text into sentences first, then groups sentences into chunks that stay
+// under CHUNK_SIZE chars with CHUNK_OVERLAP chars of sentence-level overlap.
+// This prevents clauses from being sliced mid-sentence, which was the leading
+// cause of the LLM missing context and producing paraphrased citations.
+
 function chunkText(text: string): string[] {
     if (text.length <= CHUNK_THRESHOLD) return [text];
-    const chunks: string[] = [];
-    let start = 0;
-    while (start < text.length && chunks.length < MAX_CHUNKS) {
-        const end = Math.min(start + CHUNK_SIZE, text.length);
-        chunks.push(text.slice(start, end));
-        if (end === text.length) break;
-        start = end - CHUNK_OVERLAP;
+
+    // Use compromise to split into sentences; fall back to punctuation split
+    let sentences: string[];
+    try {
+        sentences = (nlp(text) as any).sentences().out('array') as string[];
+        // compromise sometimes returns empty strings or very short fragments — filter
+        sentences = sentences.filter((s: string) => s.trim().length > 10);
+    } catch {
+        sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 10);
     }
-    return chunks;
+
+    if (sentences.length === 0) sentences = [text];
+
+    const chunks: string[] = [];
+    let current = '';
+    // Track tail sentences for overlap between chunks
+    let tailSentences: string[] = [];
+
+    for (let i = 0; i < sentences.length && chunks.length < MAX_CHUNKS - 1; i++) {
+        const sentence = sentences[i];
+
+        if ((current + ' ' + sentence).length > CHUNK_SIZE && current.length > 0) {
+            chunks.push(current.trim());
+
+            // Build overlap: take tail sentences until we reach ~CHUNK_OVERLAP chars
+            let overlapText = '';
+            for (let j = tailSentences.length - 1; j >= 0; j--) {
+                const candidate = tailSentences[j] + ' ' + overlapText;
+                if (candidate.length > CHUNK_OVERLAP) break;
+                overlapText = candidate;
+            }
+            current = overlapText + ' ' + sentence;
+            tailSentences = [];
+        } else {
+            current = current ? current + ' ' + sentence : sentence;
+        }
+        tailSentences.push(sentence);
+        // Keep only as many tail sentences as needed for overlap
+        while (tailSentences.join(' ').length > CHUNK_OVERLAP * 1.5 && tailSentences.length > 1) {
+            tailSentences.shift();
+        }
+    }
+
+    // Add remaining text (including any sentences that didn't trigger a split)
+    const remaining = sentences.slice(chunks.length > 0 ? undefined : 0);
+    if (current.trim()) chunks.push(current.trim());
+
+    // Safety: if we somehow ended up with 0 chunks, fall back to raw slice
+    if (chunks.length === 0) {
+        let start = 0;
+        while (start < text.length && chunks.length < MAX_CHUNKS) {
+            const end = Math.min(start + CHUNK_SIZE, text.length);
+            chunks.push(text.slice(start, end));
+            if (end === text.length) break;
+            start = end - CHUNK_OVERLAP;
+        }
+    }
+
+    return chunks.slice(0, MAX_CHUNKS);
+}
+
+// Given a paraphrased LLM citation and the original chunk text, find and return
+// the best matching verbatim passage from the chunk. Falls back to the original
+// citation if no good match is found.
+function findVerbatimInChunk(citation: string, chunkText: string): string {
+    if (!citation || citation === 'Not addressed in document.' || !chunkText) return citation;
+
+    const STOPWORDS = new Set(['the','and','for','are','but','not','you','all','can','had','her','was','one','our','out','how','did','his','any','may','have','that','from','this','they','with','your','been','when','will','more','also','into','some','than','its','use','used','uses','such','also','which','their','about','been','other','these']);
+
+    // Extract meaningful key terms from the citation (4+ chars, not stopwords)
+    const keyTerms = citation
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 4 && !STOPWORDS.has(w))
+        .slice(0, 6);
+
+    if (keyTerms.length === 0) return citation;
+
+    const chunkLower = chunkText.toLowerCase();
+
+    // Score each term: find how many key terms appear near each other in the chunk
+    let bestIdx = -1;
+    let bestScore = 0;
+
+    for (const term of keyTerms) {
+        let pos = 0;
+        while ((pos = chunkLower.indexOf(term, pos)) !== -1) {
+            // Count how many other key terms appear within ±150 chars of this position
+            const window = chunkLower.slice(Math.max(0, pos - 150), pos + 150);
+            const score = keyTerms.filter(t => window.includes(t)).length;
+            if (score > bestScore) {
+                bestScore = score;
+                bestIdx = pos;
+            }
+            pos += term.length;
+        }
+    }
+
+    // Need at least 2 key terms co-located to trust the match
+    if (bestIdx === -1 || bestScore < 2) return citation;
+
+    // Expand to clean sentence/clause boundaries (±200 chars, trim to ~120 words)
+    const rawStart = Math.max(0, bestIdx - 100);
+    const rawEnd = Math.min(chunkText.length, bestIdx + 300);
+    let passage = chunkText.slice(rawStart, rawEnd).trim();
+
+    // Trim to a clean start (first capital letter or after punctuation)
+    const cleanStart = passage.search(/[A-Z"'"']/);
+    if (cleanStart > 0 && cleanStart < 40) passage = passage.slice(cleanStart);
+
+    // Trim to a clean end (after sentence-ending punctuation within 120 words)
+    const words = passage.split(/\s+/);
+    if (words.length > 60) passage = words.slice(0, 60).join(' ');
+
+    // Final trim — must be meaningfully longer than the LLM's paraphrase to be worth using
+    return passage.trim().length >= 30 ? passage.trim() : citation;
+}
+
+// ─── NIM Embeddings — rank chunks by semantic relevance to a pillar ──────────
+// Uses nvidia/nv-embedqa-e5-v5 to embed the pillar description + all candidate
+// chunks, then returns the top-N chunks by cosine similarity.
+// This replaces the naive "send first 40k chars" approach — only the most
+// relevant sections of the document are sent to the focused LLM call.
+
+const NIM_EMBED_MODEL = 'nvidia/nv-embedqa-e5-v5';
+
+async function embedTexts(texts: string[], signal: AbortSignal): Promise<number[][]> {
+    if (signal.aborted) return [];
+    const key = NIM_KEYS[nimKeyIndex % NIM_KEYS.length];
+    nimKeyIndex++;
+    const nimEmbed = new OpenAI({ apiKey: key, baseURL: 'https://integrate.api.nvidia.com/v1', timeout: 15000 });
+    try {
+        const res = await nimEmbed.embeddings.create(
+            { model: NIM_EMBED_MODEL, input: texts, encoding_format: 'float' } as any,
+            { signal }
+        );
+        return (res.data as any[]).map((d: any) => d.embedding as number[]);
+    } catch (err: any) {
+        // Embeddings are best-effort — gracefully degrade to keyword search on failure
+        console.warn('[TLDR Shield] Embeddings unavailable, falling back to keyword ranking:', err?.message ?? err);
+        return [];
+    }
+}
+
+function cosine(a: number[], b: number[]): number {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dot   += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    return normA && normB ? dot / (Math.sqrt(normA) * Math.sqrt(normB)) : 0;
+}
+
+// Split fullText into ~2000-char candidate passages (paragraph-level), embed them,
+// return the top-N passages most similar to the pillar description query.
+async function getTopPassagesForPillar(
+    pillarDesc: string,
+    fullText: string,
+    topN: number,
+    signal: AbortSignal,
+): Promise<string[]> {
+    // Split into ~2000-char paragraphs at double-newlines or sentence boundaries
+    const rawPassages = fullText.split(/\n{2,}/).filter(p => p.trim().length > 60);
+    const passages = rawPassages.length >= 3 ? rawPassages : [fullText.slice(0, 40000)];
+
+    // Embed query + all passages in one batch (cheaper than separate calls)
+    const inputs = [pillarDesc, ...passages.map(p => p.slice(0, 512))];
+    const embeddings = await embedTexts(inputs, signal);
+
+    if (embeddings.length < 2) {
+        // Fallback: keyword-based ranking
+        const queryWords = new Set(pillarDesc.toLowerCase().split(/\W+/).filter(w => w.length > 4));
+        const scored = passages.map(p => ({
+            text:  p,
+            score: [...queryWords].filter(w => p.toLowerCase().includes(w)).length,
+        }));
+        return scored.sort((a, b) => b.score - a.score).slice(0, topN).map(x => x.text);
+    }
+
+    const queryEmbed   = embeddings[0];
+    const passageEmbeds = embeddings.slice(1);
+
+    const scored = passages.map((p, i) => ({
+        text:  p,
+        score: cosine(queryEmbed, passageEmbeds[i] ?? []),
+    }));
+
+    return scored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topN)
+        .map(x => x.text);
+}
+
+// Two-pass citation: embeddings → rank passages → focused LLM call on top-3 passages
+const PILLAR_DESCRIPTIONS: Record<string, string> = {
+    ai_training:       'AI or machine learning training using user content or data',
+    data_selling:      'sharing or selling user content or personal data to third parties, advertisers, or partners',
+    transparency:      'deliberately vague, obscuring, or contradictory language about data practices',
+    data_retention:    'data retention period, deletion timeline, or how long data is kept after account deletion',
+    content_ownership: 'intellectual property rights, content license granted to the platform, or right to sublicense',
+    dark_patterns:     'liability cap in dollar amount, class action waiver, arbitration clause, or shortened statute of limitations',
+};
+
+async function extractVerbatimForPillar(
+    pillarKey: string,
+    fullText: string,
+    signal: AbortSignal,
+): Promise<string | null> {
+    if (signal.aborted) return null;
+    const desc = PILLAR_DESCRIPTIONS[pillarKey] ?? pillarKey;
+
+    // Step 1: Use embeddings to find the 3 most relevant passages
+    const topPassages = await getTopPassagesForPillar(desc, fullText, 3, signal);
+    const focusedText = topPassages.join('\n\n---\n\n').slice(0, 12000); // stay within token budget
+
+    // Step 2: Focused LLM call on only the relevant passages
+    try {
+        const response = await nimCreateWithRetry({
+            model: MODELS.deep.id,
+            messages: [
+                {
+                    role: 'system',
+                    content: 'You are a legal document search tool. Find and copy-paste exact text. Never paraphrase.',
+                },
+                {
+                    role: 'user',
+                    content: `Find the clause in these document excerpts that relates to: ${desc}.\n\nCopy-paste 15–60 consecutive words VERBATIM (exactly as they appear). Do not rephrase or summarize.\nIf no such clause exists in the excerpts below, reply with exactly: NOT FOUND\n\nExcerpts:\n${focusedText}`,
+                },
+            ],
+            temperature: 0,
+            max_tokens: 200,
+        }, signal);
+        const text = (response.choices[0]?.message?.content ?? '').trim();
+        if (!text || text === 'NOT FOUND' || text.length < 15) return null;
+        // Verify it actually appears verbatim in the source (first 50 chars check)
+        const prefix = text.toLowerCase().replace(/['"]/g, '').trim().slice(0, 50);
+        if (prefix.length >= 20 && !fullText.toLowerCase().includes(prefix)) return null;
+        return text;
+    } catch {
+        return null;
+    }
 }
 
 async function analyzeChunk(
@@ -317,6 +558,22 @@ async function analyzeChunk(
         if (!result || typeof result.score !== 'number') {
             throw new Error(`Block ${chunkIndex + 1} returned an unreadable response`);
         }
+
+        // FIX #17: Replace paraphrased citations with verbatim text from the source chunk.
+        // The LLM has access to the chunk text right here — use it to ground citations.
+        if (tier === 'deep' && result.pillars) {
+            for (const key of Object.keys(result.pillars)) {
+                const p = result.pillars[key];
+                if (p?.citation && p.citation !== 'Not addressed in document.' && p.violation) {
+                    const verbatim = findVerbatimInChunk(p.citation, chunk);
+                    if (verbatim !== p.citation) {
+                        console.log(`[TLDR Shield] Chunk ${chunkIndex + 1} verbatim fix [${key}]: "${p.citation.slice(0, 40)}..." → "${verbatim.slice(0, 40)}..."`);
+                        p.citation = verbatim;
+                    }
+                }
+            }
+        }
+
         return result;
     };
 
@@ -337,20 +594,81 @@ async function analyzeChunk(
 const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership', 'dark_patterns'] as const;
 
 function applyConsistencyCrossCheck(pillars: Record<string, any>, allDeductionText: string): void {
+    // Require 2+ keyword hits before flipping a pillar to avoid false positives.
+    // Transparency removed — too subjective, cross-check causes false positives.
+    // Keywords are more specific multi-word phrases to reduce accidental substring matches.
     const PILLAR_DEDUCTION_KEYWORDS: Record<string, string[]> = {
-        ai_training:       ['ai/', 'ml ', 'machine learning', 'artificial intelligence', 'ai training', 'train', 'ai model'],
-        data_selling:      ['sell', 'shar', 'third party', 'third-party', 'advertis', 'partner'],
-        transparency:      ['vague', 'unclear', 'ambiguous', 'mislead', 'confus', 'transparen'],
-        data_retention:    ['retention', 'retain', 'delet', 'storage', 'keep data', 'store data'],
-        content_ownership: ['content own', 'ip right', 'intellectual property', 'content license', 'copyright', 'content restrict'],
-        dark_patterns:     ['dark pattern', 'arbitration', 'opt-out', 'buried', 'forced', 'deceptive', 'manipulat'],
+        ai_training:       ['machine learning', 'artificial intelligence', 'ai training', 'ai model', 'train our', 'training of our', 'ml model'],
+        data_selling:      ['third-party advertis', 'sell user data', 'selling data', 'advertising partners', 'third party commercial', 'data for commercial'],
+        data_retention:    ['data retention', 'retain data', 'deletion timeline', 'store data', 'keep your data', 'retention period'],
+        content_ownership: ['intellectual property', 'worldwide license', 'royalty-free license', 'sublicensable license', 'license to use content', 'broad ip'],
+        dark_patterns:     ['liability cap', 'class action waiver', 'class action', 'forced arbitration', 'shortened statute', 'one-sided termination', 'arbitration clause'],
     };
     for (const key of PILLAR_KEYS) {
-        if (pillars[key]?.violation === false) {
+        if (key === 'transparency') continue; // too subjective for cross-check
+        if (!pillars[key]?.violation) {
             const keywords = PILLAR_DEDUCTION_KEYWORDS[key] ?? [];
-            if (keywords.some(kw => allDeductionText.includes(kw))) {
+            // Require at least 2 keyword hits to prevent loose single-word matches
+            const hitCount = keywords.filter(kw => allDeductionText.includes(kw)).length;
+            if (hitCount >= 2) {
                 pillars[key] = { ...pillars[key], violation: true };
             }
+        }
+    }
+}
+
+// Detect third-person paraphrase citations and replace with sentinel.
+// LLMs frequently write "The policy states..." or "There is no mention of..." instead of
+// copy-pasting verbatim text. These can't be found on the page → no highlight.
+// Sanitizing to 'Not addressed in document.' keeps the UI honest.
+const PARAPHRASE_PATTERNS = [
+    /^the policy\b/i,
+    /^the terms of service\b/i,
+    /^the terms\b/i,
+    /^the document\b/i,
+    /^the agreement\b/i,
+    /^the platform\b/i,
+    /^the service\b/i,
+    /^the tos\b/i,
+    /^this policy\b/i,
+    /^this document\b/i,
+    /^this agreement\b/i,
+    /^there is no\b/i,
+    /^there are no\b/i,
+    /^no mention\b/i,
+    /^no explicit\b/i,
+    /^no specific\b/i,
+    /\bprovided terms of service\b/i,
+    /\bin the provided\b/i,
+    /\bmention of .{0,40} in the\b/i,
+    /\bin the terms of service\b/i,
+    /\bin the document\b/i,
+];
+// Strip "The policy states that [X], indicating Y" → "[X]"
+// Keeps the verbatim core when LLM wraps a real quote in a paraphrase sentence.
+const VIOLATION_PREFIX_RE = /^(?:the (?:terms?(?: of service)?|policy|document|agreement|x user agreement|platform)\s+(?:also\s+)?(?:states?|says?|notes?|requires?|provides?|includes?|limits?|caps?|restricts?|grants?|gives?)\s+(?:that\s+)?["'"'"]?|this (?:policy|license|agreement|means?)\s+(?:states?|says?|provides?|requires?|means?)\s+(?:that\s+)?["'"'"]?)/i;
+const VIOLATION_SUFFIX_RE = /[,;]\s+(?:indicating|suggesting|implying|potentially|which means|and may be|and could be|making it|this means|and is)[^.]*\.?\s*$/i;
+
+function stripViolationWrapper(citation: string): string {
+    const cleaned = citation.replace(VIOLATION_PREFIX_RE, '').replace(VIOLATION_SUFFIX_RE, '').replace(/["'"'"]+$/, '').trim();
+    return cleaned.length >= 20 ? cleaned : citation;
+}
+
+function sanitizeCitations(pillars: Record<string, any>): void {
+    if (!pillars) return;
+    for (const key of Object.keys(pillars)) {
+        const p = pillars[key];
+        if (!p?.citation || p.citation === 'Not addressed in document.') continue;
+        if (p.violation) {
+            // For VIOLATION pillars: strip paraphrase wrappers to expose verbatim core
+            const stripped = stripViolationWrapper(p.citation.trim());
+            p.citation = stripped;
+            continue;
+        }
+        // For CLEAR pillars: replace outright paraphrases with sentinel
+        const c = p.citation.trim();
+        if (PARAPHRASE_PATTERNS.some(re => re.test(c))) {
+            p.citation = 'Not addressed in document.';
         }
     }
 }
@@ -363,6 +681,7 @@ function aggregateResults(results: any[], tier: 'quick' | 'deep'): any {
             const deductionText = (r.deductions as any[])
                 .map((d: any) => d.reason ?? '').join(' ').toLowerCase();
             applyConsistencyCrossCheck(r.pillars, deductionText);
+            sanitizeCitations(r.pillars);
         }
         return r;
     }
@@ -382,15 +701,17 @@ function aggregateResults(results: any[], tier: 'quick' | 'deep'): any {
     }
 
     // Deep: union of violations — if ANY block flags a pillar, it's flagged overall
-    // Citation comes from the block that actually found the violation
+    // Citation and confidence come from the block that actually found the violation
     const pillars: Record<string, any> = {};
     for (const key of PILLAR_KEYS) {
-        const violatingBlock = results.find(r => r.pillars?.[key]?.violation === true);
+        const violatingBlock = results.find(r => r.pillars?.[key]?.violation);
         if (violatingBlock) {
-            pillars[key] = { violation: true, citation: violatingBlock.pillars[key].citation };
+            const vp = violatingBlock.pillars[key];
+            pillars[key] = { violation: true, citation: vp.citation, confidence: vp.confidence ?? 'MEDIUM' };
         } else {
             const withCitation = results.find(r => r.pillars?.[key]?.citation && r.pillars[key].citation !== 'Not addressed in document.');
-            pillars[key] = { violation: false, citation: withCitation?.pillars[key]?.citation ?? 'Not addressed in document.' };
+            const cp = withCitation?.pillars[key];
+            pillars[key] = { violation: false, citation: cp?.citation ?? 'Not addressed in document.', confidence: cp?.confidence ?? 'LOW' };
         }
     }
 
@@ -400,6 +721,7 @@ function aggregateResults(results: any[], tier: 'quick' | 'deep'): any {
         .join(' ')
         .toLowerCase();
     applyConsistencyCrossCheck(pillars, allDeductionText);
+    sanitizeCitations(pillars);
 
     // Synthesize a combined TL;DR that names the worst blocks
     const violationCount = Object.values(pillars).filter((p: any) => p.violation).length;
@@ -465,7 +787,18 @@ function extractJSON(text: string): any | null {
         const candidate = findOutermostObject(src);
         if (!candidate) continue;
         const parsed = tryParse(candidate) ?? tryParse(normalize(candidate));
-        if (parsed && typeof parsed === 'object') return parsed;
+        if (parsed && typeof parsed === 'object') {
+            // Coerce string "true"/"false" → boolean for violation fields
+            if (parsed.pillars && typeof parsed.pillars === 'object') {
+                for (const key of Object.keys(parsed.pillars)) {
+                    const p = parsed.pillars[key];
+                    if (p && typeof p.violation === 'string') {
+                        p.violation = p.violation.toLowerCase() === 'true';
+                    }
+                }
+            }
+            return parsed;
+        }
     }
 
     console.error('[TLDR Shield] JSON extraction failed. Raw:', text.substring(0, 300));
@@ -492,18 +825,32 @@ Output ONLY valid JSON, no markdown, no pillars detail:
 
     // ── Deep scan: full breakdown — all pillars + verbatim citations ──────────
     const darkField = darkPatterns
-        ? ',\n    "dark_patterns": { "violation": boolean, "citation": "string" }'
+        ? ',\n    "dark_patterns": { "violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW" }'
         : "";
 
     const citationInstruction = eli5
         ? "For 'citation': write a plain-English ELI5 explanation (no legal jargon) of what the policy says about this pillar."
-        : `CITATION RULE — MANDATORY, NO EXCEPTIONS:
-For 'citation' you MUST paste a verbatim continuous excerpt (20-60 words) copied word-for-word from the source text. Never paraphrase, summarise, or describe the clause — paste it exactly as written.
-WRONG ✗: "The policy states that users grant a license to use their content for AI training, but does not provide a clear opt-out."
-WRONG ✗: "The policy claims broad rights, including a worldwide license to use content."
-RIGHT ✓: "you agree that this license includes the right for us to analyze text and other information you provide and to otherwise provide, promote, and improve the Services, including, for example, for use with and training of our machine learning and artificial intelligence models"
-RIGHT ✓: "You grant us a worldwide, non-exclusive, royalty-free license (with the right to sublicense) to use, copy, reproduce, process, adapt, modify, publish, transmit, display, upload, download, and distribute such Content"
-If nothing is stated verbatim in the document, write exactly: 'Not addressed in document.'`;
+        : `CITATION RULE — VERBATIM COPY-PASTE ONLY, NO EXCEPTIONS:
+The 'citation' field must be a verbatim copy-paste of 15-60 consecutive words taken directly from the text. The words must appear exactly as written in the document. This will be used to highlight text in the page — so the citation MUST be exact words from the document.
+
+BANNED PATTERNS (automatic fail — never write these):
+✗ Any citation starting with: "The policy", "The terms", "The Terms of Service", "The document", "The agreement", "The platform", "The service", "This policy", "This document", "There is no", "There are no", "No mention", "No explicit", "No specific"
+✗ Any sentence in third person about what the policy says or does not say
+✗ Any paraphrase, summary, or interpretation of policy text
+✗ Descriptions of what the policy does ("The policy limits liability to...")
+
+FOR CLEAR PILLARS (violation: false): Still quote the most relevant verbatim sentence from the document for this pillar. If no relevant text exists AT ALL in the text you received, write exactly: 'Not addressed in document.'
+
+CORRECT FORMAT — first-person text copied exactly as it appears in the document:
+✓ ai_training:       "for use with and training of our machine learning and artificial intelligence models, whether generative or another type"
+✓ data_selling:      "we and our third-party providers and partners may place advertising on the Services or in connection with the display of Content or information from the Services whether submitted by you or others"
+✓ content_ownership: "you grant us a worldwide, non-exclusive, royalty-free license (with the right to sublicense) to use, copy, reproduce, process, adapt, modify, publish, transmit, display, upload, download, and distribute such Content, including anything referenced therein, in any and all media or distribution methods now known or later developed, for any purpose"
+✓ dark_patterns:     "our aggregate liability shall not exceed the greater of ONE HUNDRED U.S. DOLLARS (U.S. $100.00) OR THE AMOUNT YOU PAID US, IF ANY, IN THE PAST SIX MONTHS FOR THE SERVICES GIVING RISE TO THE CLAIM"
+✓ dark_patterns:     "you also waive the right to participate as a plaintiff or class member in any purported class action, collective action or representative action proceeding against us or our corporate affiliates"
+✓ transparency:      "Our Privacy Policy (https://x.com/privacy) describes how we handle the information you provide to us when you use the Services"
+✓ data_retention:    "Our Privacy Policy describes how we handle the information you provide to us when you use the Services. You understand that through your use of the Services you consent to the collection and use (as set forth in the Privacy Policy)"
+
+If the specific clause does not appear in the text chunk you received, write exactly: 'Not addressed in document.'`;
 
     const darkPillar = darkPatterns
         ? "\n6. dark_patterns — Unfair or one-sided clauses: liability capped at trivially small amounts (e.g. $100), forced class action waivers, shortened statutes of limitations, one-sided termination rights, hidden arbitration clauses, pre-ticked consent, or manipulative opt-out flows."
@@ -545,6 +892,9 @@ If you write a deduction about content/IP ownership → content_ownership violat
 If you write a deduction about dark patterns/unfair clauses → dark_patterns violation MUST be true.
 You CANNOT deduct points for a pillar concern while leaving that pillar's violation as false. That is a contradiction.
 
+EVIDENCE REQUIREMENT — NULL HYPOTHESIS:
+Default to violation: false for EVERY pillar. Set violation: true ONLY IF you can copy-paste a verbatim sentence from the text above that proves it. Before marking any pillar as a violation, ask yourself: "Does this exact text appear in the document I just read?" If the answer is no or you're unsure, set violation: false. Do NOT infer violations from silence. Do NOT assume violations because a practice is common in the industry. A missing clause is NOT a violation — it is simply not addressed.
+
 ${citationInstruction}
 
 Output ONLY valid JSON — no markdown fences, no text outside the JSON:
@@ -556,13 +906,19 @@ Output ONLY valid JSON — no markdown fences, no text outside the JSON:
     { "reason": "<specific clause or practice that cost points>", "points": <integer deducted> }
   ],
   "pillars": {
-    "ai_training":       { "violation": boolean, "citation": "string" },
-    "data_selling":      { "violation": boolean, "citation": "string" },
-    "transparency":      { "violation": boolean, "citation": "string" },
-    "data_retention":    { "violation": boolean, "citation": "string" },
-    "content_ownership": { "violation": boolean, "citation": "string" }${darkField}
+    "ai_training":       { "violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW" },
+    "data_selling":      { "violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW" },
+    "transparency":      { "violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW" },
+    "data_retention":    { "violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW" },
+    "content_ownership": { "violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW" }${darkField}
   }
 }
+
+CONFIDENCE RULES:
+- HIGH: You found an explicit, unambiguous clause. Citation is a direct verbatim quote. No interpretation needed.
+- MEDIUM: Clause exists but requires some interpretation, or the language is partially ambiguous.
+- LOW: Inferred from indirect language, or the relevant text is delegated to an external document.
+Always include confidence for every pillar, including CLEAR ones.
 
 DEDUCTIONS RULES:
 - Include one entry per reason the score is below 100.
@@ -668,6 +1024,38 @@ async function startServer() {
             sharedCache: { connected: firestoreDb !== null },
             nimKeys: NIM_KEYS.length,
         });
+    });
+
+    // ── User feedback: report an incorrect result ────────────────────────────
+    // Stores the report in Firestore (collection: 'reports') for manual review.
+    // Never returns sensitive data — just acknowledges receipt.
+    app.post("/api/report", async (req, res) => {
+        try {
+            const { url, rating, score, pillars, requestId, userAgent } = req.body ?? {};
+            if (!url || typeof url !== 'string') {
+                res.status(400).json({ error: 'url required' });
+                return;
+            }
+            const report: Record<string, any> = {
+                url: url.slice(0, 500),
+                rating: rating ?? null,
+                score:  typeof score === 'number' ? score : null,
+                pillars: pillars ?? null,
+                requestId: requestId ?? null,
+                userAgent: typeof userAgent === 'string' ? userAgent.slice(0, 120) : null,
+                createdAt: new Date().toISOString(),
+            };
+            if (firestoreDb) {
+                await firestoreDb.collection('reports').add(report);
+                console.log(`[TLDR Shield] Report logged: url=${url.slice(0, 80)} score=${score} rating=${rating}`);
+            } else {
+                console.log(`[TLDR Shield] Report received (Firestore offline): url=${url.slice(0, 80)} score=${score}`);
+            }
+            res.json({ ok: true });
+        } catch (err: any) {
+            console.error('[TLDR Shield] Report endpoint error:', err?.message ?? err);
+            res.status(500).json({ error: 'Failed to store report' });
+        }
     });
 
     // Credits balance — returns current credits for the signed-in user
@@ -929,10 +1317,110 @@ async function startServer() {
                         }
                     }
 
+                    // FIX #18: Citation confidence filter.
+                    // If after verbatim extraction a violation pillar still has a
+                    // paraphrased citation, downgrade it to CLEAR. A violation we
+                    // can't point to is worse than no violation — it's untrustworthy.
+                    if (effectiveTier === 'deep' && result.pillars) {
+                        for (const key of Object.keys(result.pillars)) {
+                            const p = result.pillars[key];
+                            if (!p?.violation) continue;
+                            if (!p.citation || p.citation === 'Not addressed in document.') {
+                                console.warn(`[TLDR Shield] [${requestId}] Demoting ${key}: violation with no citation evidence`);
+                                result.pillars[key] = { violation: false, citation: 'Not addressed in document.' };
+                                continue;
+                            }
+                            // Detect still-paraphrased citations after all fixes
+                            if (PARAPHRASE_PATTERNS.some(re => re.test(p.citation.trim()))) {
+                                console.warn(`[TLDR Shield] [${requestId}] Demoting ${key}: paraphrased citation could not be grounded`);
+                                result.pillars[key] = { violation: false, citation: 'Not addressed in document.' };
+                            }
+                        }
+                    }
+
+                    // FIX #19: Citation existence validator.
+                    // Even after verbatim extraction, verify the citation prefix actually
+                    // appears in the source text. Hallucinated citations that sound plausible
+                    // but don't exist = unreliable result. Demote to CLEAR.
+                    if (effectiveTier === 'deep' && result.pillars) {
+                        const textLower = processedText.toLowerCase();
+                        for (const key of Object.keys(result.pillars)) {
+                            const p = result.pillars[key];
+                            if (!p?.violation) continue;
+                            if (!p.citation || p.citation === 'Not addressed in document.') continue;
+                            // Check first 50 chars of citation appear verbatim in source
+                            const prefix = p.citation.toLowerCase().replace(/['"]/g, '').trim().slice(0, 50);
+                            if (prefix.length >= 20 && !textLower.includes(prefix)) {
+                                console.warn(`[TLDR Shield] [${requestId}] FIX #19: Citation not found in source for ${key} — demoting. Prefix: "${prefix}"`);
+                                result.pillars[key] = { violation: false, citation: 'Not addressed in document.' };
+                            }
+                        }
+                    }
+
+                    // FIX #21: Two-pass citation.
+                    // For violation pillars where we still have no verifiable citation
+                    // after all grounding fixes, make a focused second LLM call asking
+                    // specifically: "copy-paste the exact clause proving [pillar]".
+                    // If it finds one (and it verifies in source), keep violation=true.
+                    // If it can't find one, demote to CLEAR — no citation = no violation.
+                    if (effectiveTier === 'deep' && result.pillars) {
+                        const weakPillars = Object.keys(result.pillars).filter(key => {
+                            const p = result.pillars[key];
+                            return p?.violation && (
+                                !p.citation ||
+                                p.citation === 'Not addressed in document.' ||
+                                PARAPHRASE_PATTERNS.some((re: RegExp) => re.test(p.citation.trim()))
+                            );
+                        });
+                        if (weakPillars.length > 0) {
+                            sendUpdate({ status: 'Verifying citations...' });
+                            for (const key of weakPillars) {
+                                const verbatim = await extractVerbatimForPillar(key, processedText, controller.signal);
+                                if (verbatim) {
+                                    result.pillars[key].citation = verbatim;
+                                    console.log(`[TLDR Shield] [${requestId}] Two-pass citation [${key}]: "${verbatim.slice(0, 60)}..."`);
+                                } else {
+                                    result.pillars[key] = { violation: false, citation: 'Not addressed in document.' };
+                                    console.warn(`[TLDR Shield] [${requestId}] Two-pass: no verbatim for ${key} — demoted to CLEAR`);
+                                }
+                            }
+                        }
+                    }
+
                     sendUpdate({ status: 'Structuring results...' });
                 }
             } finally {
                 clearTimeout(timeout);
+            }
+
+            // FIX #16: Server-side score override — never trust the LLM score blindly.
+            // Count actual violations and force the score into the correct band.
+            if (effectiveTier === 'deep' && result.pillars) {
+                const vCount = Object.values(result.pillars).filter((p: any) => p.violation === true).length;
+                const totalPillars = Object.keys(result.pillars).length;
+                let overrideScore: number | null = null;
+
+                if (vCount === 0) {
+                    // No violations — score must be 80-100
+                    if (result.score < 80) overrideScore = 85;
+                } else if (vCount === 1) {
+                    // 1 violation — score 40-60
+                    if (result.score > 60 || result.score < 40) overrideScore = 50;
+                } else if (vCount === 2) {
+                    // 2 violations — score 25-45
+                    if (result.score > 45 || result.score < 25) overrideScore = 35;
+                } else if (vCount <= 4) {
+                    // 3-4 violations — score 15-24
+                    if (result.score > 24 || result.score < 15) overrideScore = Math.max(15, 25 - vCount * 3);
+                } else {
+                    // 5-6 violations — score 15-19 (avoids single/low-double digits that look broken)
+                    if (result.score > 19 || result.score < 15) overrideScore = 15;
+                }
+
+                if (overrideScore !== null) {
+                    console.log(`[TLDR Shield] [${requestId}] Score override: LLM=${result.score} → ${overrideScore} (${vCount}/${totalPillars} violations)`);
+                    result.score = overrideScore;
+                }
             }
 
             // FIX #3: Enforce score↔rating consistency — model sometimes contradicts itself
