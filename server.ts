@@ -285,9 +285,9 @@ async function saveScanRecord(
     },
 ): Promise<void> {
     if (!firestoreDb) return;
-    try {
+    const doc = async () => {
         const { Timestamp } = await getFirestoreHelpers();
-        await firestoreDb.collection('scans').add({
+        await firestoreDb!.collection('scans').add({
             uid,
             url: meta.url,
             rating: typeof result?.rating === 'string' ? result.rating : 'RISKY',
@@ -301,8 +301,17 @@ async function saveScanRecord(
             requestId: meta.requestId,
             createdAt: Timestamp.now(),
         });
+    };
+    try {
+        await doc();
     } catch (err: any) {
-        console.warn(`[TLDR Shield] Failed to persist scan record: ${err?.message}`);
+        console.warn(`[TLDR Shield] Failed to persist scan record (attempt 1): ${err?.message} — retrying…`);
+        try {
+            await new Promise(r => setTimeout(r, 1500));
+            await doc();
+        } catch (err2: any) {
+            console.error(`[TLDR Shield] Failed to persist scan record (attempt 2): ${err2?.message}`);
+        }
     }
 }
 
@@ -430,7 +439,7 @@ function chunkText(text: string): string[] {
     // Track tail sentences for overlap between chunks
     let tailSentences: string[] = [];
 
-    for (let i = 0; i < sentences.length && chunks.length < MAX_CHUNKS - 1; i++) {
+    for (let i = 0; i < sentences.length && chunks.length < MAX_CHUNKS; i++) {
         const sentence = sentences[i];
 
         if ((current + ' ' + sentence).length > CHUNK_SIZE && current.length > 0) {
@@ -455,8 +464,7 @@ function chunkText(text: string): string[] {
         }
     }
 
-    // Add remaining text (including any sentences that didn't trigger a split)
-    const remaining = sentences.slice(chunks.length > 0 ? undefined : 0);
+    // Add any remaining text that didn't trigger a chunk split
     if (current.trim()) chunks.push(current.trim());
 
     // Safety: if we somehow ended up with 0 chunks, fall back to raw slice
@@ -1298,10 +1306,14 @@ async function startServer() {
     });
 
     // API key auth — set INTERNAL_API_KEY in .env to require callers to authenticate.
-    // In dev or if the env var is absent the check is skipped (open access).
-    const INTERNAL_KEY = process.env.INTERNAL_API_KEY;
+    // Guard is active whenever INTERNAL_API_KEY is set, regardless of NODE_ENV.
+    // Dev: leave INTERNAL_API_KEY unset for open access. Never rely on NODE_ENV alone.
+    const INTERNAL_KEY = process.env.INTERNAL_API_KEY?.trim() || null;
+    if (!INTERNAL_KEY && process.env.NODE_ENV === 'production') {
+        console.warn('[TLDR Shield] WARNING: INTERNAL_API_KEY is not set in production — all API endpoints are publicly accessible.');
+    }
     const apiKeyGuard = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-        if (!INTERNAL_KEY || process.env.NODE_ENV !== 'production') return next();
+        if (!INTERNAL_KEY) return next(); // no key configured — open access (dev)
         const provided = (req.headers['x-api-key'] ?? '').toString().trim();
         if (!provided || provided !== INTERNAL_KEY) {
             return res.status(401).json({ error: 'Unauthorized. A valid X-API-Key header is required.' });

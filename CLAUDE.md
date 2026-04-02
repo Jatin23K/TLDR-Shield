@@ -49,9 +49,9 @@ The Chrome extension (`extension/`) is plain JavaScript — no build step. Load 
 5. Ground citations via `findVerbatimInChunk()` (key-term co-location → sentence expansion)
 6. Stream SSE results back to extension
 
-**Tiers**: Quick (120 max tokens, 20s timeout, 10 credits) vs Deep (1400 max tokens, 30s timeout, 20 credits). Text >30k chars auto-promotes to Deep.
+**Tiers**: Quick (120 max tokens, 20s timeout, 10 credits) vs Deep (1400 max tokens, 45s timeout, 20 credits). Text >30k chars auto-promotes to Deep.
 
-**NIM key rotation**: 3 keys in `.env` (`NIM_API_KEY_1/2/3`), 8s per-key timeout, auto-failover on 5xx/429.
+**NIM key rotation**: 3 keys in `.env` (`NIM_API_KEY_1/2/3`), 12s per-key timeout (configurable via `NIM_PER_KEY_TIMEOUT_MS`), 3 retry rounds with exponential backoff (`NIM_RETRY_ROUNDS`), auto-failover on 5xx/429.
 
 ### Firebase / Firestore Collections
 

@@ -1,6 +1,10 @@
 // ── TLDR Shield – Background Service Worker ──
 
-const DEFAULT_API_URL = 'https://ais-dev-7hajrqzemtlrs4e54xvhfc-762479635980.asia-southeast1.run.app/api/analyze';
+// Backend URL is read from chrome.storage.local key 'apiUrl'.
+// Set this once via the extension's storage (or ship a production build with the correct value).
+// Fallback is intentionally empty — if not configured the scan will fail loudly rather than
+// silently routing to a dev/staging server.
+const DEFAULT_API_URL = '';
 
 // FIX #3: MV3 service workers are killed after ~30s of inactivity.
 // A deep scan can take 25-40s. We keep the worker alive by opening a port
@@ -124,6 +128,10 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
     });
 
     const url = apiUrl || DEFAULT_API_URL;
+    if (!url) {
+      chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', result: 'Backend URL is not configured. Set the API URL in extension storage.' });
+      return;
+    }
 
     // Tier selection:
     //   tierOverride     → user explicitly chose quick/deep in popup

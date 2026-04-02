@@ -59,7 +59,7 @@ Icons are from `lucide-react` — import only what is used.
 - `db` — Firestore instance (uses `firestoreDatabaseId` from config, not `(default)`)
 - `signIn()` — Google popup sign-in
 - `signOut()` — sign-out
-- `handleFirestoreError()` — logs + rethrows with structured context (operationType, path, auth info)
+- `handleFirestoreError()` — removed (was unused dead code)
 
 The Firestore database ID is **not** `(default)` — always use the `db` export from `firebase.ts`, never call `getFirestore()` directly.
 
