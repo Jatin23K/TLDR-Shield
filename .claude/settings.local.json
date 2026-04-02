@@ -37,7 +37,16 @@
       "Bash(python -c \":*)",
       "Bash(node --check \"C:/projects/TLDR Shield [Too Long, Didn''t Read]/extension/content.js\")",
       "Bash(npx tsc:*)",
-      "Bash(curl -s http://localhost:3000/)"
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s \"http://localhost:3000/api/clear-cache\" -X POST)",
+      "Bash(curl -s \"http://localhost:3000/api/cache\" -X DELETE)",
+      "Bash(curl -s -X DELETE \"http://localhost:3000/api/cache\")",
+      "Bash(curl -s http://localhost:3000/api/credits)",
+      "Bash(curl -s -X POST http://localhost:3000/api/report -H \"Content-Type: application/json\" -d '{\"\"url\"\":\"\"https://example.com/tos\"\",\"\"rating\"\":\"\"RISKY\"\",\"\"score\"\":25}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/analyze -H \"Content-Type: application/json\" -d '{\"\"\"\"text\"\"\"\":\"\"\"\"We use your data to train our machine learning models.\"\"\"\",\"\"\"\"tier\"\"\"\":\"\"\"\"quick\"\"\"\"}' --max-time 15)",
+      "Read(//c/projects/**)",
+      "Bash(curl -s -H \"Authorization: Bearer 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\" \"https://integrate.api.nvidia.com/v1/models\")"
     ]
   }
 }

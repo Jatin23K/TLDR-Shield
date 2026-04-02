@@ -627,7 +627,7 @@ function createTriggerButton() {
         return; // background.js will send ANALYSIS_RESULT when done
       }
       const text = await extractPageText();
-      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text });
+      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: location.href });
     } catch (err) {
       // "Extension context invalidated" = extension was reloaded but this tab still
       // has the old content script. Show a friendly reload prompt instead of silent fail.
@@ -1183,20 +1183,56 @@ function showResultPanel(data) {
       }
     };
     getReportUrl((base) => {
-    fetch(base + '/api/report', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
-    })
-      .then(() => {
-        reportBtn.textContent = "\u2713 Thanks \u2014 we'll review it";
-        reportBtn.classList.add('tldr-reported');
-        reportBtn.disabled = false;
-      })
-      .catch(() => {
-        reportBtn.textContent = 'Report incorrect result';
-        reportBtn.disabled = false;
-      });
+      const sendReport = async (token) => {
+        const response = await fetch(base + '/api/report', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          let message = `HTTP ${response.status}`;
+          try {
+            const err = await response.json();
+            if (err && typeof err.error === 'string') message = err.error;
+          } catch (_) {}
+          throw new Error(message);
+        }
+      };
+
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        chrome.storage.local.get(['authToken', 'authTokenExpiry'], ({ authToken, authTokenExpiry }) => {
+          const validToken = authToken && authTokenExpiry > Date.now() ? authToken : null;
+          if (!validToken) {
+            reportBtn.textContent = 'Sign in to report';
+            reportBtn.disabled = false;
+            return;
+          }
+          sendReport(validToken)
+            .then(() => {
+              reportBtn.textContent = "\u2713 Thanks \u2014 we'll review it";
+              reportBtn.classList.add('tldr-reported');
+              reportBtn.disabled = false;
+            })
+            .catch(() => {
+              reportBtn.textContent = 'Could not send report';
+              reportBtn.disabled = false;
+            });
+        });
+      } else {
+        sendReport(null)
+          .then(() => {
+            reportBtn.textContent = "\u2713 Thanks \u2014 we'll review it";
+            reportBtn.classList.add('tldr-reported');
+            reportBtn.disabled = false;
+          })
+          .catch(() => {
+            reportBtn.textContent = 'Could not send report';
+            reportBtn.disabled = false;
+          });
+      }
     }); // getReportUrl callback
   });   // reportBtn click
   panel.appendChild(reportBtn);
@@ -1333,11 +1369,16 @@ function runDetection() {
   removeTriggerButton();
   removeResultPanel();
 
-  // Always show FAB on every page (user can disable per-site or globally via right-click)
+  // Show FAB only on likely legal pages (or PDFs), based on confidence scoring.
   if (typeof chrome === 'undefined' || !chrome.storage) return;
   chrome.storage.local.get({ disabledAll: false, disabledSites: [] }, ({ disabledAll, disabledSites }) => {
     if (chrome.runtime.lastError) return; // context invalidated mid-callback
     if (disabledAll || disabledSites.includes(location.hostname)) return;
+    const isPdf = document.contentType === 'application/pdf' ||
+      /\.pdf(\?.*)?$/i.test(location.href) ||
+      document.querySelector('embed[type="application/pdf"]') !== null;
+    const { score } = computeConfidence();
+    if (!isPdf && score < CONFIDENCE_THRESHOLD) return;
     createTriggerButton();
   });
 }
@@ -1368,18 +1409,37 @@ window.addEventListener('popstate', () => setTimeout(runDetection, 500));
 // The TLDR Shield web app calls window.postMessage after sign-in/sign-out.
 // We relay the token to background.js which stores it in chrome.storage.local.
 // background.js then passes it as Authorization: Bearer <token> on every scan.
+const DEFAULT_AUTH_BASE = 'https://ais-dev-7hajrqzemtlrs4e54xvhfc-762479635980.asia-southeast1.run.app';
 window.addEventListener('message', (e) => {
-  if (e.source !== window) return; // only trust messages from this page
-  if (e.data?.type === 'TLDR_AUTH_TOKEN') {
-    chrome.runtime.sendMessage({
-      type: 'STORE_AUTH',
-      token: e.data.token,
-      uid:   e.data.uid,
-      email: e.data.email,
-    });
-  }
-  if (e.data?.type === 'TLDR_AUTH_SIGNOUT') {
+  if (e.source !== window) return;
+  const type = e.data?.type;
+  if (type !== 'TLDR_AUTH_TOKEN' && type !== 'TLDR_AUTH_SIGNOUT') return;
+  if (typeof chrome === 'undefined' || !chrome.storage) return;
+
+  chrome.storage.local.get({ apiUrl: DEFAULT_AUTH_BASE + '/api/analyze' }, ({ apiUrl }) => {
+    let trustedOrigin = '';
+    try {
+      trustedOrigin = new URL((apiUrl || DEFAULT_AUTH_BASE).replace(/\/api\/analyze$/, '')).origin;
+    } catch {
+      trustedOrigin = DEFAULT_AUTH_BASE;
+    }
+    const allowedOrigins = new Set([
+      trustedOrigin,
+      'http://localhost:3000',
+      'http://localhost:5173',
+    ]);
+    if (!allowedOrigins.has(e.origin)) return;
+
+    if (type === 'TLDR_AUTH_TOKEN') {
+      chrome.runtime.sendMessage({
+        type: 'STORE_AUTH',
+        token: e.data.token,
+        uid: e.data.uid,
+        email: e.data.email,
+      });
+      return;
+    }
     chrome.runtime.sendMessage({ type: 'CLEAR_AUTH' });
-  }
+  });
 });
 window.addEventListener('hashchange', () => setTimeout(runDetection, 500));

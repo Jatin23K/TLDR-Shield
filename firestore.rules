@@ -84,7 +84,7 @@ service cloud.firestore {
     // ── Shared Community Cache ──────────────────────────────────────────────
     // Written exclusively by the backend server via Firebase Admin SDK (bypasses rules).
     // Contains NO user identifiers — fully anonymous scan results.
-    // Public read so clients can eventually query cache metadata (e.g. "last scanned X ago").
+    // Backend-only access: direct client reads and writes are blocked.
     // Client writes are blocked — only the server may write.
     //
     // Document structure:
@@ -94,7 +94,7 @@ service cloud.firestore {
     //   expiresAt: timestamp  — quick=48h, deep=7d (Firestore TTL policy targets this field)
     //   scanCount: number — how many times this result was requested
     match /shared_cache/{hash} {
-      allow read: if true;
+      allow read: if false; // backend-only cache metadata/results
       allow write: if false; // server-only via Admin SDK
     }
   }

@@ -38,8 +38,8 @@ if (NIM_KEYS.length === 0) {
   process.exit(1);
 }
 
-const DEFAULT_QUICK_MODEL_ID = "meta/llama-3.1-70b-instruct";
-const DEFAULT_DEEP_MODEL_ID = "meta/llama-3.1-405b-instruct";
+const DEFAULT_QUICK_MODEL_ID = "meta/llama-3.3-70b-instruct";
+const DEFAULT_DEEP_MODEL_ID = "meta/llama-3.3-70b-instruct";
 const QUICK_MODEL_ID = (process.env.NIM_MODEL_QUICK || DEFAULT_QUICK_MODEL_ID).trim();
 const DEEP_MODEL_ID = (process.env.NIM_MODEL_DEEP || DEFAULT_DEEP_MODEL_ID).trim();
 
@@ -323,4 +323,3 @@ main().catch((e) => {
   console.error("[eval] fatal:", e);
   process.exit(1);
 });
-

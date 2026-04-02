@@ -32,7 +32,7 @@ const nim = new OpenAI({
     timeout: 60000,
 });
 
-const DEEP_MODEL = 'meta/llama-3.1-70b-instruct';
+const DEEP_MODEL = (process.env.NIM_MODEL_DEEP || 'meta/llama-3.3-70b-instruct').trim();
 
 // ─── Golden Documents ─────────────────────────────────────────────────────────
 

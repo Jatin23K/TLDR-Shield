@@ -49,7 +49,7 @@ async function extractPdfAndAnalyze(pdfUrl, tabId) {
 chrome.runtime.onMessage.addListener((message, sender) => {
   // PDF text extracted by offscreen.js — forward to analysis
   if (message.type === 'PDF_TEXT') {
-    analyzeText(message.text, message.tabId, true /* forceDeep — PDFs are always large */, 'deep');
+    analyzeText(message.text, message.tabId, true /* forceDeep — PDFs are always large */, 'deep', message.url ?? null);
     return;
   }
   if (message.type === 'PDF_ERROR') {
@@ -62,7 +62,13 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     return;
   }
   if (message.type === 'ANALYZE_TEXT') {
-    analyzeText(message.text, sender.tab?.id, message.forceDeep ?? false, message.tier ?? null);
+    analyzeText(
+      message.text,
+      sender.tab?.id,
+      message.forceDeep ?? false,
+      message.tier ?? null,
+      message.url ?? sender.tab?.url ?? null
+    );
   }
   // PDF page detected by content script — route through offscreen
   if (message.type === 'ANALYZE_PDF') {
@@ -98,7 +104,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'PING') return true;
 });
 
-async function analyzeText(text, tabId, forceDeep = false, tierOverride = null) {
+async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, sourceUrl = null) {
   if (!tabId) return;
 
   // FIX #3: Keep the service worker alive for the duration of the scan.
@@ -147,6 +153,7 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null) 
           tier:         autoTier,
           eli5:         eli5Mode,
           darkPatterns: darkPatterns,
+          url:          sourceUrl,
         }),
         signal: controller.signal,
       });

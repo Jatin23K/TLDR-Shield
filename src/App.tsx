@@ -424,7 +424,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
-    const q = query(collection(db, 'scans'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'scans'), where('uid', '==', user.uid), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, snap => {
       setScans(snap.docs.map(d => ({ id: d.id, ...d.data() } as ScanRecord)));
       setLoading(false);

@@ -199,7 +199,7 @@ scanBtn.addEventListener('click', async () => {
     }
 
     setStatus('Reasoning through document…', 'scanning');
-    chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text: pageText, tier: selectedTier });
+    chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text: pageText, tier: selectedTier, url: tab.url || null });
     // Re-enable after sending so user can close popup freely
     setTimeout(() => {
       setStatus('Analysis running — check the page for results.', 'scanning');
