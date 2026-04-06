@@ -1,7 +1,9 @@
 // ── TLDR Shield – Popup Script ──
 
-const DEFAULT_API_URL = 'https://ais-dev-7hajrqzemtlrs4e54xvhfc-762479635980.asia-southeast1.run.app/api/analyze';
-const DASHBOARD_URL   = 'https://ais-dev-7hajrqzemtlrs4e54xvhfc-762479635980.asia-southeast1.run.app';
+// Set the production backend URL here before shipping.
+// Intentionally empty so misconfigured builds fail loudly rather than routing to a dev server.
+const DEFAULT_API_URL = '';
+const DASHBOARD_URL   = '';
 
 // ── DOM references ──────────────────────────────────────────────────────────
 const scanBtn      = document.getElementById('scan-btn');
@@ -29,10 +31,12 @@ let darkPatterns = true;
 let selectedTier = 'quick'; // 'quick' | 'deep'
 
 // ── Tier selector ────────────────────────────────────────────────────────────
-document.querySelectorAll('.tier-btn').forEach(btn => {
+const tierBtns = document.querySelectorAll('.tier-btn');
+tierBtns.forEach(btn => {
   btn.addEventListener('click', () => {
+    if (scanBtn.disabled) return; // don't allow tier change mid-scan
     selectedTier = btn.dataset.tier;
-    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+    tierBtns.forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   });
 });
@@ -71,9 +75,14 @@ chrome.storage.local.get(
     }
     // Fetch live credits from server if signed in
     const validToken = data.authToken && data.authTokenExpiry > Date.now() ? data.authToken : null;
-    if (validToken) {
+    if (validToken && (data.apiUrl || DEFAULT_API_URL)) {
       const base = (data.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
-      fetch(base + '/api/credits', { headers: { 'Authorization': 'Bearer ' + validToken } })
+      const creditsController = new AbortController();
+      const creditsTimeout = setTimeout(() => creditsController.abort(), 5000);
+      fetch(base + '/api/credits', {
+        headers: { 'Authorization': 'Bearer ' + validToken },
+        signal: creditsController.signal,
+      })
         .then(r => r.ok ? r.json() : null)
         .then(d => {
           if (d && typeof d.credits === 'number') {
@@ -82,7 +91,8 @@ chrome.storage.local.get(
             creditsVal.textContent = d.credits + ' credits';
           }
         })
-        .catch(() => {});
+        .catch(() => {}) // silently ignore — cached value stays displayed
+        .finally(() => clearTimeout(creditsTimeout));
     }
   }
 );
@@ -109,8 +119,8 @@ signOutBtn.addEventListener('click', () => {
 chrome.storage.local.get(
   { apiUrl: DEFAULT_API_URL, eli5Mode: true, darkPatterns: true },
   ({ apiUrl, eli5Mode: el, darkPatterns: dp }) => {
-    apiUrlInput.value = apiUrl && apiUrl !== DEFAULT_API_URL ? apiUrl : '';
-    apiUrlInput.placeholder = DEFAULT_API_URL;
+    apiUrlInput.value = apiUrl || '';
+    apiUrlInput.placeholder = 'https://your-backend.run.app/api/analyze';
     eli5Mode     = el;
     darkPatterns = dp;
     updateToggleUI();
@@ -126,8 +136,11 @@ saveUrlBtn.addEventListener('click', () => {
       return;
     }
   }
-  const urlToSave = val || DEFAULT_API_URL;
-  chrome.storage.local.set({ apiUrl: urlToSave }, () => {
+  if (!val) {
+    setStatus('Enter a valid backend URL.', 'error');
+    return;
+  }
+  chrome.storage.local.set({ apiUrl: val }, () => {
     urlSavedMsg.style.display = 'block';
     setTimeout(() => { urlSavedMsg.style.display = 'none'; }, 2000);
   });
@@ -199,7 +212,7 @@ scanBtn.addEventListener('click', async () => {
     }
 
     setStatus('Reasoning through document…', 'scanning');
-    chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text: pageText, tier: selectedTier });
+    chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text: pageText, tier: selectedTier, url: tab.url || null });
     // Re-enable after sending so user can close popup freely
     setTimeout(() => {
       setStatus('Analysis running — check the page for results.', 'scanning');

@@ -4,13 +4,13 @@
 
 ![Version](https://img.shields.io/badge/version-2.0.0-indigo)
 ![License](https://img.shields.io/badge/license-Apache--2.0-emerald)
-![Stack](https://img.shields.io/badge/stack-React%20%7C%20Express%20%7C%20Gemini-blue)
+![Stack](https://img.shields.io/badge/stack-React%20%7C%20Express%20%7C%20NVIDIA%20NIM-blue)
 
 ## 🚀 Key Features (X2.0)
 
-- **Multi-Model Judge Pattern:** 
-  - **Phase 1 (Speed):** Gemini 3 Flash extracts relevant legal clauses in milliseconds.
-  - **Phase 2 (Accuracy):** Gemini 3.1 Pro performs deep semantic reasoning to judge those clauses.
+- **Two-Tier Scan Pipeline:**
+  - **Quick Scan (Speed):** Low-latency verdict for fast browsing decisions.
+  - **Deep Scan (Accuracy):** Full pillar audit with citations and stronger grounding checks.
 - **6 Privacy Pillars:** Analysis across AI Training, Data Selling, Transparency, Retention, Ownership, and **Dark Pattern Detection**.
 - **ELI5 Mode (Explain Like I'm 5):** Toggle to translate complex legal jargon into simple, conversational English.
 - **In-Page Trust Seal:** A floating badge injected into every website that glows **Green (Safe)**, **Yellow (Okay)**, or **Red (Risky)** based on the site's privacy score.
@@ -28,8 +28,8 @@ graph TD
     C -->|Secure Proxy Request| D[Express Backend]
     D -->|SHA-256 Hash| E{Edge Cache}
     E -->|HIT| F[Return Cached Result]
-    E -->|MISS| G[Gemini 3 Flash: Clause Extraction]
-    G --> H[Gemini 3.1 Pro: Legal Judge]
+    E -->|MISS| G[NIM Embeddings: Relevant Clause Ranking]
+    G --> H[NIM LLM: Legal Judge]
     H --> I[Return Structured JSON]
     I -->|Update UI| A
 ```
@@ -38,8 +38,8 @@ graph TD
 
 - **Frontend:** React 19, Tailwind CSS 4, Framer Motion (motion/react), Lucide Icons.
 - **Extension:** Manifest V3, Vanilla JavaScript, Tailwind CSS (via CDN).
-- **Backend:** Node.js, Express, Vite (Middleware Mode), Google GenAI SDK.
-- **AI Models:** Gemini 3 Flash (Extraction), Gemini 3.1 Pro (Reasoning).
+- **Backend:** Node.js, Express, Vite (Middleware Mode), OpenAI-compatible SDK against NVIDIA NIM.
+- **AI Models:** `meta/llama-3.3-70b-instruct` (default quick/deep, env-overridable).
 
 ## 📦 Installation
 
@@ -51,7 +51,9 @@ graph TD
    ```
 3. Set your environment variables in `.env`:
    ```env
-   GEMINI_API_KEY="your_api_key_here"
+   NIM_API_KEY_1="nvapi-..."
+   NIM_API_KEY_2="nvapi-..."
+   NIM_API_KEY_3="nvapi-..."
    ```
 4. Start the full-stack server:
    ```bash

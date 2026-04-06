@@ -1,6 +1,10 @@
 // ── TLDR Shield – Background Service Worker ──
 
-const DEFAULT_API_URL = 'https://ais-dev-7hajrqzemtlrs4e54xvhfc-762479635980.asia-southeast1.run.app/api/analyze';
+// Backend URL is read from chrome.storage.local key 'apiUrl'.
+// Set this once via the extension's storage (or ship a production build with the correct value).
+// Fallback is intentionally empty — if not configured the scan will fail loudly rather than
+// silently routing to a dev/staging server.
+const DEFAULT_API_URL = '';
 
 // FIX #3: MV3 service workers are killed after ~30s of inactivity.
 // A deep scan can take 25-40s. We keep the worker alive by opening a port
@@ -49,7 +53,7 @@ async function extractPdfAndAnalyze(pdfUrl, tabId) {
 chrome.runtime.onMessage.addListener((message, sender) => {
   // PDF text extracted by offscreen.js — forward to analysis
   if (message.type === 'PDF_TEXT') {
-    analyzeText(message.text, message.tabId, true /* forceDeep — PDFs are always large */, 'deep');
+    analyzeText(message.text, message.tabId, true /* forceDeep — PDFs are always large */, 'deep', message.url ?? null);
     return;
   }
   if (message.type === 'PDF_ERROR') {
@@ -62,7 +66,13 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     return;
   }
   if (message.type === 'ANALYZE_TEXT') {
-    analyzeText(message.text, sender.tab?.id, message.forceDeep ?? false, message.tier ?? null);
+    analyzeText(
+      message.text,
+      sender.tab?.id,
+      message.forceDeep ?? false,
+      message.tier ?? null,
+      message.url ?? sender.tab?.url ?? null
+    );
   }
   // PDF page detected by content script — route through offscreen
   if (message.type === 'ANALYZE_PDF') {
@@ -98,7 +108,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'PING') return true;
 });
 
-async function analyzeText(text, tabId, forceDeep = false, tierOverride = null) {
+async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, sourceUrl = null) {
   if (!tabId) return;
 
   // FIX #3: Keep the service worker alive for the duration of the scan.
@@ -118,6 +128,10 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null) 
     });
 
     const url = apiUrl || DEFAULT_API_URL;
+    if (!url) {
+      chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', result: 'Backend URL is not configured. Set the API URL in extension storage.' });
+      return;
+    }
 
     // Tier selection:
     //   tierOverride     → user explicitly chose quick/deep in popup
@@ -147,6 +161,7 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null) 
           tier:         autoTier,
           eli5:         eli5Mode,
           darkPatterns: darkPatterns,
+          url:          sourceUrl,
         }),
         signal: controller.signal,
       });

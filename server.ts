@@ -75,6 +75,14 @@ let firestoreDb: Firestore | null = null;
 // ─── Credit System ────────────────────────────────────────────────────────────
 const CREDIT_COST: Record<string, number> = { quick: 10, deep: 20 };
 const FREE_CREDITS = 400;
+const ALLOW_UNMETERED_LOCAL = process.env.ALLOW_UNMETERED_LOCAL === 'true';
+
+type CreditResult = {
+    ok: boolean;
+    creditsLeft: number;
+    error?: string;
+    reason?: 'insufficient' | 'unavailable';
+};
 
 // Verify a Firebase ID token from Authorization: Bearer <token> header
 // Returns the UID on success, null on failure (not signed in or invalid token)
@@ -92,17 +100,49 @@ async function getUidFromRequest(req: express.Request): Promise<string | null> {
     }
 }
 
+function getCurrentMonth(): string {
+    return new Date().toISOString().slice(0, 7);
+}
+
+function getNextResetDateLabel(): string {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1)
+        .toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+}
+
+function normalizeSourceUrl(raw: string | null | undefined): string | null {
+    if (!raw || typeof raw !== 'string') return null;
+    try {
+        const parsed = new URL(raw.trim());
+        parsed.hash = ''; // fragments are client-local and should not affect cache bucketing
+        return parsed.toString();
+    } catch {
+        return null;
+    }
+}
+
+function hashSourceUrl(url: string): string {
+    return crypto.createHash('sha256').update(url).digest('hex');
+}
+
 // Atomically check credits and deduct if sufficient.
 // Also handles monthly reset (lastResetMonth !== current month → reset to 400).
 async function checkAndDeductCredits(
     uid: string,
     cost: number,
-): Promise<{ ok: boolean; creditsLeft: number; error?: string }> {
+): Promise<CreditResult> {
     if (!firestoreDb) {
-        // Firestore unavailable — allow scan but can't track credits
-        return { ok: true, creditsLeft: -1 };
+        if (process.env.NODE_ENV !== 'production' && ALLOW_UNMETERED_LOCAL) {
+            return { ok: true, creditsLeft: -1 };
+        }
+        return {
+            ok: false,
+            creditsLeft: 0,
+            reason: 'unavailable',
+            error: 'Credit service is temporarily unavailable. Please try again shortly.',
+        };
     }
-    const currentMonth = new Date().toISOString().slice(0, 7); // "2026-03"
+    const currentMonth = getCurrentMonth();
     const userRef = firestoreDb.collection('users').doc(uid);
     try {
         return await firestoreDb.runTransaction(async (tx) => {
@@ -124,6 +164,7 @@ async function checkAndDeductCredits(
                     ok: false,
                     creditsLeft: credits,
                     error: `Not enough credits. This scan costs ${cost} credits and you have ${credits} left. Credits reset on the 1st of each month.`,
+                    reason: 'insufficient',
                 };
             }
             const newCredits = credits - cost;
@@ -132,7 +173,45 @@ async function checkAndDeductCredits(
         });
     } catch (err: any) {
         console.error('[TLDR Shield] Credit transaction failed:', err?.message);
-        return { ok: true, creditsLeft: -1 }; // fail open so NIM still works
+        if (process.env.NODE_ENV !== 'production' && ALLOW_UNMETERED_LOCAL) {
+            return { ok: true, creditsLeft: -1 };
+        }
+        return {
+            ok: false,
+            creditsLeft: 0,
+            reason: 'unavailable',
+            error: 'Credit service is temporarily unavailable. Please try again shortly.',
+        };
+    }
+}
+
+async function refundCredits(uid: string, amount: number): Promise<number | null> {
+    if (amount <= 0) return null;
+    if (!firestoreDb) return null;
+    const currentMonth = getCurrentMonth();
+    const userRef = firestoreDb.collection('users').doc(uid);
+    try {
+        const updatedCredits = await firestoreDb.runTransaction(async (tx) => {
+            const snap = await tx.get(userRef);
+            let credits = FREE_CREDITS;
+            let lastResetMonth = '';
+            if (snap.exists) {
+                const d = snap.data()!;
+                credits = typeof d.credits === 'number' ? d.credits : FREE_CREDITS;
+                lastResetMonth = d.lastResetMonth ?? '';
+            }
+            if (lastResetMonth !== currentMonth) {
+                credits = FREE_CREDITS;
+                lastResetMonth = currentMonth;
+            }
+            const newCredits = credits + amount;
+            tx.set(userRef, { uid, credits: newCredits, lastResetMonth }, { merge: true });
+            return newCredits;
+        });
+        return updatedCredits;
+    } catch (err: any) {
+        console.error('[TLDR Shield] Refund transaction failed:', err?.message);
+        return null;
     }
 }
 
@@ -170,7 +249,12 @@ async function getSharedCache(hash: string): Promise<any | null> {
     }
 }
 
-async function setSharedCache(hash: string, result: any, tier: string): Promise<void> {
+async function setSharedCache(
+    hash: string,
+    result: any,
+    tier: string,
+    sourceUrlHash?: string | null,
+): Promise<void> {
     if (!firestoreDb) return;
     try {
         const { Timestamp, FieldValue } = await getFirestoreHelpers();
@@ -178,12 +262,56 @@ async function setSharedCache(hash: string, result: any, tier: string): Promise<
         await firestoreDb.collection(SHARED_CACHE_COLLECTION).doc(hash).set({
             result,
             tier,
+            ...(sourceUrlHash ? { sourceUrlHash } : {}),
             scannedAt: Timestamp.now(),
             expiresAt: Timestamp.fromMillis(Date.now() + ttl),
             scanCount: FieldValue.increment(1),
         }, { merge: true });
     } catch (err: any) {
         console.warn(`[TLDR Shield] Firestore write failed: ${err?.message}`);
+    }
+}
+
+async function saveScanRecord(
+    uid: string,
+    result: any,
+    meta: {
+        url: string | null;
+        tier: 'quick' | 'deep';
+        requestId: string;
+        modelId: string;
+        cached: boolean;
+        latencyMs: number;
+    },
+): Promise<void> {
+    if (!firestoreDb) return;
+    const doc = async () => {
+        const { Timestamp } = await getFirestoreHelpers();
+        await firestoreDb!.collection('scans').add({
+            uid,
+            url: meta.url,
+            rating: typeof result?.rating === 'string' ? result.rating : 'RISKY',
+            score: typeof result?.score === 'number' ? result.score : 0,
+            tldr: typeof result?.tldr === 'string' ? result.tldr : '',
+            pillars: result?.pillars && typeof result.pillars === 'object' ? result.pillars : {},
+            tier: meta.tier,
+            model: meta.modelId,
+            cached: meta.cached,
+            latencyMs: meta.latencyMs,
+            requestId: meta.requestId,
+            createdAt: Timestamp.now(),
+        });
+    };
+    try {
+        await doc();
+    } catch (err: any) {
+        console.warn(`[TLDR Shield] Failed to persist scan record (attempt 1): ${err?.message} — retrying…`);
+        try {
+            await new Promise(r => setTimeout(r, 1500));
+            await doc();
+        } catch (err2: any) {
+            console.error(`[TLDR Shield] Failed to persist scan record (attempt 2): ${err2?.message}`);
+        }
     }
 }
 
@@ -196,37 +324,49 @@ const NIM_KEYS = [
 
 let nimKeyIndex = 0;
 
-// FIX #2: Key failover — retries each key on 5xx / 429, throws on 4xx client errors
-// Per-key timeout of 8s — if a key doesn't respond in 8s, move to the next one immediately
-const PER_KEY_TIMEOUT_MS = 8000;
+// FIX #2: Key failover — retries each key on 5xx / 429, throws on 4xx client errors.
+// Reliability tune: longer per-key timeout + retry rounds with exponential backoff
+// significantly reduces deep-scan parse failures on transient NIM saturation.
+const PER_KEY_TIMEOUT_MS = Number(process.env.NIM_PER_KEY_TIMEOUT_MS || 12000);
+const NIM_RETRY_ROUNDS = Math.max(1, Number(process.env.NIM_RETRY_ROUNDS || 3));
+const NIM_RETRY_BASE_BACKOFF_MS = Number(process.env.NIM_RETRY_BASE_BACKOFF_MS || 1200);
 
 async function nimCreateWithRetry(params: any, signal: AbortSignal) {
     let lastError: any;
-    for (let attempt = 0; attempt < NIM_KEYS.length; attempt++) {
-        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-        const key = NIM_KEYS[nimKeyIndex % NIM_KEYS.length];
-        nimKeyIndex++;
-        const client = new OpenAI({ apiKey: key, baseURL: "https://integrate.api.nvidia.com/v1" });
-        // Combine global signal + per-key timeout into a single abort signal
-        const keyController = new AbortController();
-        const keyTimeout = setTimeout(() => keyController.abort(), PER_KEY_TIMEOUT_MS);
-        // Abort the key-level controller if the global signal fires
-        const globalAbortHandler = () => keyController.abort();
-        signal.addEventListener('abort', globalAbortHandler, { once: true });
-        try {
-            const result = await client.chat.completions.create(params, { signal: keyController.signal });
-            return result;
-        } catch (err: any) {
-            lastError = err;
-            const status = err?.status ?? 0;
-            // Do not retry on client errors (4xx) except rate limit (429)
-            if (status >= 400 && status < 500 && status !== 429) throw err;
-            // If global signal fired, stop retrying
-            if (signal.aborted) throw err;
-            console.warn(`[TLDR Shield] Key #${attempt + 1} failed (status=${status}), trying next key...`);
-        } finally {
-            clearTimeout(keyTimeout);
-            signal.removeEventListener('abort', globalAbortHandler);
+    for (let round = 0; round < NIM_RETRY_ROUNDS; round++) {
+        for (let attempt = 0; attempt < NIM_KEYS.length; attempt++) {
+            if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+            const key = NIM_KEYS[nimKeyIndex % NIM_KEYS.length];
+            nimKeyIndex++;
+            const client = new OpenAI({ apiKey: key, baseURL: "https://integrate.api.nvidia.com/v1" });
+            // Combine global signal + per-key timeout into a single abort signal
+            const keyController = new AbortController();
+            const keyTimeout = setTimeout(() => keyController.abort(), PER_KEY_TIMEOUT_MS);
+            // Abort the key-level controller if the global signal fires
+            const globalAbortHandler = () => keyController.abort();
+            signal.addEventListener('abort', globalAbortHandler, { once: true });
+            try {
+                const result = await client.chat.completions.create(params, { signal: keyController.signal });
+                return result;
+            } catch (err: any) {
+                lastError = err;
+                const status = err?.status ?? 0;
+                // Do not retry on client errors (4xx) except rate limit (429)
+                if (status >= 400 && status < 500 && status !== 429) throw err;
+                // If global signal fired, stop retrying
+                if (signal.aborted) throw err;
+                console.warn(`[TLDR Shield] Round ${round + 1}/${NIM_RETRY_ROUNDS} key #${attempt + 1} failed (status=${status}), trying next key...`);
+            } finally {
+                clearTimeout(keyTimeout);
+                signal.removeEventListener('abort', globalAbortHandler);
+            }
+        }
+
+        // All keys failed this round on retryable errors; back off before next round.
+        if (round < NIM_RETRY_ROUNDS - 1 && !signal.aborted) {
+            const jitter = Math.floor(Math.random() * 500);
+            const backoffMs = (NIM_RETRY_BASE_BACKOFF_MS * (round + 1)) + jitter;
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
         }
     }
     throw lastError;
@@ -238,8 +378,8 @@ async function nimCreateWithRetry(params: any, signal: AbortSignal) {
 // - Deep scan : higher-accuracy reasoning model (target 10–20s)
 //
 // Configure via .env:
-// - NIM_MODEL_QUICK=meta/llama-3.1-70b-instruct
-// - NIM_MODEL_DEEP=meta/llama-3.1-405b-instruct
+// - NIM_MODEL_QUICK=meta/llama-3.3-70b-instruct
+// - NIM_MODEL_DEEP=meta/llama-3.3-70b-instruct
 const DEFAULT_QUICK_MODEL_ID = "meta/llama-3.3-70b-instruct";
 const DEFAULT_DEEP_MODEL_ID = "meta/llama-3.3-70b-instruct";
 const QUICK_MODEL_ID = (process.env.NIM_MODEL_QUICK || DEFAULT_QUICK_MODEL_ID).trim();
@@ -259,7 +399,7 @@ const MODELS = {
         label: "Deep scan model",
         maxTokens: 1400,     // increased: verbatim citations need room — ~6-12s with llama-3.3-70b
         temperature: 0,      // deterministic — reduces creative paraphrasing
-        timeoutMs: 30000,
+        timeoutMs: 45000,    // reliability bump for large/complex policies
         stepIntervalMs: 1200,
     },
 };
@@ -299,7 +439,7 @@ function chunkText(text: string): string[] {
     // Track tail sentences for overlap between chunks
     let tailSentences: string[] = [];
 
-    for (let i = 0; i < sentences.length && chunks.length < MAX_CHUNKS - 1; i++) {
+    for (let i = 0; i < sentences.length && chunks.length < MAX_CHUNKS; i++) {
         const sentence = sentences[i];
 
         if ((current + ' ' + sentence).length > CHUNK_SIZE && current.length > 0) {
@@ -324,8 +464,7 @@ function chunkText(text: string): string[] {
         }
     }
 
-    // Add remaining text (including any sentences that didn't trigger a split)
-    const remaining = sentences.slice(chunks.length > 0 ? undefined : 0);
+    // Add any remaining text that didn't trigger a chunk split
     if (current.trim()) chunks.push(current.trim());
 
     // Safety: if we somehow ended up with 0 chunks, fall back to raw slice
@@ -735,12 +874,52 @@ function aggregateResults(results: any[], tier: 'quick' | 'deep'): any {
 // ─── In-Memory LRU Cache (max 500 entries) ───────────────────────────────────
 const MAX_CACHE = 500;
 const analysisCache = new Map<string, any>();
-function setCacheEntry(key: string, value: any) {
+const cacheKeyToUrlHash = new Map<string, string>();
+const cacheKeysByUrlHash = new Map<string, Set<string>>();
+
+function removeCacheEntry(key: string): boolean {
+    const existed = analysisCache.delete(key);
+    const urlHash = cacheKeyToUrlHash.get(key);
+    if (urlHash) {
+        cacheKeyToUrlHash.delete(key);
+        const bucket = cacheKeysByUrlHash.get(urlHash);
+        if (bucket) {
+            bucket.delete(key);
+            if (bucket.size === 0) cacheKeysByUrlHash.delete(urlHash);
+        }
+    }
+    return existed;
+}
+
+function clearCacheEntriesByUrlHash(urlHash: string): number {
+    const keys = cacheKeysByUrlHash.get(urlHash);
+    if (!keys || keys.size === 0) return 0;
+    const toDelete = Array.from(keys);
+    let cleared = 0;
+    for (const key of toDelete) {
+        if (removeCacheEntry(key)) cleared++;
+    }
+    return cleared;
+}
+
+function setCacheEntry(key: string, value: any, sourceUrlHash?: string | null) {
+    if (analysisCache.has(key)) {
+        removeCacheEntry(key);
+    }
     if (analysisCache.size >= MAX_CACHE) {
         const firstKey = analysisCache.keys().next().value;
-        if (firstKey) analysisCache.delete(firstKey);
+        if (typeof firstKey === 'string') removeCacheEntry(firstKey);
     }
     analysisCache.set(key, value);
+    if (sourceUrlHash) {
+        cacheKeyToUrlHash.set(key, sourceUrlHash);
+        let bucket = cacheKeysByUrlHash.get(sourceUrlHash);
+        if (!bucket) {
+            bucket = new Set<string>();
+            cacheKeysByUrlHash.set(sourceUrlHash, bucket);
+        }
+        bucket.add(key);
+    }
 }
 
 // Strips <think>…</think> reasoning tokens then extracts the first valid JSON object.
@@ -803,6 +982,131 @@ function extractJSON(text: string): any | null {
 
     console.error('[TLDR Shield] JSON extraction failed. Raw:', text.substring(0, 300));
     return null;
+}
+
+const FALLBACK_PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership'] as const;
+const FALLBACK_HIGH_SEVERITY = new Set(['ai_training', 'data_selling', 'data_retention', 'content_ownership', 'dark_patterns']);
+
+function extractEvidenceSnippet(sourceText: string, patterns: RegExp[]): string {
+    const text = sourceText.replace(/\s+/g, ' ').trim();
+    for (const p of patterns) {
+        const match = p.exec(text);
+        if (!match || typeof match.index !== 'number') continue;
+        const idx = match.index;
+        // Expand to nearby sentence boundaries where possible.
+        const leftDot = text.lastIndexOf('.', idx);
+        const leftSemi = text.lastIndexOf(';', idx);
+        const leftBreak = Math.max(leftDot, leftSemi);
+        const start = leftBreak >= 0 ? leftBreak + 1 : Math.max(0, idx - 180);
+
+        const after = text.slice(idx);
+        const rightDotRel = after.indexOf('.');
+        const rightSemiRel = after.indexOf(';');
+        const rightBreakRel = [rightDotRel, rightSemiRel].filter(v => v >= 0).sort((a, b) => a - b)[0];
+        const end = rightBreakRel !== undefined ? Math.min(text.length, idx + rightBreakRel + 1) : Math.min(text.length, idx + 220);
+
+        const snippet = text.slice(start, end).trim();
+        if (snippet.length >= 24) return snippet.slice(0, 300);
+    }
+    return 'Not addressed in document.';
+}
+
+function buildDeterministicDeepFallback(
+    sourceText: string,
+    darkPatternsEnabled: boolean,
+    failureReason: string,
+): any {
+    const patterns: Record<string, RegExp[]> = {
+        ai_training: [
+            /\b(train(?:ing)?|fine[-\s]?tune|machine learning|artificial intelligence|AI models?)\b.{0,120}\b(user|your|customer)\b.{0,120}\b(data|content|interactions|prompts|uploads)\b/i,
+            /\b(user|your|customer)\b.{0,120}\b(data|content|interactions|prompts|uploads)\b.{0,120}\b(train(?:ing)?|improve)\b.{0,80}\b(machine learning|AI|models?)\b/i,
+        ],
+        data_selling: [
+            /\b(sell|selling|share|sharing|disclose|disclosing)\b.{0,140}\b(data|information|content)\b.{0,140}\b(advertis|partner|third[-\s]?part|affiliate|commercial)\b/i,
+            /\b(advertising partners?|analytics partners?|third[-\s]?party)\b/i,
+            /\b(use|using)\b.{0,80}\bdata\b.{0,80}\b(personalization|advertising|measurement|commercial)\b/i,
+        ],
+        transparency: [
+            /\b(including but not limited to|from time to time|at our sole discretion|for any purpose)\b/i,
+            /\bwe may collect other information\b/i,
+        ],
+        data_retention: [
+            /\bretain(?:ed|ing)?\b.{0,120}\b(indefinite|indefinitely|forever|perpetual)\b/i,
+            /\bretain(?:ed|ing)?\b.{0,120}\b\d+\s*(year|years)\b/i,
+            /\bafter (?:account )?deletion\b.{0,120}\b(month|months|year|years)\b/i,
+        ],
+        content_ownership: [
+            /\blicense\b.{0,180}\b(worldwide|perpetual|irrevocable|sublicensable|transferable|royalty[-\s\u2010-\u2015]?free)\b/i,
+            /\b(worldwide|perpetual|irrevocable|sublicensable|transferable|royalty[-\s\u2010-\u2015]?free)\b.{0,180}\blicense\b/i,
+            /\b(create|prepare|preparation of|modify)\b.{0,80}\bderivative works\b/i,
+            /\bfor any purpose\b/i,
+        ],
+        dark_patterns: [
+            /\b(class action waiver|waive.*class action)\b/i,
+            /\b(binding individual arbitration|forced arbitration)\b/i,
+            /\bliability\b.{0,30}\$\s?\d{1,4}\b/i,
+            /\bstatute of limitations\b.{0,60}\b(1|one)\s*year\b/i,
+        ],
+    };
+
+    const pillars: Record<string, any> = {};
+    for (const key of FALLBACK_PILLAR_KEYS) {
+        const citation = extractEvidenceSnippet(sourceText, patterns[key] ?? []);
+        const violation = citation !== 'Not addressed in document.';
+        pillars[key] = {
+            violation,
+            citation,
+            confidence: violation ? 'MEDIUM' : 'LOW',
+        };
+    }
+
+    if (darkPatternsEnabled) {
+        const citation = extractEvidenceSnippet(sourceText, patterns.dark_patterns ?? []);
+        const violation = citation !== 'Not addressed in document.';
+        pillars.dark_patterns = {
+            violation,
+            citation,
+            confidence: violation ? 'MEDIUM' : 'LOW',
+        };
+    }
+
+    const activeKeys = Object.keys(pillars).filter((k) => pillars[k]?.violation);
+    const highSeverityCount = activeKeys.filter((k) => FALLBACK_HIGH_SEVERITY.has(k)).length;
+
+    let score = 85;
+    let rating: 'SAFE' | 'OKAY' | 'RISKY' = 'OKAY';
+    if (activeKeys.length === 0) {
+        score = 85;
+        rating = 'OKAY';
+    } else if (activeKeys.length === 1 && highSeverityCount === 0) {
+        score = 60;
+        rating = 'OKAY';
+    } else if (activeKeys.length === 1) {
+        score = 40;
+        rating = 'RISKY';
+    } else if (activeKeys.length === 2) {
+        score = 35;
+        rating = 'RISKY';
+    } else if (activeKeys.length === 3) {
+        score = 25;
+        rating = 'RISKY';
+    } else {
+        score = 15;
+        rating = 'RISKY';
+    }
+
+    const tldr = activeKeys.length === 0
+        ? 'Deep scan recovered using deterministic fallback because the model response was unavailable. No explicit high-risk clause patterns were found in the processed text.'
+        : `Deep scan recovered using deterministic fallback because the model response was unavailable. Potential risks detected in: ${activeKeys.join(', ')}.`;
+
+    return {
+        rating,
+        score,
+        tldr,
+        pillars,
+        degraded: true,
+        fallbackReason: failureReason.slice(0, 200),
+    };
 }
 
 // ─── System Prompts ───────────────────────────────────────────────────────────
@@ -954,6 +1258,10 @@ async function startServer() {
     console.log(`[TLDR Shield] ${NIM_KEYS.length} NIM key(s) loaded. Basic=${MODELS.quick.id} | Deep=${MODELS.deep.id}`);
 
     const app = express();
+    if (process.env.NODE_ENV === 'production') {
+        // Cloud Run sits behind a proxy/load balancer; trust first hop so req.ip is real client IP.
+        app.set('trust proxy', 1);
+    }
 
     // FIX #2: Read PORT from env — Cloud Run assigns a dynamic port via $PORT
     const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -998,10 +1306,14 @@ async function startServer() {
     });
 
     // API key auth — set INTERNAL_API_KEY in .env to require callers to authenticate.
-    // In dev or if the env var is absent the check is skipped (open access).
-    const INTERNAL_KEY = process.env.INTERNAL_API_KEY;
+    // Guard is active whenever INTERNAL_API_KEY is set, regardless of NODE_ENV.
+    // Dev: leave INTERNAL_API_KEY unset for open access. Never rely on NODE_ENV alone.
+    const INTERNAL_KEY = process.env.INTERNAL_API_KEY?.trim() || null;
+    if (!INTERNAL_KEY && process.env.NODE_ENV === 'production') {
+        console.warn('[TLDR Shield] WARNING: INTERNAL_API_KEY is not set in production — all API endpoints are publicly accessible.');
+    }
     const apiKeyGuard = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-        if (!INTERNAL_KEY || process.env.NODE_ENV !== 'production') return next();
+        if (!INTERNAL_KEY) return next(); // no key configured — open access (dev)
         const provided = (req.headers['x-api-key'] ?? '').toString().trim();
         if (!provided || provided !== INTERNAL_KEY) {
             return res.status(401).json({ error: 'Unauthorized. A valid X-API-Key header is required.' });
@@ -1020,7 +1332,7 @@ async function startServer() {
                 heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
                 rssMB: Math.round(mem.rss / 1024 / 1024),
             },
-            cache: { size: analysisCache.size, max: MAX_CACHE },
+            cache: { size: analysisCache.size, max: MAX_CACHE, urlBuckets: cacheKeysByUrlHash.size },
             sharedCache: { connected: firestoreDb !== null },
             nimKeys: NIM_KEYS.length,
         });
@@ -1029,57 +1341,123 @@ async function startServer() {
     // ── User feedback: report an incorrect result ────────────────────────────
     // Stores the report in Firestore (collection: 'reports') for manual review.
     // Never returns sensitive data — just acknowledges receipt.
-    app.post("/api/report", async (req, res) => {
+    app.post("/api/report", analyzeRateLimit, apiKeyGuard, async (req, res) => {
+        const requestId = crypto.randomUUID();
+        res.setHeader('X-Request-ID', requestId);
         try {
-            const { url, rating, score, pillars, requestId, userAgent } = req.body ?? {};
+            const uid = await getUidFromRequest(req);
+            if (!uid) {
+                res.status(401).json({ error: 'Sign in required.', requestId });
+                return;
+            }
+            const { url, rating, score, pillars, reportRequestId, requestId: sourceRequestId, userAgent } = req.body ?? {};
             if (!url || typeof url !== 'string') {
-                res.status(400).json({ error: 'url required' });
+                res.status(400).json({ error: 'url required', requestId });
+                return;
+            }
+            const normalizedUrl = normalizeSourceUrl(url);
+            if (!normalizedUrl) {
+                res.status(400).json({ error: 'Invalid url.', requestId });
                 return;
             }
             const report: Record<string, any> = {
-                url: url.slice(0, 500),
+                uid,
+                url: normalizedUrl.slice(0, 500),
                 rating: rating ?? null,
-                score:  typeof score === 'number' ? score : null,
+                score: typeof score === 'number' ? score : null,
                 pillars: pillars ?? null,
-                requestId: requestId ?? null,
+                requestId: reportRequestId ?? sourceRequestId ?? null,
                 userAgent: typeof userAgent === 'string' ? userAgent.slice(0, 120) : null,
                 createdAt: new Date().toISOString(),
             };
             if (firestoreDb) {
                 await firestoreDb.collection('reports').add(report);
-                console.log(`[TLDR Shield] Report logged: url=${url.slice(0, 80)} score=${score} rating=${rating}`);
+                console.log(`[TLDR Shield] Report logged: uid=${uid} url=${normalizedUrl.slice(0, 80)} score=${score} rating=${rating}`);
             } else {
-                console.log(`[TLDR Shield] Report received (Firestore offline): url=${url.slice(0, 80)} score=${score}`);
+                console.warn(`[TLDR Shield] Report rejected (Firestore offline): uid=${uid} url=${normalizedUrl.slice(0, 80)} score=${score}`);
+                res.status(503).json({ error: 'Feedback service unavailable. Please try again shortly.', requestId });
+                return;
             }
-            res.json({ ok: true });
+            res.json({ ok: true, requestId });
         } catch (err: any) {
             console.error('[TLDR Shield] Report endpoint error:', err?.message ?? err);
-            res.status(500).json({ error: 'Failed to store report' });
+            res.status(500).json({ error: 'Failed to store report', requestId });
         }
     });
 
     // Credits balance — returns current credits for the signed-in user
-    // ── DEV ONLY: clear L1 + L2 cache for a specific URL hash ──────────────
-    app.delete("/api/cache", async (req, res) => {
-        const { url } = req.query as { url?: string };
-        if (!url) {
-            // Clear ALL L1 cache
-            analysisCache.clear();
-            res.json({ cleared: 'l1-all', size: 0 });
-            return;
+    // ── DEV ONLY: clear L1 + L2 cache by cache hash or source URL ──────────
+    app.delete("/api/cache", analyzeRateLimit, apiKeyGuard, async (req, res) => {
+        const requestId = crypto.randomUUID();
+        res.setHeader('X-Request-ID', requestId);
+
+        if (process.env.NODE_ENV === 'production') {
+            return res.status(403).json({ error: 'Cache clear endpoint is disabled in production.', requestId });
         }
-        const hash = crypto.createHash('sha256').update(url).digest('hex');
-        analysisCache.delete(hash);
+
+        const { url, hash } = req.query as { url?: string; hash?: string };
+
+        if (!url && !hash) {
+            // Clear all L1 cache entries for local dev convenience.
+            analysisCache.clear();
+            cacheKeyToUrlHash.clear();
+            cacheKeysByUrlHash.clear();
+            return res.json({ cleared: 'l1-all', size: 0, requestId });
+        }
+
+        if (hash) {
+            const l1Cleared = removeCacheEntry(hash) ? 1 : 0;
+            let l2Cleared = 0;
+            if (firestoreDb) {
+                try {
+                    await firestoreDb.collection(SHARED_CACHE_COLLECTION).doc(hash).delete();
+                    l2Cleared = 1;
+                } catch (e: any) {
+                    return res.json({ cleared: 'l1-only', hash, l1Cleared, l2Cleared, error: e.message, requestId });
+                }
+            }
+            return res.json({ cleared: 'by-hash', hash, l1Cleared, l2Cleared, requestId });
+        }
+
+        const normalizedUrl = normalizeSourceUrl(url);
+        if (!normalizedUrl) {
+            return res.status(400).json({ error: 'Invalid url.', requestId });
+        }
+        const sourceUrlHash = hashSourceUrl(normalizedUrl);
+        const l1Cleared = clearCacheEntriesByUrlHash(sourceUrlHash);
+        let l2Cleared = 0;
+
         if (firestoreDb) {
             try {
-                await firestoreDb.collection(SHARED_CACHE_COLLECTION).doc(hash).delete();
-                res.json({ cleared: 'l1+l2', hash });
+                const snap = await firestoreDb
+                    .collection(SHARED_CACHE_COLLECTION)
+                    .where('sourceUrlHash', '==', sourceUrlHash)
+                    .get();
+                if (!snap.empty) {
+                    const batch = firestoreDb.batch();
+                    for (const d of snap.docs) batch.delete(d.ref);
+                    await batch.commit();
+                    l2Cleared += snap.size;
+                }
+
+                // Legacy fallback: older cache-clear callers hashed the raw URL directly.
+                const legacyHash = hashSourceUrl(url!);
+                if (legacyHash !== sourceUrlHash) {
+                    await firestoreDb.collection(SHARED_CACHE_COLLECTION).doc(legacyHash).delete().catch(() => {});
+                }
             } catch (e: any) {
-                res.json({ cleared: 'l1-only', hash, error: e.message });
+                return res.json({
+                    cleared: 'l1-only',
+                    sourceUrlHash,
+                    l1Cleared,
+                    l2Cleared,
+                    error: e.message,
+                    requestId,
+                });
             }
-        } else {
-            res.json({ cleared: 'l1-only', hash });
         }
+
+        res.json({ cleared: 'by-url', sourceUrlHash, l1Cleared, l2Cleared, requestId });
     });
 
     app.get("/api/credits", analyzeRateLimit, apiKeyGuard, async (req, res) => {
@@ -1087,17 +1465,14 @@ async function startServer() {
         res.setHeader('X-Request-ID', requestId);
         const uid = await getUidFromRequest(req);
         if (!uid) return res.status(401).json({ error: 'Sign in required.', requestId });
-        if (!firestoreDb) return res.json({ credits: FREE_CREDITS, requestId });
-        try {
-            const snap = await firestoreDb.collection('users').doc(uid).get();
-            const currentMonth = new Date().toISOString().slice(0, 7);
-            if (!snap.exists) return res.json({ credits: FREE_CREDITS, requestId });
-            const d = snap.data()!;
-            const credits = d.lastResetMonth !== currentMonth ? FREE_CREDITS : (d.credits ?? FREE_CREDITS);
-            res.json({ credits, requestId });
-        } catch (err: any) {
-            res.status(500).json({ error: 'Could not fetch credits.', requestId });
+        const creditResult = await checkAndDeductCredits(uid, 0);
+        if (!creditResult.ok) {
+            return res.status(503).json({ error: creditResult.error, requestId });
         }
+        res.json({
+            credits: creditResult.creditsLeft >= 0 ? creditResult.creditsLeft : FREE_CREDITS,
+            requestId,
+        });
     });
 
     app.post("/api/analyze", analyzeRateLimit, apiKeyGuard, async (req, res) => {
@@ -1105,7 +1480,7 @@ async function startServer() {
         const requestId = crypto.randomUUID();
         res.setHeader('X-Request-ID', requestId);
 
-        const { text, tier, eli5, darkPatterns } = req.body;
+        const { text, tier, eli5, darkPatterns, url } = req.body ?? {};
 
         if (!text || typeof text !== 'string') {
             return res.status(400).json({ error: 'No text provided.', requestId });
@@ -1135,22 +1510,11 @@ async function startServer() {
         }
 
         const effectiveTier = tier === 'deep' ? 'deep' : 'quick';
-        const cost = CREDIT_COST[effectiveTier];
+        const normalizedSourceUrl = normalizeSourceUrl(typeof url === 'string' ? url : null);
+        const sourceUrlHash = normalizedSourceUrl ? hashSourceUrl(normalizedSourceUrl) : null;
 
-        // ── Credit check — deduct before calling NIM ───────────────────────────
-        const creditResult = await checkAndDeductCredits(uid, cost);
-        if (!creditResult.ok) {
-            // Calculate the 1st of next month as the reset date
-            const now = new Date();
-            const resetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-                .toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-            return res.status(402).json({
-                error: creditResult.error,
-                creditsLeft: creditResult.creditsLeft,
-                resetDate,
-                requestId,
-            });
-        }
+        // Tier cost (deducted only for uncached analyses).
+        const cost = CREDIT_COST[effectiveTier];
 
         // Multi-agent covers up to MAX_CHUNKS × CHUNK_SIZE chars; truncate beyond that
         const MAX_TOTAL = MAX_CHUNKS * CHUNK_SIZE; // 80 000 chars
@@ -1167,43 +1531,63 @@ async function startServer() {
             .update(processedText + (eli5 ? '_eli5' : '') + (effectiveTier === 'deep' ? '_deep' : '') + (darkPatterns ? '_dp' : '') + `_${model.id}`)
             .digest('hex');
 
-        // SSE headers
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
+        const startSse = () => {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+        };
+        const sendSseAndEnd = (data: any) => {
+            startSse();
+            res.write(`data: ${JSON.stringify(data)}\n\n`);
+            res.end();
+        };
 
-        const sendUpdate = (data: any) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+        console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan - ${processedText.length} chars | ip=${req.ip}`);
 
-        // FIX #4: Abort the NIM call immediately when the client disconnects
-        // (navigates away, closes tab) — stops wasting API credits on orphaned requests.
-        const controller = new AbortController();
-        req.on('close', () => controller.abort());
-
-        console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan — ${processedText.length} chars | ip=${req.ip}`);
-
-        // ── L1: in-memory cache (sub-ms) ──────────────────────────────────────
-        if (analysisCache.has(hash)) {
+        const cachedL1 = analysisCache.get(hash);
+        if (cachedL1) {
             console.log(`[TLDR Shield] [${requestId}] L1 cache hit (in-memory)`);
-            sendUpdate({
-                ...analysisCache.get(hash),
+            const creditSnapshot = await checkAndDeductCredits(uid, 0);
+            if (!creditSnapshot.ok) {
+                return res.status(503).json({ error: creditSnapshot.error, requestId });
+            }
+            void saveScanRecord(uid, cachedL1, {
+                url: normalizedSourceUrl,
+                tier: effectiveTier,
+                requestId,
+                modelId: model.id,
+                cached: true,
+                latencyMs: 0,
+            });
+            return sendSseAndEnd({
+                ...cachedL1,
                 status: 'Complete',
                 cached: true,
                 truncated: wasTruncated,
                 latencyMs: 0,
                 model: model.id,
                 requestId,
-                creditsLeft: creditResult.creditsLeft,
+                creditsLeft: creditSnapshot.creditsLeft,
             });
-            return res.end();
         }
 
-        // ── L2: Firestore shared community cache (~50ms) ───────────────────────
-        sendUpdate({ status: 'Checking community cache...' });
         const sharedResult = await getSharedCache(hash);
         if (sharedResult) {
             console.log(`[TLDR Shield] [${requestId}] L2 cache hit (Firestore shared)`);
-            setCacheEntry(hash, sharedResult); // promote to L1
-            sendUpdate({
+            setCacheEntry(hash, sharedResult, sourceUrlHash);
+            const creditSnapshot = await checkAndDeductCredits(uid, 0);
+            if (!creditSnapshot.ok) {
+                return res.status(503).json({ error: creditSnapshot.error, requestId });
+            }
+            void saveScanRecord(uid, sharedResult, {
+                url: normalizedSourceUrl,
+                tier: effectiveTier,
+                requestId,
+                modelId: model.id,
+                cached: true,
+                latencyMs: 0,
+            });
+            return sendSseAndEnd({
                 ...sharedResult,
                 status: 'Complete',
                 cached: true,
@@ -1211,13 +1595,37 @@ async function startServer() {
                 latencyMs: 0,
                 model: model.id,
                 requestId,
-                creditsLeft: creditResult.creditsLeft,
+                creditsLeft: creditSnapshot.creditsLeft,
             });
-            return res.end();
         }
 
+        const creditResult = await checkAndDeductCredits(uid, cost);
+        if (!creditResult.ok) {
+            if (creditResult.reason === 'insufficient') {
+                return res.status(402).json({
+                    error: creditResult.error,
+                    creditsLeft: creditResult.creditsLeft,
+                    resetDate: getNextResetDateLabel(),
+                    requestId,
+                });
+            }
+            return res.status(503).json({ error: creditResult.error, requestId });
+        }
+
+        startSse();
+        const sendUpdate = (data: any) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+        // FIX #4: Abort the NIM call immediately when the client disconnects
+        // (navigates away, closes tab) - stops wasting API credits on orphaned requests.
+        const controller = new AbortController();
+        let clientDisconnected = false;
+        req.on('close', () => {
+            clientDisconnected = true;
+            controller.abort();
+        });
+        let shouldRefund = cost > 0 && creditResult.creditsLeft >= 0;
+        const analysisStart = Date.now();
         try {
-            const analysisStart = Date.now();
             const chunks = chunkText(processedText);
             const isMultiChunk = chunks.length > 1;
 
@@ -1433,13 +1841,69 @@ async function startServer() {
             console.log(`[TLDR Shield] [${requestId}] ${effectiveTier} scan complete — ${latencyMs}ms | chunks=${chunks.length} | rating=${result.rating} | score=${result.score} | credits_left=${creditResult.creditsLeft}`);
             sendUpdate({ ...finalResult, status: 'Complete', cached: false });
             // Write to L1 (sync) and L2 Firestore shared cache (async, fire-and-forget)
-            setCacheEntry(hash, result);
-            setSharedCache(hash, result, effectiveTier);
+            setCacheEntry(hash, result, sourceUrlHash);
+            setSharedCache(hash, result, effectiveTier, sourceUrlHash);
+            void saveScanRecord(uid, result, {
+                url: normalizedSourceUrl,
+                tier: effectiveTier,
+                requestId,
+                modelId: model.id,
+                cached: false,
+                latencyMs,
+            });
+            shouldRefund = false;
             res.end();
 
         } catch (error: any) {
             // FIX #10: Clean, user-friendly error messages — no raw API errors exposed
             console.error(`[TLDR Shield] [${requestId}] Analysis error:`, error?.status ?? '', error?.message ?? error);
+            // Deep-scan reliability mode:
+            // If LLM parsing/timing fails, return a deterministic structured result so parse rate stays high.
+            if (effectiveTier === 'deep' && !clientDisconnected && !res.writableEnded) {
+                const fallbackReason = error?.message ? String(error.message) : String(error);
+                const fallbackResult = buildDeterministicDeepFallback(processedText, darkPatterns ?? false, fallbackReason);
+                const latencyMs = Date.now() - analysisStart;
+
+                let creditsLeft = creditResult.creditsLeft;
+                if (shouldRefund) {
+                    const refunded = await refundCredits(uid, cost);
+                    creditsLeft = typeof refunded === 'number' ? refunded : creditsLeft;
+                    console.warn(`[TLDR Shield] [${requestId}] Refunded ${cost} credits after degraded fallback. New balance=${refunded ?? 'unknown'}`);
+                }
+                shouldRefund = false;
+
+                const finalFallback = {
+                    ...fallbackResult,
+                    truncated: wasTruncated,
+                    truncatedPercent,
+                    chunked: processedText.length > CHUNK_THRESHOLD,
+                    chunkCount: chunkText(processedText).length,
+                    latencyMs,
+                    model: `${model.id}:fallback`,
+                    requestId,
+                    creditsLeft,
+                    degraded: true,
+                };
+                sendUpdate({ ...finalFallback, status: 'Complete', cached: false });
+                void saveScanRecord(uid, fallbackResult, {
+                    url: normalizedSourceUrl,
+                    tier: effectiveTier,
+                    requestId,
+                    modelId: `${model.id}:fallback`,
+                    cached: false,
+                    latencyMs,
+                });
+                res.end();
+                return;
+            }
+
+            if (shouldRefund) {
+                const refunded = await refundCredits(uid, cost);
+                console.warn(`[TLDR Shield] [${requestId}] Refunded ${cost} credits after failed scan. New balance=${refunded ?? 'unknown'}`);
+            }
+            // If the client disconnected, nothing to send.
+            if (clientDisconnected || res.writableEnded) return;
+
             let userMessage: string;
             if (error.name === 'AbortError') {
                 userMessage = 'Analysis timed out. Try a shorter document or switch to Basic Scan.';

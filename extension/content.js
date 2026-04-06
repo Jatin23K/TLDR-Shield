@@ -24,6 +24,18 @@ const SIGNALS = {
 
 const CONFIDENCE_THRESHOLD = 30; // minimum score to show the trigger button
 
+// Resolves the backend base URL from chrome.storage (key: apiUrl).
+// Falls back to empty string — callers must handle the empty case.
+function getReportUrl(cb) {
+  if (typeof chrome !== 'undefined' && chrome.storage) {
+    chrome.storage.local.get({ apiUrl: '' }, ({ apiUrl }) => {
+      cb((apiUrl || '').replace(/\/api\/analyze$/, ''));
+    });
+  } else {
+    cb('');
+  }
+}
+
 const LEGAL_URL_PATTERNS = [
   /\/terms[-_]?(of[-_]?(service|use))?/i,
   /\/privacy[-_]?(policy)?/i,
@@ -217,12 +229,14 @@ async function extractModalScrollContent() {
     const initialText = target.innerText?.trim() ?? '';
     if (!initialText || !hasLegalKeyword(initialText)) continue;
 
-    // Scroll the container to the bottom in steps to trigger lazy rendering
+    // Scroll the container to the bottom in steps to trigger lazy rendering.
+    // Hard cap of 5 seconds total to avoid stalling extraction on misbehaving modals.
     if (isScrollable(target)) {
       const totalHeight = target.scrollHeight;
       const step = Math.max(300, Math.floor(target.clientHeight * 0.8));
+      const scrollDeadline = Date.now() + 5000;
       let pos = 0;
-      while (pos < totalHeight) {
+      while (pos < totalHeight && Date.now() < scrollDeadline) {
         target.scrollTop = pos;
         pos += step;
         await sleep(120); // allow lazy content to render
@@ -333,7 +347,14 @@ async function fetchPaginatedPages(firstPageText) {
     visited.add(nextUrl);
 
     try {
-      const res  = await fetch(nextUrl, { credentials: 'omit' });
+      const pageController = new AbortController();
+      const pageTimeout = setTimeout(() => pageController.abort(), 8000);
+      let res;
+      try {
+        res = await fetch(nextUrl, { credentials: 'omit', signal: pageController.signal });
+      } finally {
+        clearTimeout(pageTimeout);
+      }
       if (!res.ok) break;
 
       const html = await res.text();
@@ -627,7 +648,7 @@ function createTriggerButton() {
         return; // background.js will send ANALYSIS_RESULT when done
       }
       const text = await extractPageText();
-      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text });
+      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: location.href });
     } catch (err) {
       // "Extension context invalidated" = extension was reloaded but this tab still
       // has the old content script. Show a friendly reload prompt instead of silent fail.
@@ -834,6 +855,12 @@ function showOutOfCreditsPanel(resetDate) {
     border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,0.6); font-family:system-ui,sans-serif;
     padding:20px; color:#f1f5f9; animation: tldrSlideIn 0.3s ease;
   `;
+
+  // Sanitize resetDate — server-computed but treat as untrusted for DOM safety
+  const safeResetDate = document.createElement('strong');
+  safeResetDate.style.cssText = 'color:#94a3b8;';
+  safeResetDate.textContent = resetDate || 'the 1st of next month';
+
   panel.innerHTML = `
     <style>
       @keyframes tldrSlideIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
@@ -850,12 +877,12 @@ function showOutOfCreditsPanel(resetDate) {
     <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;line-height:1.5;">
       You've used all your credits for this month.
     </p>
-    <p style="margin:0 0 16px;font-size:13px;color:#64748b;">
-      🔄 Free credits reset on <strong style="color:#94a3b8;">${resetDate}</strong>
+    <p id="tldr-oc-reset" style="margin:0 0 16px;font-size:13px;color:#64748b;">
+      🔄 Free credits reset on
     </p>
     <div id="tldr-oc-buy" style="display:flex;flex-direction:column;gap:8px;">
       <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.08em;text-transform:uppercase;">Top up now</p>
-      <a href="http://localhost:3000" target="_blank" style="
+      <a id="tldr-oc-tier1" href="#" target="_blank" rel="noopener" style="
         display:flex;align-items:center;justify-content:space-between;
         background:rgba(79,70,229,0.12);border:1px solid rgba(79,70,229,0.3);
         border-radius:10px;padding:10px 14px;cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:600;
@@ -863,7 +890,7 @@ function showOutOfCreditsPanel(resetDate) {
         <span>1,000 credits</span>
         <span style="color:#818cf8;font-weight:700;">$7</span>
       </a>
-      <a href="http://localhost:3000" target="_blank" style="
+      <a id="tldr-oc-tier2" href="#" target="_blank" rel="noopener" style="
         display:flex;align-items:center;justify-content:space-between;
         background:rgba(79,70,229,0.18);border:1px solid rgba(99,102,241,0.5);
         border-radius:10px;padding:10px 14px;cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:600;
@@ -873,6 +900,17 @@ function showOutOfCreditsPanel(resetDate) {
       </a>
     </div>
   `;
+
+  // Safe DOM insertion of reset date (avoids innerHTML injection)
+  panel.querySelector('#tldr-oc-reset').appendChild(safeResetDate);
+
+  // Resolve buy link URLs from stored apiUrl (same pattern as report button)
+  getReportUrl((base) => {
+    const buyUrl = base + '/pricing';
+    panel.querySelector('#tldr-oc-tier1').href = buyUrl;
+    panel.querySelector('#tldr-oc-tier2').href = buyUrl;
+  });
+
   document.body.appendChild(panel);
   panel.querySelector('#tldr-oc-close').addEventListener('click', () => panel.remove());
 }
@@ -1171,32 +1209,58 @@ function showResultPanel(data) {
       requestId: data.requestId ?? null,
       userAgent: navigator.userAgent.slice(0, 120),
     };
-    // Use stored API URL base (same as analyze endpoint), fallback to Cloud Run URL
-    const DEFAULT_REPORT_BASE = 'https://ais-dev-7hajrqzemtlrs4e54xvhfc-762479635980.asia-southeast1.run.app';
-    const getReportUrl = (cb) => {
+    // Use stored API URL base (same as analyze endpoint)
+    getReportUrl((base) => {
+      const sendReport = async (token) => {
+        const response = await fetch(base + '/api/report', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          let message = `HTTP ${response.status}`;
+          try {
+            const err = await response.json();
+            if (err && typeof err.error === 'string') message = err.error;
+          } catch (_) {}
+          throw new Error(message);
+        }
+      };
+
       if (typeof chrome !== 'undefined' && chrome.storage) {
-        chrome.storage.local.get({ apiUrl: DEFAULT_REPORT_BASE + '/api/analyze' }, ({ apiUrl }) => {
-          cb((apiUrl || '').replace(/\/api\/analyze$/, '') || DEFAULT_REPORT_BASE);
+        chrome.storage.local.get(['authToken', 'authTokenExpiry'], ({ authToken, authTokenExpiry }) => {
+          const validToken = authToken && authTokenExpiry > Date.now() ? authToken : null;
+          if (!validToken) {
+            reportBtn.textContent = 'Sign in to report';
+            reportBtn.disabled = false;
+            return;
+          }
+          sendReport(validToken)
+            .then(() => {
+              reportBtn.textContent = "\u2713 Thanks \u2014 we'll review it";
+              reportBtn.classList.add('tldr-reported');
+              reportBtn.disabled = false;
+            })
+            .catch(() => {
+              reportBtn.textContent = 'Could not send report';
+              reportBtn.disabled = false;
+            });
         });
       } else {
-        cb(DEFAULT_REPORT_BASE);
+        sendReport(null)
+          .then(() => {
+            reportBtn.textContent = "\u2713 Thanks \u2014 we'll review it";
+            reportBtn.classList.add('tldr-reported');
+            reportBtn.disabled = false;
+          })
+          .catch(() => {
+            reportBtn.textContent = 'Could not send report';
+            reportBtn.disabled = false;
+          });
       }
-    };
-    getReportUrl((base) => {
-    fetch(base + '/api/report', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
-    })
-      .then(() => {
-        reportBtn.textContent = "\u2713 Thanks \u2014 we'll review it";
-        reportBtn.classList.add('tldr-reported');
-        reportBtn.disabled = false;
-      })
-      .catch(() => {
-        reportBtn.textContent = 'Report incorrect result';
-        reportBtn.disabled = false;
-      });
     }); // getReportUrl callback
   });   // reportBtn click
   panel.appendChild(reportBtn);
@@ -1333,11 +1397,16 @@ function runDetection() {
   removeTriggerButton();
   removeResultPanel();
 
-  // Always show FAB on every page (user can disable per-site or globally via right-click)
+  // Show FAB only on likely legal pages (or PDFs), based on confidence scoring.
   if (typeof chrome === 'undefined' || !chrome.storage) return;
   chrome.storage.local.get({ disabledAll: false, disabledSites: [] }, ({ disabledAll, disabledSites }) => {
     if (chrome.runtime.lastError) return; // context invalidated mid-callback
     if (disabledAll || disabledSites.includes(location.hostname)) return;
+    const isPdf = document.contentType === 'application/pdf' ||
+      /\.pdf(\?.*)?$/i.test(location.href) ||
+      document.querySelector('embed[type="application/pdf"]') !== null;
+    const { score } = computeConfidence();
+    if (!isPdf && score < CONFIDENCE_THRESHOLD) return;
     createTriggerButton();
   });
 }
@@ -1361,6 +1430,12 @@ observer.observe(document.body, {
   subtree: false,   // only direct children — avoids noise from deep DOM churn
 });
 
+// Disconnect observer on page unload to prevent memory leaks on long-lived pages
+window.addEventListener('pagehide', () => {
+  observer.disconnect();
+  clearTimeout(mutationTimer);
+}, { once: true });
+
 // Popstate / hashchange for SPA navigation (pushState is caught by MutationObserver)
 window.addEventListener('popstate', () => setTimeout(runDetection, 500));
 
@@ -1369,17 +1444,36 @@ window.addEventListener('popstate', () => setTimeout(runDetection, 500));
 // We relay the token to background.js which stores it in chrome.storage.local.
 // background.js then passes it as Authorization: Bearer <token> on every scan.
 window.addEventListener('message', (e) => {
-  if (e.source !== window) return; // only trust messages from this page
-  if (e.data?.type === 'TLDR_AUTH_TOKEN') {
-    chrome.runtime.sendMessage({
-      type: 'STORE_AUTH',
-      token: e.data.token,
-      uid:   e.data.uid,
-      email: e.data.email,
-    });
-  }
-  if (e.data?.type === 'TLDR_AUTH_SIGNOUT') {
+  if (e.source !== window) return;
+  const type = e.data?.type;
+  if (type !== 'TLDR_AUTH_TOKEN' && type !== 'TLDR_AUTH_SIGNOUT') return;
+  if (typeof chrome === 'undefined' || !chrome.storage) return;
+
+  chrome.storage.local.get({ apiUrl: '' }, ({ apiUrl }) => {
+    let trustedOrigin = '';
+    try {
+      const base = (apiUrl || '').replace(/\/api\/analyze$/, '');
+      if (base) trustedOrigin = new URL(base).origin;
+    } catch {
+      trustedOrigin = '';
+    }
+    const allowedOrigins = new Set([
+      trustedOrigin,
+      'http://localhost:3000',
+      'http://localhost:5173',
+    ]);
+    if (!allowedOrigins.has(e.origin)) return;
+
+    if (type === 'TLDR_AUTH_TOKEN') {
+      chrome.runtime.sendMessage({
+        type: 'STORE_AUTH',
+        token: e.data.token,
+        uid: e.data.uid,
+        email: e.data.email,
+      });
+      return;
+    }
     chrome.runtime.sendMessage({ type: 'CLEAR_AUTH' });
-  }
+  });
 });
 window.addEventListener('hashchange', () => setTimeout(runDetection, 500));

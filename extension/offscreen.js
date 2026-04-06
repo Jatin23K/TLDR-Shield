@@ -7,7 +7,7 @@
  *
  * Message protocol:
  *   IN:  { type: 'EXTRACT_PDF', url: string, tabId: number }
- *   OUT: { type: 'PDF_TEXT',    text: string, tabId: number }
+ *   OUT: { type: 'PDF_TEXT',    text: string, tabId: number, url: string }
  *       | { type: 'PDF_ERROR',  error: string, tabId: number }
  */
 
@@ -45,7 +45,7 @@ async function extractPdfText(url, tabId) {
     }
 
     const text = pageTexts.join('\n\n');
-    chrome.runtime.sendMessage({ type: 'PDF_TEXT', text, tabId });
+    chrome.runtime.sendMessage({ type: 'PDF_TEXT', text, tabId, url });
   } catch (err) {
     chrome.runtime.sendMessage({
       type:  'PDF_ERROR',
