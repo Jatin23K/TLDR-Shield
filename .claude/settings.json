@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**)",
+
+      "Bash(npm run lint)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run check:nim)",
+      "Bash(npm run eval)",
+      "Bash(npm run eval:*)",
+
+      "Bash(git status)",
+      "Bash(git status:*)",
+      "Bash(git diff)",
+      "Bash(git diff:*)",
+      "Bash(git log)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git stash list)",
+
+      "Bash(node -e:*)",
+      "Bash(npx tsx eval/:*)",
+      "Bash(tsx eval/:*)",
+
+      "Bash(wc -l:*)",
+      "Bash(curl -s http://localhost:3000/health)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)"
+    ]
+  }
+}
