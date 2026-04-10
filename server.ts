@@ -1,3 +1,4 @@
+// Railway deployment v2 - forced rebuild
 import express from "express";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
