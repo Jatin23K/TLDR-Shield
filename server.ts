@@ -42,30 +42,18 @@ let firestoreDb: Firestore | null = null;
         const projectId: string = appletConfig.projectId;
         const databaseId: string = appletConfig.firestoreDatabaseId ?? '(default)';
 
+        console.log('[RAILWAY] ENV CHECK - SA_JSON length:', process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.length ?? 0);
+
         if (getApps().length === 0) {
-            const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-            console.log('[DEBUG] SA_JSON present:', !!saJson, 'length:', (saJson || '').length);
+            const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
             const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
             if (saJson) {
-                // Inline JSON string — works on Railway, Render, Fly, and any PaaS
-                // that can't mount files. Paste the service account JSON as a single
-                // env var value (multi-line JSON is fine; most dashboards accept it).
-                let sa: object;
-                try {
-                    sa = JSON.parse(saJson);
-                } catch (e) {
-                    console.error('[TLDR Shield] FIREBASE_SERVICE_ACCOUNT_JSON is set but failed to parse as JSON:', e);
-                    console.error('[TLDR Shield] First 80 chars of value:', saJson.slice(0, 80));
-                    throw e;
-                }
+                const sa = JSON.parse(saJson);
                 initializeApp({ credential: cert(sa), projectId });
             } else if (saPath) {
-                // File path — local dev or CI with mounted secrets
                 const sa = JSON.parse(readFileSync(saPath, 'utf8'));
                 initializeApp({ credential: cert(sa), projectId });
             } else {
-                // Application Default Credentials: automatic on Cloud Run / GKE.
-                // For local dev: run  gcloud auth application-default login
                 initializeApp({ projectId });
             }
         }
