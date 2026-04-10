@@ -43,6 +43,7 @@ let firestoreDb: Firestore | null = null;
 
         if (getApps().length === 0) {
             const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+            console.log('[DEBUG] SA_JSON present:', !!saJson, 'length:', (saJson || '').length);
             const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
             if (saJson) {
                 // Inline JSON string — works on Railway, Render, Fly, and any PaaS
