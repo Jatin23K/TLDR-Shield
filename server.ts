@@ -66,14 +66,9 @@ let firestoreDb: Firestore | null = null;
         firestoreDb = db;
         console.log('[TLDR Shield] Firestore shared cache: CONNECTED (project=' + projectId + ', db=' + databaseId + ')');
     } catch (err: any) {
-        console.warn(
-            '[TLDR Shield] Firestore unavailable — running with in-memory cache only.\n' +
-            '  To enable shared cache:\n' +
-            '    Option A: gcloud auth application-default login  (local dev)\n' +
-            '    Option B: set FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json  (local dev / CI)\n' +
-            '    Option C: set FIREBASE_SERVICE_ACCOUNT_JSON=\'{"type":"service_account",...}\'  (Railway / PaaS)\n' +
-            '  Error: ' + (err?.message ?? err)
-        );
+        console.warn('[TLDR Shield] Firebase init failed — running without Firestore (in-memory cache only).');
+        console.warn('[TLDR Shield] Firebase error:', err?.message ?? err);
+        // Server continues — Firebase is optional. /health and NIM scans still work.
     }
 })();
 
@@ -1956,4 +1951,11 @@ async function startServer() {
     process.on('SIGINT',  () => shutdown('SIGINT'));
 }
 
-startServer();
+process.on('unhandledRejection', (reason) => {
+    console.error('[TLDR Shield] Unhandled promise rejection (server kept alive):', reason);
+});
+
+startServer().catch((err) => {
+    console.error('[TLDR Shield] FATAL: startServer() threw unexpectedly:', err);
+    process.exit(1);
+});
