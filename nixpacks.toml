@@ -1,0 +1,10 @@
+# Force Railway to treat this as a Node.js server, not a static site.
+# nixpacks.toml takes precedence over auto-detection.
+
+providers = ["node"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm start"
