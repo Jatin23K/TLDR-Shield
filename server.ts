@@ -49,7 +49,14 @@ let firestoreDb: Firestore | null = null;
                 // Inline JSON string — works on Railway, Render, Fly, and any PaaS
                 // that can't mount files. Paste the service account JSON as a single
                 // env var value (multi-line JSON is fine; most dashboards accept it).
-                const sa = JSON.parse(saJson);
+                let sa: object;
+                try {
+                    sa = JSON.parse(saJson);
+                } catch (e) {
+                    console.error('[TLDR Shield] FIREBASE_SERVICE_ACCOUNT_JSON is set but failed to parse as JSON:', e);
+                    console.error('[TLDR Shield] First 80 chars of value:', saJson.slice(0, 80));
+                    throw e;
+                }
                 initializeApp({ credential: cert(sa), projectId });
             } else if (saPath) {
                 // File path — local dev or CI with mounted secrets
