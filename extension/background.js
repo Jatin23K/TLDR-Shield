@@ -4,7 +4,7 @@
 // Set this once via the extension's storage (or ship a production build with the correct value).
 // Fallback is intentionally empty — if not configured the scan will fail loudly rather than
 // silently routing to a dev/staging server.
-const DEFAULT_API_URL = '';
+const DEFAULT_API_URL = 'https://tldr-shield-production.up.railway.app/api/analyze';
 
 // FIX #3: MV3 service workers are killed after ~30s of inactivity.
 // A deep scan can take 25-40s. We keep the worker alive by opening a port

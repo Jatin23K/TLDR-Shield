@@ -2,7 +2,7 @@
 
 // Set the production backend URL here before shipping.
 // Intentionally empty so misconfigured builds fail loudly rather than routing to a dev server.
-const DEFAULT_API_URL = '';
+const DEFAULT_API_URL = 'https://tldr-shield-production.up.railway.app/api/analyze';
 const DASHBOARD_URL   = '';
 
 // ── DOM references ──────────────────────────────────────────────────────────
