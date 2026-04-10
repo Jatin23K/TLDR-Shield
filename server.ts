@@ -42,9 +42,16 @@ let firestoreDb: Firestore | null = null;
         const databaseId: string = appletConfig.firestoreDatabaseId ?? '(default)';
 
         if (getApps().length === 0) {
+            const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
             const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
-            if (saPath) {
-                // Explicit service account JSON (local dev or CI)
+            if (saJson) {
+                // Inline JSON string — works on Railway, Render, Fly, and any PaaS
+                // that can't mount files. Paste the service account JSON as a single
+                // env var value (multi-line JSON is fine; most dashboards accept it).
+                const sa = JSON.parse(saJson);
+                initializeApp({ credential: cert(sa), projectId });
+            } else if (saPath) {
+                // File path — local dev or CI with mounted secrets
                 const sa = JSON.parse(readFileSync(saPath, 'utf8'));
                 initializeApp({ credential: cert(sa), projectId });
             } else {
@@ -64,9 +71,10 @@ let firestoreDb: Firestore | null = null;
     } catch (err: any) {
         console.warn(
             '[TLDR Shield] Firestore unavailable — running with in-memory cache only.\n' +
-            '  To enable shared cache locally:\n' +
-            '    Option A: gcloud auth application-default login\n' +
-            '    Option B: set FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json\n' +
+            '  To enable shared cache:\n' +
+            '    Option A: gcloud auth application-default login  (local dev)\n' +
+            '    Option B: set FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json  (local dev / CI)\n' +
+            '    Option C: set FIREBASE_SERVICE_ACCOUNT_JSON=\'{"type":"service_account",...}\'  (Railway / PaaS)\n' +
             '  Error: ' + (err?.message ?? err)
         );
     }

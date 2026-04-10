@@ -144,8 +144,9 @@ NIM_API_KEY_1=nvapi-...       # Primary NIM key
 NIM_API_KEY_2=nvapi-...       # Failover key
 NIM_API_KEY_3=nvapi-...       # Failover key
 
-# Firebase (local dev only — Cloud Run uses Application Default Credentials)
-FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json
+# Firebase credentials — use ONE of these three options:
+FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'  # Railway / any PaaS (inline JSON)
+FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json     # Local dev / CI (file path)
 
 # Optional tuning
 NIM_PER_KEY_TIMEOUT_MS=12000  # Default: 12s timeout per NIM key attempt
@@ -161,9 +162,10 @@ INTERNAL_API_KEY=...          # Optional: require X-API-Key header on all endpoi
 ALLOW_UNMETERED_LOCAL=true    # Dev only: bypass credit check when Firestore is offline
 ```
 
-**Firestore credentials:**
-- Production (Cloud Run): Application Default Credentials — automatic, no file needed.
-- Local dev: `FIREBASE_SERVICE_ACCOUNT_PATH` OR `gcloud auth application-default login`.
+**Firestore credentials** (checked in this priority order in `server.ts`):
+1. `FIREBASE_SERVICE_ACCOUNT_JSON` — inline JSON string; works on Railway, Render, Fly, and any PaaS that can't mount files.
+2. `FIREBASE_SERVICE_ACCOUNT_PATH` — path to a service account JSON file; local dev or CI with mounted secrets.
+3. Application Default Credentials — automatic on Cloud Run / GKE; use `gcloud auth application-default login` locally.
 
 ---
 
