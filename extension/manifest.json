@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "TLDR Shield",
-  "version": "1.1",
-  "description": "Automatically detect and analyze Terms and Conditions as you browse.",
+  "version": "2.0",
+  "description": "AI-powered privacy analysis for Terms of Service and Privacy Policies. Get SAFE/OKAY/RISKY verdicts with verbatim citations.",
   "permissions": ["activeTab", "storage", "scripting", "offscreen"],
-  "host_permissions": ["*://*.run.app/*", "*://*.railway.app/*", "http://localhost:3000/*"],
+  "host_permissions": ["*://*.run.app/*", "http://localhost:3000/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
