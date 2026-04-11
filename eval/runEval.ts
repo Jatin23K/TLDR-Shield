@@ -44,8 +44,11 @@ const QUICK_MODEL_ID = (process.env.NIM_MODEL_QUICK || DEFAULT_QUICK_MODEL_ID).t
 const DEEP_MODEL_ID = (process.env.NIM_MODEL_DEEP || DEFAULT_DEEP_MODEL_ID).trim();
 
 const MODELS: Record<Tier, { id: string; maxTokens: number; temperature: number; timeoutMs: number }> = {
-  quick: { id: QUICK_MODEL_ID, maxTokens: 750, temperature: 0.2, timeoutMs: 28000 },
-  deep: { id: DEEP_MODEL_ID, maxTokens: 900, temperature: 0.2, timeoutMs: 45000 },
+  // maxTokens and timeoutMs must match production server.ts values exactly.
+  // Quick: 120 tokens (badge only — rating+score+tldr, no pillar breakdown)
+  // Deep:  1400 tokens (full pillar breakdown + verbatim citations)
+  quick: { id: QUICK_MODEL_ID, maxTokens: 120, temperature: 0.2, timeoutMs: 20000 },
+  deep: { id: DEEP_MODEL_ID, maxTokens: 1400, temperature: 0.2, timeoutMs: 45000 },
 };
 
 let nimKeyIndex = 0;
