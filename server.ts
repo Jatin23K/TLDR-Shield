@@ -1276,6 +1276,7 @@ async function startServer() {
     const ALLOWED_ORIGINS = new Set([
         APP_ORIGIN,
         process.env.APP_URL?.trim().replace(/\/$/, ''),
+        'https://tldr-shield-production.up.railway.app',
         'http://localhost:3000',
         'http://localhost:5173',
     ].filter((o): o is string => !!o));
