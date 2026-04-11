@@ -232,10 +232,10 @@ async function runTier(tier: Tier, rows: DatasetRow[], darkPatterns: boolean) {
   let parseFails = 0;
   const perCase: Array<any> = [];
 
-  // Inter-case delay: prevents 429 bursts when running 8 cases back-to-back.
-  // Deep tier needs 2s (large tokens = slower per-key quota drain).
-  // Quick tier needs 500ms (fast responses stay within per-minute limits).
-  const INTER_CASE_DELAY_MS = tier === 'deep' ? 2000 : 500;
+  // Inter-case delay: prevents 429 bursts when running 30 cases back-to-back.
+  // Deep tier needs 5s (1400 tokens = slow per-key quota drain; 30 cases need breathing room).
+  // Quick tier needs 1.5s (120 tokens = fast, but 30 cases × 3 keys needs more space than 500ms).
+  const INTER_CASE_DELAY_MS = tier === 'deep' ? 5000 : 1500;
 
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
     if (rowIdx > 0) await new Promise(r => setTimeout(r, INTER_CASE_DELAY_MS));
