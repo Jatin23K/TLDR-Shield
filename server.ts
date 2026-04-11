@@ -1275,9 +1275,10 @@ async function startServer() {
     // Some background service workers send Origin: null — also allowed.
     const ALLOWED_ORIGINS = new Set([
         APP_ORIGIN,
+        process.env.APP_URL?.trim().replace(/\/$/, ''),
         'http://localhost:3000',
         'http://localhost:5173',
-    ]);
+    ].filter((o): o is string => !!o));
 
     app.use(cors({
         origin: (origin, callback) => {
