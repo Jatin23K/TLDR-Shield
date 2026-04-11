@@ -42,18 +42,28 @@ let firestoreDb: Firestore | null = null;
         const projectId: string = appletConfig.projectId;
         const databaseId: string = appletConfig.firestoreDatabaseId ?? '(default)';
 
-        console.log('[RAILWAY] ENV CHECK - SA_JSON length:', process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.length ?? 0);
+        const saJsonRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+        const saJson = saJsonRaw?.trim();
+        const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+        console.log(`[TLDR Shield] Firebase credentials: SA_JSON=${saJsonRaw ? saJsonRaw.length + ' chars' : 'NOT SET'}, SA_JSON_trimmed=${saJson ? saJson.length + ' chars' : 'EMPTY'}, SA_PATH=${saPath ?? 'NOT SET'}`);
 
         if (getApps().length === 0) {
-            const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
-            const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
             if (saJson) {
-                const sa = JSON.parse(saJson);
-                initializeApp({ credential: cert(sa), projectId });
+                try {
+                    const sa = JSON.parse(saJson);
+                    initializeApp({ credential: cert(sa), projectId });
+                    console.log('[TLDR Shield] Firebase initialized with FIREBASE_SERVICE_ACCOUNT_JSON');
+                } catch (parseErr: any) {
+                    console.error('[TLDR Shield] FIREBASE_SERVICE_ACCOUNT_JSON is set but failed to parse:', parseErr?.message);
+                    console.error('[TLDR Shield] First 20 chars:', saJson.substring(0, 20), '... Last 20 chars:', saJson.substring(saJson.length - 20));
+                    throw parseErr;
+                }
             } else if (saPath) {
                 const sa = JSON.parse(readFileSync(saPath, 'utf8'));
                 initializeApp({ credential: cert(sa), projectId });
+                console.log('[TLDR Shield] Firebase initialized with FIREBASE_SERVICE_ACCOUNT_PATH');
             } else {
+                console.warn('[TLDR Shield] No Firebase credentials found — falling back to Application Default Credentials (ADC)');
                 initializeApp({ projectId });
             }
         }
@@ -76,6 +86,9 @@ let firestoreDb: Firestore | null = null;
 const CREDIT_COST: Record<string, number> = { quick: 10, deep: 20 };
 const FREE_CREDITS = 400;
 const ALLOW_UNMETERED_LOCAL = process.env.ALLOW_UNMETERED_LOCAL === 'true';
+if (ALLOW_UNMETERED_LOCAL && process.env.NODE_ENV === 'production') {
+    console.warn('[TLDR Shield] WARNING: ALLOW_UNMETERED_LOCAL is set but ignored in production. Remove it from your production environment variables.');
+}
 
 type CreditResult = {
     ok: boolean;
@@ -1293,7 +1306,7 @@ async function startServer() {
             if (origin.startsWith('moz-extension://')) return callback(null, true);
             callback(new Error(`CORS: origin ${origin} not allowed`));
         },
-        methods: ['GET', 'POST'],
+        methods: ['GET', 'POST', 'DELETE'],
     }));
     app.use(express.json({ limit: '5mb' }));
 
@@ -1925,9 +1938,22 @@ async function startServer() {
         const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
         app.use(vite.middlewares);
     } else {
-        const distPath = path.join(process.cwd(), 'dist');
+        const distPath = path.resolve(__dirname, 'dist');
+        const indexPath = path.join(distPath, 'index.html');
+        const assetsPath = path.join(distPath, 'assets');
+
+        // Startup check — log whether dist/ was preserved by the build step
+        const { existsSync, readdirSync } = await import('fs');
+        const distExists = existsSync(distPath);
+        const indexExists = existsSync(indexPath);
+        const assetsExist = existsSync(assetsPath);
+        console.log(`[TLDR Shield] Static files: dist=${distExists}, index.html=${indexExists}, assets/=${assetsExist} (distPath=${distPath})`);
+        if (assetsExist) {
+            console.log(`[TLDR Shield] Assets: ${readdirSync(assetsPath).join(', ')}`);
+        }
+
         app.use(express.static(distPath));
-        app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
+        app.get('*', (_req, res) => res.sendFile(indexPath));
     }
 
     const server = app.listen(PORT, '0.0.0.0', () =>
