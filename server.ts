@@ -1131,7 +1131,7 @@ function buildSystemPrompt(eli5: boolean, darkPatterns: boolean, tier: 'quick' |
     // ── QUICK: instant verdict, badge only ────────────────────────────────────
     if (tier === 'quick') {
         const extraPillar = darkPatterns ? ', dark_patterns (liability cap under $1000 OR class action waiver OR shortened statute of limitations OR forced arbitration?)' : '';
-        return `You are a privacy attorney giving an instant verdict. Be STRICT. Scan for: ai_training (ANY mention of AI/ML training using user content = violation), data_selling (content/data shared with advertisers or third-party companies = violation), transparency (deliberately vague/obscuring language?), data_retention (retention >1yr post-deletion or completely unspecified?), content_ownership (worldwide sublicensable license "for any purpose" beyond platform use = violation)${extraPillar}.
+        return `You are a privacy attorney giving an instant verdict. Be STRICT. Scan for: ai_training (ANY mention of AI/ML training using user content = violation), data_selling (data sold/shared WITH named third parties like advertisers or brokers — NOT first-party internal use), transparency (self-contradictory or deliberately obscuring language — explicit contradiction = HIGH severity = RISKY), data_retention (retention >1yr post-deletion or completely unspecified?), content_ownership (worldwide sublicensable license "for any purpose" beyond platform use = violation)${extraPillar}.
 
 SCORING: 0 violations+clear→90-100 SAFE | 0+vague→75-89 OKAY | 1 low→50-74 OKAY | 1 high or 2→25-49 RISKY | 3-4→10-24 RISKY | 5-6→0-9 RISKY.
 MANDATORY: score<50 MUST be RISKY. score 50-74 MUST be OKAY. score≥75 = SAFE or OKAY.
@@ -1177,7 +1177,7 @@ If the specific clause does not appear in the text chunk you received, write exa
 
 Analyze the legal text against these privacy pillars:
 1. ai_training      — User content or data used for AI/ML model training, fine-tuning, or improvement, with no clear user opt-out? VIOLATION EXAMPLES: "for use with and training of our machine learning and artificial intelligence models", "to train our AI", "improve our AI systems using your data". Even if bundled into a broad license clause, if AI training is mentioned = VIOLATION.
-2. data_selling     — Content or personal data shared with third parties (advertisers, partners, other companies) beyond what is strictly needed to operate the service? VIOLATION EXAMPLES: content syndicated/distributed to "other companies, organizations or individuals", advertising partners targeting users with their data, data shared for "commercial use". Sharing for advertising = VIOLATION.
+2. data_selling     — Personal data explicitly shared with or sold to named THIRD PARTIES (advertisers, data brokers, marketing partners, other companies) for their own commercial benefit. VIOLATION EXAMPLES: "sell and disclose personal information to data brokers and marketing partners", "advertising partners for their own commercial purposes", content syndicated to "other companies, organizations or individuals". NOT a violation: first-party "business purposes", internal analytics, or operating the service itself. Explicit third-party recipient MUST appear in the text.
 3. transparency     — Language deliberately vague, contradictory, or designed to obscure practices? VIOLATION EXAMPLES: key rights buried in dense legalese, critical data practices only referenced via external links, no plain-language explanation of data use.
 4. data_retention   — No stated deletion timeline, or retention exceeds 1 year post-account-deletion? Delegating entirely to another document without specifics = borderline violation.
 5. content_ownership — Broad IP rights beyond what is needed to show your content on the platform? VIOLATION EXAMPLES: worldwide royalty-free sublicensable license "for any purpose", right to modify/adapt/redistribute content, no compensation for commercial reuse of content.${darkPillar}
@@ -1188,6 +1188,7 @@ VIOLATION RULES:
 - content_ownership: "for any purpose" or sublicensable worldwide license that goes beyond just showing content on the platform = VIOLATION.
 - dark_patterns: $100 or similarly tiny liability cap = VIOLATION. Class action waiver = VIOLATION. Shortened statute of limitations (under 2 years) = VIOLATION. One-sided termination without notice = VIOLATION.
 - transparency: ONLY true if language is actively misleading. Clear, concise policies = no violation.
+  SEVERITY: Self-contradictory text (policy claims minimal data use in one sentence then permits unlimited use in the next, e.g. "we only collect what we need" immediately followed by "we may also collect any information for any business purpose") = HIGH severity → score 25-49 → RISKY. Merely vague but non-contradictory language = LOW severity → score 50-74 → OKAY.
 - data_retention: ≤90 days post-deletion is acceptable. Over 1 year or completely unspecified with no reference = violation.
 
 SCORING (use these bands exactly):

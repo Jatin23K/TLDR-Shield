@@ -119,12 +119,13 @@ function buildSystemPrompt(eli5: boolean, darkPatterns: boolean, tier: Tier): st
   const darkField = darkPatterns ? ',\n        "dark_patterns": { "violation": boolean, "citation": "string" }' : "";
 
   if (tier === "quick") {
+    // Quick tier matches production: badge-only verdict, NO pillars in output.
+    // Pillar breakdown is deep-tier only. 120 max_tokens fits rating+score+tldr comfortably.
     const darkPillarQ = darkPatterns ? " dark_patterns: manipulative/deceptive language?" : "";
-    return `Privacy attorney. Analyze legal text for 5 violations: ai_training (AI training without opt-out?), data_selling (selling data to third parties?), transparency (deliberately vague language?), data_retention (retention over 1 year post-deletion?), content_ownership (overly broad IP claim?).${darkPillarQ}
+    return `Privacy attorney. Analyze legal text for 5 violations: ai_training (AI training without opt-out?), data_selling (data sold/shared WITH named third parties like advertisers or brokers — NOT first-party internal use), transparency (self-contradictory or deliberately obscuring language — explicit contradiction = HIGH severity = RISKY), data_retention (retention over 1 year post-deletion?), content_ownership (overly broad IP claim?).${darkPillarQ}
 Score rules: 0 violations+clear→90-100 SAFE. 0 violations+vague→75-89 OKAY. 1 low→50-74 OKAY. 1 high or 2→25-49 RISKY. 3+→0-24 RISKY. Score<50 = RISKY. Score 50-74 = OKAY. Score 75+= SAFE/OKAY.
-For citation: ${eli5 ? "plain-English ELI5 explanation" : 'short supporting snippet (max 20 words) without quotes, or "Not addressed."'}
-Output ONLY valid JSON no markdown:
-{"rating":"SAFE"|"OKAY"|"RISKY","score":0-100,"tldr":"2 sentence summary","pillars":{"ai_training":{"violation":bool,"citation":"string"},"data_selling":{"violation":bool,"citation":"string"},"transparency":{"violation":bool,"citation":"string"},"data_retention":{"violation":bool,"citation":"string"},"content_ownership":{"violation":bool,"citation":"string"}${darkField}}}`;
+Output ONLY valid JSON no markdown, no pillars:
+{"rating":"SAFE"|"OKAY"|"RISKY","score":0-100,"tldr":"2 sentence verdict. Name the biggest risk if any."}`;
   }
 
   const citationInstruction = eli5
@@ -139,7 +140,7 @@ Output ONLY valid JSON no markdown:
 
 Analyze the legal text against these privacy pillars:
 1. ai_training      — Data used for AI/ML training WITHOUT a simple, accessible opt-out?
-2. data_selling     — Personal data shared or sold to third parties for their own commercial use?
+2. data_selling     — Personal data explicitly shared with or sold to named THIRD PARTIES (advertisers, data brokers, marketing partners, other companies) for their own commercial benefit. NOT a violation: first-party "business purposes", internal analytics, or operating the service itself. Explicit third-party recipient MUST appear in the text.
 3. transparency     — Language deliberately vague, contradictory, or designed to obscure practices?
 4. data_retention   — Deletion rights denied, or retention exceeds 1 year post-account-deletion?
 5. content_ownership — Broad IP rights claimed over user content beyond what is needed to operate the service?${darkPillar}
@@ -147,6 +148,7 @@ Analyze the legal text against these privacy pillars:
 VIOLATION RULES:
 - Mark violation=true ONLY with CLEAR, EXPLICIT evidence. Absence of a clause ≠ violation.
 - transparency: ONLY true if language is actively misleading. Clear, concise policies = no violation.
+  SEVERITY: Self-contradictory text (policy claims minimal data use in one sentence then permits unlimited use in the next, e.g. "we only collect what we need" immediately followed by "we may also collect any information for any business purpose") = HIGH severity → score 25-49 → RISKY. Merely vague but non-contradictory language = LOW severity → score 50-74 → OKAY.
 - data_retention: ≤90 days post-deletion is acceptable. Over 1 year = violation.
 - content_ownership: "license to display to users" = no violation. "perpetual irrevocable worldwide license beyond platform use" = violation.
 
@@ -183,7 +185,17 @@ function percentile(values: number[], p: number): number {
   return sorted[idx];
 }
 
-function scoreAccuracy(pred: any, expected: Expected, includeDark: boolean): { ok: number; total: number; ratingOk: boolean } {
+function scoreAccuracy(
+  pred: any,
+  expected: Expected,
+  includeDark: boolean,
+  skipPillars = false,
+): { ok: number; total: number; ratingOk: boolean } {
+  const ratingOk = pred?.rating === expected.rating;
+
+  // Quick tier: badge-only (no pillar output). Only rating is measured.
+  if (skipPillars) return { ok: 0, total: 0, ratingOk };
+
   const predPillars = pred?.pillars || {};
   const keys: (keyof Pillars)[] = ["ai_training", "data_selling", "transparency", "data_retention", "content_ownership"];
   if (includeDark) keys.push("dark_patterns");
@@ -197,7 +209,6 @@ function scoreAccuracy(pred: any, expected: Expected, includeDark: boolean): { o
     total++;
     if (pv === exp) ok++;
   }
-  const ratingOk = pred?.rating === expected.rating;
   return { ok, total, ratingOk };
 }
 
@@ -221,7 +232,14 @@ async function runTier(tier: Tier, rows: DatasetRow[], darkPatterns: boolean) {
   let parseFails = 0;
   const perCase: Array<any> = [];
 
-  for (const row of rows) {
+  // Inter-case delay: prevents 429 bursts when running 8 cases back-to-back.
+  // Deep tier needs 2s (large tokens = slower per-key quota drain).
+  // Quick tier needs 500ms (fast responses stay within per-minute limits).
+  const INTER_CASE_DELAY_MS = tier === 'deep' ? 2000 : 500;
+
+  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+    if (rowIdx > 0) await new Promise(r => setTimeout(r, INTER_CASE_DELAY_MS));
+    const row = rows[rowIdx];
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), model.timeoutMs);
     const start = Date.now();
@@ -256,7 +274,7 @@ async function runTier(tier: Tier, rows: DatasetRow[], darkPatterns: boolean) {
       }
 
       const normalized = normalizeRatingByScore(parsed);
-      const { ok, total, ratingOk } = scoreAccuracy(normalized, row.expected, darkPatterns);
+      const { ok, total, ratingOk } = scoreAccuracy(normalized, row.expected, darkPatterns, tier === "quick");
       pillarOk += ok;
       pillarTotal += total;
       if (ratingOk) ratingOkCount++;
