@@ -1200,6 +1200,7 @@ SCORING (use these bands exactly):
 - 5-6 violations                  → score 0-9,    rating "RISKY"
 
 MANDATORY: score<50 → rating MUST be "RISKY". score 50-74 → rating MUST be "OKAY". score≥75 → "SAFE" or "OKAY".
+SCORING EXCEPTION: If the text explicitly contains a class action waiver, forced individual arbitration removing class action options, or a statute of limitations under 2 years — score 25-49 and rate RISKY regardless of pillars. Note in tldr. Do NOT set any pillar to true solely for this.
 
 CONSISTENCY RULE — CRITICAL: Every deduction MUST match a pillar with violation:true.
 If you write a deduction about AI/ML training → ai_training violation MUST be true.

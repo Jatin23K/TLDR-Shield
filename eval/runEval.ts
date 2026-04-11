@@ -151,7 +151,6 @@ VIOLATION RULES:
   SEVERITY: Self-contradictory text (policy claims minimal data use in one sentence then permits unlimited use in the next, e.g. "we only collect what we need" immediately followed by "we may also collect any information for any business purpose") = HIGH severity → score 25-49 → RISKY. Merely vague but non-contradictory language = LOW severity → score 50-74 → OKAY.
 - data_retention: ≤90 days post-deletion is acceptable. Over 1 year = violation.
 - content_ownership: "license to display to users" = no violation. "perpetual irrevocable worldwide license beyond platform use" = violation.
-
 SCORING:
 - 0 violations, clear language   → score 90-100, rating "SAFE"
 - 0 violations, minor vagueness  → score 75-89,  rating "OKAY"
@@ -160,6 +159,7 @@ SCORING:
 - 3+ violations                  → score 0-24,   rating "RISKY"
 
 MANDATORY: score<50 → rating "RISKY". score 50-74 → rating "OKAY". score 75+ → "SAFE" or "OKAY".
+SCORING EXCEPTION: If the text explicitly contains a class action waiver, forced individual arbitration removing class action options, or a statute of limitations under 2 years — score 25-49 and rate RISKY regardless of pillars. Note in tldr. Do NOT set any pillar to true solely for this.
 
 ${citationInstruction}
 
@@ -233,9 +233,9 @@ async function runTier(tier: Tier, rows: DatasetRow[], darkPatterns: boolean) {
   const perCase: Array<any> = [];
 
   // Inter-case delay: prevents 429 bursts when running 30 cases back-to-back.
-  // Deep tier needs 5s (1400 tokens = slow per-key quota drain; 30 cases need breathing room).
-  // Quick tier needs 1.5s (120 tokens = fast, but 30 cases × 3 keys needs more space than 500ms).
-  const INTER_CASE_DELAY_MS = tier === 'deep' ? 5000 : 1500;
+  // Deep tier needs 2s (1400 tokens = slow per-key quota drain).
+  // Quick tier needs 500ms (120 tokens = fast; 3 independent accounts = 120 RPM headroom).
+  const INTER_CASE_DELAY_MS = tier === 'deep' ? 2000 : 500;
 
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
     if (rowIdx > 0) await new Promise(r => setTimeout(r, INTER_CASE_DELAY_MS));

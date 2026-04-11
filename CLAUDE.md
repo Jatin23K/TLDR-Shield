@@ -33,7 +33,7 @@ Users install the extension, browse to a ToS page, and get a SAFE / OKAY / RISKY
 | Firebase Auth (Google sign-in) | Working |
 | Scan history dashboard (Firestore `onSnapshot`) | Working |
 | User feedback endpoint (`POST /api/report`) | Working |
-| Eval suite (`runEval.ts` + `golden.test.ts`) | Working — 8 dataset cases |
+| Eval suite (`runEval.ts` + `golden.test.ts`) | Working — 30 dataset cases |
 | Extension PDF handling (offscreen + pdf.js) | Working |
 | Service worker keepalive (MV3 30s limit) | Working |
 | Rate limiting (30 req/15min per IP) | Working |
@@ -46,7 +46,7 @@ Users install the extension, browse to a ToS page, and get a SAFE / OKAY / RISKY
 - No scheduled eval runs (accuracy drift can go undetected)
 - No NIM key health monitoring (key failures are reactive, not proactive)
 - No user-facing policy change notifications (manual re-scan only)
-- Eval dataset is small (8 cases) — coverage is shallow for edge cases
+- Eval dataset is 30 cases — covers all 6 pillars, multi-violation, and edge cases
 
 ---
 
