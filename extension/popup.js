@@ -80,7 +80,10 @@ chrome.storage.local.get(
       const creditsController = new AbortController();
       const creditsTimeout = setTimeout(() => creditsController.abort(), 5000);
       fetch(base + '/api/credits', {
-        headers: { 'Authorization': 'Bearer ' + validToken },
+        headers: {
+          'Authorization': 'Bearer ' + validToken,
+          'X-API-Key': 'd49ba338a35c5305470a006c3708104597dcba71bf1a6032',
+        },
         signal: creditsController.signal,
       })
         .then(r => r.ok ? r.json() : null)

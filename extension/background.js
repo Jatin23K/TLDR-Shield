@@ -154,6 +154,7 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-API-Key': 'd49ba338a35c5305470a006c3708104597dcba71bf1a6032',
           ...(validToken ? { 'Authorization': `Bearer ${validToken}` } : {}),
         },
         body: JSON.stringify({
