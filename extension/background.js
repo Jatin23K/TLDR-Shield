@@ -60,7 +60,7 @@ async function extractPdfAndAnalyze(pdfUrl, tabId) {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, sender) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // PDF text extracted by offscreen.js — forward to analysis
   if (message.type === 'PDF_TEXT') {
     analyzeText(message.text, message.tabId, true /* forceDeep — PDFs are always large */, 'deep', message.url ?? null);
