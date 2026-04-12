@@ -637,6 +637,8 @@ function createTriggerButton() {
     if (moved) { moved = false; return; }
     if (btn.dataset.scanning === 'true') return;
     setTriggerScanning(btn);
+    // Show skeleton immediately so user sees feedback right away
+    showSkeletonPanel();
     try {
       // PDF detection: if the page IS a PDF (Chrome shows it via the built-in viewer
       // or the URL ends with .pdf), route to offscreen pdf.js extractor instead.
@@ -648,6 +650,11 @@ function createTriggerButton() {
         return; // background.js will send ANALYSIS_RESULT when done
       }
       const text = await extractPageText();
+      lastScanText = text;
+      lastScanUrl  = location.href;
+      // keepalive port ensures the service worker stays alive for the full scan
+      const _port = chrome.runtime.connect({ name: 'keepalive' });
+      void _port;
       chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: location.href });
     } catch (err) {
       // "Extension context invalidated" = extension was reloaded but this tab still
@@ -673,6 +680,7 @@ function createTriggerButton() {
       }
       console.error('[TLDR Shield] Extraction error:', err);
       setTriggerIdle(btn);
+      showErrorPanel('Failed to extract page text. Please try refreshing the page.', location.href);
     }
   });
 
@@ -691,8 +699,31 @@ function removeTriggerButton() {
 // ─────────────────────────────────────────────────────────────────────────────
 // AGENT 4 — RESULT PANEL
 // Handles both Quick (badge-only) and Deep (full pillars) results.
-// Quick result shows an "Upgrade to Deep Scan" prompt.
+// Quick result shows a "Run Deep Scan →" button.
+// Loading states: skeleton → step-by-step progress → result
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Module-level scan state ───────────────────────────────────────────────────
+// Captured before each scan so the "Run Deep Scan →" button can re-use them.
+let lastScanText = '';
+let lastScanUrl  = '';
+
+// ── Progress step mapping ─────────────────────────────────────────────────────
+const PROGRESS_STEPS = [
+  { key: 'step1', label: 'Reading document...',          triggers: ['chunk', 'read', 'extract'] },
+  { key: 'step2', label: 'Analyzing privacy pillars...', triggers: ['analyz', 'pillar', 'llm'] },
+  { key: 'step3', label: 'Grounding citations...',       triggers: ['ground', 'citation', 'embed'] },
+  { key: 'step4', label: 'Computing final score...',     triggers: ['scor', 'aggregat', 'complet'] },
+];
+
+// Tracks which progress steps have been reached
+let _progressState = { currentStep: -1, seenSteps: [] };
+
+function _progressStepIndex(status) {
+  if (!status) return -1;
+  const s = status.toLowerCase();
+  return PROGRESS_STEPS.findIndex(step => step.triggers.some(t => s.includes(t)));
+}
 
 function removeResultPanel() {
   document.getElementById('tldr-shield-result')?.remove();
@@ -701,6 +732,178 @@ function removeResultPanel() {
     const parent = el.parentNode;
     parent.replaceChild(document.createTextNode(el.textContent), el);
     parent.normalize();
+  });
+}
+
+// ── Skeleton panel — shown immediately when scan starts ──────────────────────
+function showSkeletonPanel() {
+  removeResultPanel();
+  _progressState = { currentStep: -1, seenSteps: [] };
+  injectFonts();
+
+  const panel = document.createElement('div');
+  panel.id = 'tldr-shield-result';
+
+  // Header (real, not skeleton)
+  const header = document.createElement('div');
+  header.className = 'tldr-panel-header';
+  const brand = document.createElement('div');
+  brand.className = 'tldr-panel-brand';
+  const dot = document.createElement('div');
+  dot.className = 'tldr-panel-brand-dot';
+  brand.appendChild(dot);
+  brand.appendChild(document.createTextNode('TLDR Shield'));
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tldr-panel-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '\u2715';
+  header.appendChild(brand);
+  header.appendChild(closeBtn);
+
+  // Skeleton body
+  const skeletonBody = document.createElement('div');
+  skeletonBody.id = 'tldr-skeleton-body';
+  skeletonBody.style.cssText = 'padding:14px 14px 8px; display:flex; flex-direction:column; gap:12px;';
+
+  // Skeleton score card row
+  const skCard = document.createElement('div');
+  skCard.style.cssText = 'display:flex; align-items:center; gap:14px; padding:10px 4px;';
+  const skRing = document.createElement('div');
+  skRing.className = 'tldr-skeleton-ring';
+  const skLabels = document.createElement('div');
+  skLabels.style.cssText = 'flex:1; display:flex; flex-direction:column; gap:8px;';
+  const skL1 = document.createElement('div');
+  skL1.className = 'tldr-skeleton-line';
+  skL1.style.cssText = 'height:12px; width:60%;';
+  const skL2 = document.createElement('div');
+  skL2.className = 'tldr-skeleton-line';
+  skL2.style.cssText = 'height:9px; width:40%;';
+  skLabels.appendChild(skL1);
+  skLabels.appendChild(skL2);
+  skCard.appendChild(skRing);
+  skCard.appendChild(skLabels);
+
+  // Skeleton TLDR row
+  const skTldr = document.createElement('div');
+  skTldr.className = 'tldr-skeleton-block';
+  skTldr.style.cssText = 'height:52px; width:100%;';
+
+  // Skeleton progress step rows
+  const skSteps = document.createElement('div');
+  skSteps.style.cssText = 'display:flex; flex-direction:column; gap:8px; padding-top:4px;';
+  const skWidths = ['55%', '65%', '50%', '60%'];
+  for (let i = 0; i < 4; i++) {
+    const skRow = document.createElement('div');
+    skRow.style.cssText = 'display:flex; align-items:center; gap:10px;';
+    const skDot = document.createElement('div');
+    skDot.className = 'tldr-skeleton-line';
+    skDot.style.cssText = 'width:20px; height:20px; border-radius:50%; flex-shrink:0;';
+    const skText = document.createElement('div');
+    skText.className = 'tldr-skeleton-line';
+    skText.style.cssText = 'height:10px; width:' + skWidths[i] + ';';
+    skRow.appendChild(skDot);
+    skRow.appendChild(skText);
+    skSteps.appendChild(skRow);
+  }
+
+  skeletonBody.appendChild(skCard);
+  skeletonBody.appendChild(skTldr);
+  skeletonBody.appendChild(skSteps);
+
+  panel.appendChild(header);
+  panel.appendChild(skeletonBody);
+
+  closeBtn.onclick = () => {
+    removeResultPanel();
+    const btn = document.getElementById('tldr-shield-trigger');
+    if (btn) { btn.style.display = 'flex'; setTriggerIdle(btn); }
+  };
+
+  document.body.appendChild(panel);
+  _attachPanelDrag(panel, header, closeBtn);
+}
+
+// ── Progress update — transitions skeleton → step list ───────────────────────
+function updateProgressPanel(status) {
+  const panel = document.getElementById('tldr-shield-result');
+  if (!panel) return;
+
+  let stepsContainer = panel.querySelector('#tldr-progress-steps');
+  if (!stepsContainer) {
+    // Remove skeleton body, replace with real step list
+    panel.querySelector('#tldr-skeleton-body')?.remove();
+    stepsContainer = document.createElement('div');
+    stepsContainer.id = 'tldr-progress-steps';
+    stepsContainer.className = 'tldr-progress-steps';
+    PROGRESS_STEPS.forEach((step) => {
+      const row = document.createElement('div');
+      row.className = 'tldr-progress-step';
+      row.id = 'tldr-step-' + step.key;
+      const icon = document.createElement('div');
+      icon.className = 'tldr-step-icon';
+      icon.id = 'tldr-step-icon-' + step.key;
+      const text = document.createElement('span');
+      text.className = 'tldr-step-text';
+      text.textContent = step.label;
+      row.appendChild(icon);
+      row.appendChild(text);
+      stepsContainer.appendChild(row);
+    });
+    panel.appendChild(stepsContainer);
+  }
+
+  const stepIdx = _progressStepIndex(status);
+  if (stepIdx < 0) return;
+
+  PROGRESS_STEPS.forEach((step, i) => {
+    const row  = stepsContainer.querySelector('#tldr-step-' + step.key);
+    const icon = stepsContainer.querySelector('#tldr-step-icon-' + step.key);
+    if (!row || !icon) return;
+    while (icon.firstChild) icon.removeChild(icon.firstChild);
+    if (i < stepIdx) {
+      row.className = 'tldr-progress-step tldr-step-done';
+      icon.textContent = '\u2713';
+    } else if (i === stepIdx) {
+      row.className = 'tldr-progress-step tldr-step-active';
+      const sp = document.createElement('div');
+      sp.className = 'tldr-step-spinner';
+      icon.appendChild(sp);
+    } else {
+      row.className = 'tldr-progress-step';
+    }
+  });
+
+  _progressState.currentStep = stepIdx;
+}
+
+// ── Shared panel drag setup ───────────────────────────────────────────────────
+function _attachPanelDrag(panel, header, closeBtn) {
+  let pOffX = 0, pOffY = 0;
+  header.addEventListener('pointerdown', (e) => {
+    if (e.target === closeBtn || closeBtn.contains(e.target)) return;
+    if (e.button !== 0) return;
+    const rect = panel.getBoundingClientRect();
+    pOffX = e.clientX - rect.left;
+    pOffY = e.clientY - rect.top;
+    header.setPointerCapture(e.pointerId);
+    header.classList.add('tldr-panel-dragging');
+    panel.style.bottom = 'auto';
+    panel.style.right  = 'auto';
+    panel.style.left   = rect.left + 'px';
+    panel.style.top    = rect.top  + 'px';
+    e.preventDefault();
+  });
+  header.addEventListener('pointermove', (e) => {
+    if (!header.hasPointerCapture(e.pointerId)) return;
+    const x = Math.max(0, Math.min(e.clientX - pOffX, window.innerWidth  - panel.offsetWidth));
+    const y = Math.max(0, Math.min(e.clientY - pOffY, window.innerHeight - panel.offsetHeight));
+    panel.style.left = x + 'px';
+    panel.style.top  = y + 'px';
+  });
+  header.addEventListener('pointerup', (e) => {
+    if (!header.hasPointerCapture(e.pointerId)) return;
+    header.releasePointerCapture(e.pointerId);
+    header.classList.remove('tldr-panel-dragging');
   });
 }
 
@@ -845,74 +1048,168 @@ function highlightCitationFallback(citation) {
   return false;
 }
 
-function showOutOfCreditsPanel(resetDate) {
+// ── Error panel ───────────────────────────────────────────────────────────────
+function showErrorPanel(errorMsg, pageUrl) {
   removeResultPanel();
+  injectFonts();
+
   const panel = document.createElement('div');
   panel.id = 'tldr-shield-result';
-  panel.style.cssText = `
-    position:fixed; bottom:24px; right:24px; z-index:2147483647;
-    width:320px; background:#0f1117; border:1px solid rgba(239,68,68,0.4);
-    border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,0.6); font-family:system-ui,sans-serif;
-    padding:20px; color:#f1f5f9; animation: tldrSlideIn 0.3s ease;
-  `;
 
-  // Sanitize resetDate — server-computed but treat as untrusted for DOM safety
-  const safeResetDate = document.createElement('strong');
-  safeResetDate.style.cssText = 'color:#94a3b8;';
-  safeResetDate.textContent = resetDate || 'the 1st of next month';
+  // Header
+  const header = document.createElement('div');
+  header.className = 'tldr-panel-header';
+  const brand = document.createElement('div');
+  brand.className = 'tldr-panel-brand';
+  const dot = document.createElement('div');
+  dot.className = 'tldr-panel-brand-dot';
+  brand.appendChild(dot);
+  brand.appendChild(document.createTextNode('TLDR Shield'));
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tldr-panel-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '\u2715';
+  header.appendChild(brand);
+  header.appendChild(closeBtn);
 
-  panel.innerHTML = `
-    <style>
-      @keyframes tldrSlideIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-      #tldr-oc-buy a { text-decoration:none; }
-      #tldr-oc-buy a:hover { opacity:0.9; }
-    </style>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:20px;">⚡</span>
-        <span style="font-weight:700;font-size:14px;color:#f87171;">Out of credits</span>
-      </div>
-      <button id="tldr-oc-close" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0;line-height:1;">×</button>
-    </div>
-    <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;line-height:1.5;">
-      You've used all your credits for this month.
-    </p>
-    <p id="tldr-oc-reset" style="margin:0 0 16px;font-size:13px;color:#64748b;">
-      🔄 Free credits reset on
-    </p>
-    <div id="tldr-oc-buy" style="display:flex;flex-direction:column;gap:8px;">
-      <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.08em;text-transform:uppercase;">Top up now</p>
-      <a id="tldr-oc-tier1" href="#" target="_blank" rel="noopener" style="
-        display:flex;align-items:center;justify-content:space-between;
-        background:rgba(79,70,229,0.12);border:1px solid rgba(79,70,229,0.3);
-        border-radius:10px;padding:10px 14px;cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:600;
-      ">
-        <span>1,000 credits</span>
-        <span style="color:#818cf8;font-weight:700;">$7</span>
-      </a>
-      <a id="tldr-oc-tier2" href="#" target="_blank" rel="noopener" style="
-        display:flex;align-items:center;justify-content:space-between;
-        background:rgba(79,70,229,0.18);border:1px solid rgba(99,102,241,0.5);
-        border-radius:10px;padding:10px 14px;cursor:pointer;color:#a5b4fc;font-size:13px;font-weight:600;
-      ">
-        <span>2,000 credits <span style="font-size:10px;background:rgba(16,185,129,0.15);color:#34d399;border-radius:4px;padding:1px 5px;margin-left:4px;">BEST VALUE</span></span>
-        <span style="color:#818cf8;font-weight:700;">$12</span>
-      </a>
-    </div>
-  `;
+  // Error body
+  const body = document.createElement('div');
+  body.className = 'tldr-error-body';
 
-  // Safe DOM insertion of reset date (avoids innerHTML injection)
-  panel.querySelector('#tldr-oc-reset').appendChild(safeResetDate);
+  const iconEl = document.createElement('div');
+  iconEl.className = 'tldr-error-icon';
+  iconEl.textContent = '!';
 
-  // Resolve buy link URLs from stored apiUrl (same pattern as report button)
-  getReportUrl((base) => {
-    const buyUrl = base + '/pricing';
-    panel.querySelector('#tldr-oc-tier1').href = buyUrl;
-    panel.querySelector('#tldr-oc-tier2').href = buyUrl;
+  const msgEl = document.createElement('div');
+  msgEl.className = 'tldr-error-msg';
+  msgEl.textContent = errorMsg || 'Something went wrong. Please try again.';
+
+  const retryBtn = document.createElement('button');
+  retryBtn.className = 'tldr-retry-btn';
+  retryBtn.textContent = '\u21ba Try Again';
+  retryBtn.addEventListener('click', async () => {
+    retryBtn.disabled = true;
+    retryBtn.textContent = 'Retrying\u2026';
+    const trigBtn = document.getElementById('tldr-shield-trigger');
+    if (trigBtn) setTriggerScanning(trigBtn);
+    showSkeletonPanel();
+    try {
+      const isPdf = document.contentType === 'application/pdf' ||
+                    /\.pdf(\?.*)?$/i.test(location.href) ||
+                    document.querySelector('embed[type="application/pdf"]') !== null;
+      if (isPdf) {
+        chrome.runtime.sendMessage({ type: 'ANALYZE_PDF', url: pageUrl || location.href });
+        return;
+      }
+      const text = await extractPageText();
+      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: pageUrl || location.href });
+    } catch (err) {
+      console.error('[TLDR Shield] Retry extraction error:', err);
+      showErrorPanel('Failed to extract page text. Please refresh the page and try again.', pageUrl);
+    }
   });
 
+  body.appendChild(iconEl);
+  body.appendChild(msgEl);
+  body.appendChild(retryBtn);
+
+  const footer = document.createElement('div');
+  footer.className = 'tldr-panel-footer';
+  footer.textContent = 'TLDR Shield \u00b7 AI Privacy Analysis';
+
+  panel.appendChild(header);
+  panel.appendChild(body);
+  panel.appendChild(footer);
+
+  closeBtn.onclick = () => {
+    removeResultPanel();
+    const btn = document.getElementById('tldr-shield-trigger');
+    if (btn) { btn.style.display = 'flex'; setTriggerIdle(btn); }
+  };
+
   document.body.appendChild(panel);
-  panel.querySelector('#tldr-oc-close').addEventListener('click', () => panel.remove());
+  _attachPanelDrag(panel, header, closeBtn);
+}
+
+// ── Out-of-credits panel ──────────────────────────────────────────────────────
+function showOutOfCreditsPanel(resetDate) {
+  removeResultPanel();
+  injectFonts();
+
+  const panel = document.createElement('div');
+  panel.id = 'tldr-shield-result';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'tldr-panel-header';
+  const brand = document.createElement('div');
+  brand.className = 'tldr-panel-brand';
+  const dot = document.createElement('div');
+  dot.className = 'tldr-panel-brand-dot';
+  brand.appendChild(dot);
+  brand.appendChild(document.createTextNode('TLDR Shield'));
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tldr-panel-close';
+  closeBtn.setAttribute('aria-label', 'Close');
+  closeBtn.textContent = '\u2715';
+  header.appendChild(brand);
+  header.appendChild(closeBtn);
+
+  // OC body
+  const body = document.createElement('div');
+  body.className = 'tldr-oc-body';
+
+  const iconEl = document.createElement('div');
+  iconEl.className = 'tldr-oc-icon';
+  iconEl.textContent = '\u26a1'; // ⚡
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'tldr-oc-title';
+  titleEl.textContent = 'No credits remaining';
+
+  const subEl = document.createElement('div');
+  subEl.className = 'tldr-oc-sub';
+  subEl.textContent = "You've used all your credits for this month.";
+
+  const resetNote = document.createElement('div');
+  resetNote.className = 'tldr-oc-reset-note';
+  const safeDate = document.createElement('span');
+  safeDate.textContent = resetDate || 'the 1st of next month';
+  resetNote.appendChild(document.createTextNode('Resets on '));
+  resetNote.appendChild(safeDate);
+
+  const dashBtn = document.createElement('a');
+  dashBtn.className = 'tldr-oc-dashboard-btn';
+  dashBtn.target = '_blank';
+  dashBtn.rel = 'noopener';
+  dashBtn.href = '#';
+  dashBtn.textContent = 'View Dashboard \u2192';
+  getReportUrl((base) => {
+    if (base) dashBtn.href = base + '/dashboard';
+  });
+
+  body.appendChild(iconEl);
+  body.appendChild(titleEl);
+  body.appendChild(subEl);
+  body.appendChild(resetNote);
+  body.appendChild(dashBtn);
+
+  const footer = document.createElement('div');
+  footer.className = 'tldr-panel-footer';
+  footer.textContent = 'TLDR Shield \u00b7 AI Privacy Analysis';
+
+  panel.appendChild(header);
+  panel.appendChild(body);
+  panel.appendChild(footer);
+
+  closeBtn.onclick = () => {
+    removeResultPanel();
+    const btn = document.getElementById('tldr-shield-trigger');
+    if (btn) { btn.style.display = 'flex'; setTriggerIdle(btn); }
+  };
+
+  document.body.appendChild(panel);
+  _attachPanelDrag(panel, header, closeBtn);
 }
 
 // Inject premium fonts once per page session
@@ -1061,16 +1358,90 @@ function showResultPanel(data) {
   if (data.tldr) {
     const tldrEl = document.createElement('div');
     tldrEl.className = 'tldr-tldr';
-    tldrEl.textContent = `"${data.tldr}"`;
+    tldrEl.textContent = '"' + data.tldr + '"';
     panel.appendChild(tldrEl);
+  }
+
+  // ── Run Deep Scan button (quick scan only) ──
+  if (isQuick) {
+    const deepBtn = document.createElement('button');
+    deepBtn.className = 'tldr-deep-scan-btn';
+    deepBtn.textContent = 'Run Deep Scan \u2192';
+    deepBtn.addEventListener('click', async () => {
+      if (deepBtn.disabled) return;
+      deepBtn.disabled = true;
+      deepBtn.textContent = 'Starting deep scan\u2026';
+      const trigBtn = document.getElementById('tldr-shield-trigger');
+      if (trigBtn) setTriggerScanning(trigBtn);
+      showSkeletonPanel();
+      try {
+        const isPdf = document.contentType === 'application/pdf' ||
+                      /\.pdf(\?.*)?$/i.test(location.href) ||
+                      document.querySelector('embed[type="application/pdf"]') !== null;
+        if (isPdf) {
+          chrome.runtime.sendMessage({ type: 'ANALYZE_PDF', url: location.href });
+          return;
+        }
+        const text = await extractPageText();
+        // keepalive port ensures SW stays alive for the deep scan
+        const _port = chrome.runtime.connect({ name: 'keepalive' });
+        void _port;
+        chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: location.href, forceDeep: true });
+      } catch (err) {
+        console.error('[TLDR Shield] Deep scan error:', err);
+        showErrorPanel('Failed to start deep scan. Please try again.', location.href);
+      }
+    });
+    panel.appendChild(deepBtn);
   }
 
   // ── Pillars (Deep scan only) ──
   if (data.pillars && Object.keys(data.pillars).length > 0) {
+    // Expandable toggle row
+    let deepExpanded = false;
+
+    const expandToggle = document.createElement('div');
+    expandToggle.className = 'tldr-expand-toggle';
+    const expandLabel = document.createElement('span');
+    expandLabel.textContent = 'Privacy Pillars';
+    const chevron = document.createElement('span');
+    chevron.className = 'tldr-expand-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    // Chevron SVG (down arrow)
+    const chevSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    chevSvg.setAttribute('width', '14');
+    chevSvg.setAttribute('height', '14');
+    chevSvg.setAttribute('viewBox', '0 0 14 14');
+    chevSvg.setAttribute('fill', 'none');
+    const chevPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    chevPath.setAttribute('d', 'M3 5l4 4 4-4');
+    chevPath.setAttribute('stroke', 'currentColor');
+    chevPath.setAttribute('stroke-width', '1.5');
+    chevPath.setAttribute('stroke-linecap', 'round');
+    chevPath.setAttribute('stroke-linejoin', 'round');
+    chevSvg.appendChild(chevPath);
+    chevron.appendChild(chevSvg);
+    expandToggle.appendChild(expandLabel);
+    expandToggle.appendChild(chevron);
+
+    // Expandable wrapper
+    const expandWrapper = document.createElement('div');
+    expandWrapper.className = 'tldr-expandable-content';
+
+    expandToggle.addEventListener('click', () => {
+      deepExpanded = !deepExpanded;
+      expandWrapper.classList.toggle('expanded', deepExpanded);
+      chevron.classList.toggle('expanded', deepExpanded);
+    });
+
+    panel.appendChild(expandToggle);
+    panel.appendChild(expandWrapper);
+
+    // Pillars label
     const pillarsLabel = document.createElement('div');
     pillarsLabel.className = 'tldr-pillars-label';
     pillarsLabel.textContent = 'Privacy Pillars';
-    panel.appendChild(pillarsLabel);
+    expandWrapper.appendChild(pillarsLabel);
 
     const pillarsEl = document.createElement('div');
     pillarsEl.className = 'tldr-pillars';
@@ -1159,12 +1530,38 @@ function showResultPanel(data) {
       }
     }
 
-    panel.appendChild(pillarsEl);
+    expandWrapper.appendChild(pillarsEl);
 
+    // ── Score deductions (inside expandable, deep scan only) ──
+    if (Array.isArray(data.deductions) && data.deductions.length > 0) {
+      const dedEl = document.createElement('div');
+      dedEl.className = 'tldr-deductions';
+
+      const dedTitle = document.createElement('div');
+      dedTitle.className = 'tldr-deductions-title';
+      dedTitle.textContent = 'Why not 100? (\u2212' + (100 - data.score) + ' pts)';
+      dedEl.appendChild(dedTitle);
+
+      data.deductions.forEach(d => {
+        const row = document.createElement('div');
+        row.className = 'tldr-deduction-row';
+        const reason = document.createElement('span');
+        reason.className = 'tldr-deduction-reason';
+        reason.textContent = d.reason;
+        const pts = document.createElement('span');
+        pts.className = 'tldr-deduction-pts';
+        pts.textContent = '\u2212' + d.points + ' pts';
+        row.appendChild(reason);
+        row.appendChild(pts);
+        dedEl.appendChild(row);
+      });
+
+      expandWrapper.appendChild(dedEl);
+    }
   }
 
-  // ── Score deductions (deep scan only, when score < 100) ──
-  if (Array.isArray(data.deductions) && data.deductions.length > 0) {
+  // ── Score deductions outside expandable (quick scan only, when score < 100) ──
+  if (isQuick && Array.isArray(data.deductions) && data.deductions.length > 0) {
     const dedEl = document.createElement('div');
     dedEl.className = 'tldr-deductions';
 
@@ -1333,29 +1730,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === 'ANALYSIS_PROGRESS') {
-    let prog = document.getElementById('tldr-progress-panel');
-    if (!prog) {
-      prog = document.createElement('div');
-      prog.id = 'tldr-progress-panel';
-      prog.style.cssText = `
-        position:fixed; bottom:24px; right:24px; z-index:2147483647;
-        background:#0f172a; border:1px solid rgba(255,255,255,0.08);
-        border-radius:12px; padding:12px 16px; font-family:system-ui,sans-serif;
-        color:#94a3b8; font-size:12px; display:flex; align-items:center; gap:10px;
-        box-shadow:0 4px 20px rgba(0,0,0,0.4); max-width:280px;
-      `;
-      document.body.appendChild(prog);
-    }
-    prog.innerHTML = `
-      <div style="width:14px;height:14px;border:2px solid rgba(99,102,241,0.3);border-top-color:#6366f1;border-radius:50%;animation:tldr-spin 0.75s linear infinite;flex-shrink:0;"></div>
-      <span>${message.status}</span>
-    `;
+    // Update the skeleton/progress panel that was shown at scan start
+    updateProgressPanel(message.status);
     return;
   }
 
   if (message.type === 'OUT_OF_CREDITS') {
-    const btn = document.getElementById('tldr-shield-trigger');
-    if (btn) setTriggerIdle(btn);
+    const triggerBtn = document.getElementById('tldr-shield-trigger');
+    if (triggerBtn) setTriggerIdle(triggerBtn);
     showOutOfCreditsPanel(message.resetDate || 'the 1st of next month');
     return;
   }
@@ -1365,17 +1747,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const btn = document.getElementById('tldr-shield-trigger');
 
   if (message.error) {
-    if (btn) {
-      btn.style.display = 'flex';
-      btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`;
-      btn.title = message.error;
-      setTimeout(() => setTriggerIdle(btn), 4000);
-    }
+    if (btn) { btn.style.display = 'flex'; setTriggerIdle(btn); }
+    showErrorPanel(message.error || 'Analysis failed. Please try again.', location.href);
     return;
   }
 
-  // Remove progress panel when result arrives
-  document.getElementById('tldr-progress-panel')?.remove();
   if (btn) btn.style.display = 'none';
   showResultPanel(message.data);
 });
