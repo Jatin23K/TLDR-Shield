@@ -678,7 +678,6 @@ function createTriggerButton() {
         setTimeout(() => toast.remove(), 5000);
         return;
       }
-      console.error('[TLDR Shield] Extraction error:', err);
       setTriggerIdle(btn);
       showErrorPanel('Failed to extract page text. Please try refreshing the page.', location.href);
     }
@@ -717,7 +716,7 @@ const PROGRESS_STEPS = [
 ];
 
 // Tracks which progress steps have been reached
-let _progressState = { currentStep: -1, seenSteps: [] };
+let _progressState = { currentStep: -1 };
 
 function _progressStepIndex(status) {
   if (!status) return -1;
@@ -738,7 +737,7 @@ function removeResultPanel() {
 // ── Skeleton panel — shown immediately when scan starts ──────────────────────
 function showSkeletonPanel() {
   removeResultPanel();
-  _progressState = { currentStep: -1, seenSteps: [] };
+  _progressState = { currentStep: -1 };
   injectFonts();
 
   const panel = document.createElement('div');
@@ -854,7 +853,7 @@ function updateProgressPanel(status) {
 
   const stepIdx = _progressStepIndex(status);
   if (stepIdx < 0) return;
-  if (stepIdx <= _progressState.currentStep) return; // never go backwards
+  if (stepIdx <= _progressState.currentStep) return; // monotonic — skip if already at or past this step
 
   PROGRESS_STEPS.forEach((step, i) => {
     const row  = stepsContainer.querySelector('#tldr-step-' + step.key);
@@ -1095,6 +1094,8 @@ function showErrorPanel(errorMsg, pageUrl) {
     if (trigBtn) setTriggerScanning(trigBtn);
     showSkeletonPanel();
     try {
+      const _retryPort = chrome.runtime.connect({ name: 'keepalive' });
+      void _retryPort;
       const isPdf = document.contentType === 'application/pdf' ||
                     /\.pdf(\?.*)?$/i.test(location.href) ||
                     document.querySelector('embed[type="application/pdf"]') !== null;
@@ -1105,7 +1106,6 @@ function showErrorPanel(errorMsg, pageUrl) {
       const text = await extractPageText();
       chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: pageUrl || location.href });
     } catch (err) {
-      console.error('[TLDR Shield] Retry extraction error:', err);
       showErrorPanel('Failed to extract page text. Please refresh the page and try again.', pageUrl);
     }
   });
@@ -1390,7 +1390,6 @@ function showResultPanel(data) {
         void _port;
         chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url, forceDeep: true });
       } catch (err) {
-        console.error('[TLDR Shield] Deep scan error:', err);
         showErrorPanel('Failed to start deep scan. Please try again.', location.href);
       }
     });
