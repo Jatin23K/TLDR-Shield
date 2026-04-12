@@ -15,7 +15,7 @@
     "eval:deep": "tsx eval/runEval.ts --tier=deep",
     "eval:dark": "tsx eval/runEval.ts --dark",
     "check:nim": "tsx eval/checkNimKeys.ts",
-    "predeploy": "npm run lint && npx tsx eval/golden.test.ts && npm run eval:quick",
+    "predeploy": "npm run lint && npm run build && npx tsx eval/golden.test.ts && npm run eval:quick",
     "deploy": "gcloud run deploy tldr-shield --source . --region us-central1 --project tldr-493003 --allow-unauthenticated"
   },
   "dependencies": {

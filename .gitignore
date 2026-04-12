@@ -3,10 +3,29 @@ build/
 dist/
 coverage/
 .DS_Store
+
+# Logs
 *.log
+
+# Environment secrets
 .env*
 !.env.example
+
+# IDE / OS
 .vs/
 *.vsidx
 *.wsuo
 *.sqlite
+
+# Temp and scratch files
+tmp_*.txt
+*.tmp
+
+# One-off test result dumps
+*_result.md
+*_results.md
+*_results_*.md
+result.md
+
+# One-off local utility scripts (Python, no requirements.txt, not in CI)
+scripts/

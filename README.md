@@ -233,25 +233,35 @@ npm run eval:dark     # Dark pattern detection tests
 npm run check:nim     # Health-check all NIM API keys
 ```
 
-Test documents are in `eval/dataset.jsonl`. Golden tests are in `eval/golden.test.ts`.
+Test documents are in `eval/dataset.jsonl` (30 cases). Golden tests are in `eval/golden.test.ts` (10 cases).
+
+---
+
+## CI / CD
+
+Every push and pull request to `master` runs the full CI pipeline automatically via GitHub Actions:
+
+| Job | Trigger | What it does |
+|-----|---------|-------------|
+| **Lint** | Every push / PR | `tsc --noEmit` — TypeScript type-check |
+| **Golden Tests** | Every push / PR | Runs all 10 golden test cases against NIM |
+| **Eval Quick** | `master` only | 30-case quick eval — blocks merge if `ratingPct < 85%` or `parseFails > 0` |
+
+A **weekly eval** runs every Monday at 08:00 UTC. If accuracy drops below thresholds a GitHub Issue is automatically opened labelled `regression`.
+
+Eval artifacts (output logs) are uploaded and retained for 30 days.
 
 ---
 
 ## Deployment (Google Cloud Run)
 
-```bash
-# Build and push container
-gcloud builds submit --tag gcr.io/YOUR_PROJECT/tldr-shield
+The `predeploy` hook runs lint → build → golden tests → quick eval automatically. To deploy:
 
-# Deploy
-gcloud run deploy tldr-shield \
-  --image gcr.io/YOUR_PROJECT/tldr-shield \
-  --platform managed \
-  --region asia-southeast1 \
-  --set-env-vars APP_URL=https://your-url.run.app \
-  --set-env-vars NIM_API_KEY_1=nvapi-... \
-  --allow-unauthenticated
+```bash
+npm run deploy
 ```
+
+This runs `gcloud run deploy tldr-shield --source . --region us-central1 --project tldr-493003 --allow-unauthenticated` and will be blocked if any pre-deploy check fails.
 
 Cloud Run uses Application Default Credentials automatically — no service account file needed in production.
 

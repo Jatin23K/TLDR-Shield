@@ -33,7 +33,7 @@ Users install the extension, browse to a ToS page, and get a SAFE / OKAY / RISKY
 | Firebase Auth (Google sign-in) | Working |
 | Scan history dashboard (Firestore `onSnapshot`) | Working |
 | User feedback endpoint (`POST /api/report`) | Working |
-| Eval suite (`runEval.ts` + `golden.test.ts`) | Working — 30 dataset cases |
+| Eval suite (`runEval.ts` + `golden.test.ts`) | Working — 30 dataset cases, 10 golden tests |
 | Extension PDF handling (offscreen + pdf.js) | Working |
 | Service worker keepalive (MV3 30s limit) | Working |
 | Rate limiting (30 req/15min per IP) | Working |
@@ -42,11 +42,11 @@ Users install the extension, browse to a ToS page, and get a SAFE / OKAY / RISKY
 | Dark patterns pillar (optional feature flag) | Working |
 
 **Known gaps / not yet built:**
-- No CI/CD pipeline (deploys are manual)
-- No scheduled eval runs (accuracy drift can go undetected)
+- ~~No CI/CD pipeline (deploys are manual)~~ ✅ CI pipeline live (`.github/workflows/ci.yml`)
+- ~~No scheduled eval runs (accuracy drift can go undetected)~~ ✅ Weekly eval live (`.github/workflows/weekly-eval.yml`)
 - No NIM key health monitoring (key failures are reactive, not proactive)
 - No user-facing policy change notifications (manual re-scan only)
-- Eval dataset is 30 cases — covers all 6 pillars, multi-violation, and edge cases
+- Extension popup, badge UI, and dashboard are prototype-grade (Phase 2 UX polish not yet done)
 
 ---
 
@@ -69,12 +69,10 @@ Users install the extension, browse to a ToS page, and get a SAFE / OKAY / RISKY
 │   ├── content.css         # Badge styles injected into pages
 │   └── lib/                # Vendored: Readability.js, mark.min.js, pdf.min.mjs, pdf.worker.min.mjs
 ├── eval/
-│   ├── dataset.jsonl       # Eval test cases (8 cases, JSONL format)
-│   ├── golden.test.ts      # 5 hand-crafted golden test cases with verbatim citation checks
+│   ├── dataset.jsonl       # Eval test cases (30 cases, JSONL format)
+│   ├── golden.test.ts      # 10 hand-crafted golden test cases with verbatim citation checks
 │   ├── runEval.ts          # Main eval harness — runs dataset.jsonl against NIM
-│   ├── checkNimKeys.ts     # NIM key health checker
-│   ├── bench_models.mjs    # Multi-model benchmarking (ad hoc, not in CI)
-│   └── *.ts                # Other one-off eval scripts (stress tests, ensemble experiments)
+│   └── checkNimKeys.ts     # NIM key health checker
 ├── firebase-applet-config.json  # Firebase project config (checked in, non-secret)
 ├── firebase-blueprint.json      # Firestore schema reference (documentation only)
 ├── firestore.rules              # Firestore security rules — deploy separately
