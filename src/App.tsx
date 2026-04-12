@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { auth, db, signIn, signOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, Timestamp, setDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, Timestamp, setDoc, getCountFromServer } from 'firebase/firestore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -180,6 +180,23 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits }: {
 
 // ── Landing ───────────────────────────────────────────────────────────────────
 
+const CHROME_STORE_URL = 'https://chrome.google.com/webstore'; // TODO: replace with actual listing URL after publishing
+
+const DEMO_SCAN = {
+  url: 'https://twitter.com/en/tos',
+  rating: 'RISKY' as const,
+  score: 18,
+  tldr: 'Twitter claims a broad, sublicensable license to your content and uses it to train AI models. Arbitration clauses remove your right to class-action lawsuits.',
+  pillars: {
+    ai_training:       { violation: true,  label: 'AI Training',       citation: 'You grant us a worldwide, non-exclusive license to use your Content for training our machine learning models.' },
+    data_selling:      { violation: true,  label: 'Data Selling',       citation: 'We may share your information with our business partners for advertising and analytics purposes.' },
+    transparency:      { violation: false, label: 'Transparency',       citation: null },
+    data_retention:    { violation: false, label: 'Data Retention',     citation: null },
+    content_ownership: { violation: true,  label: 'Content Ownership',  citation: 'You grant Twitter a royalty-free license to use, reproduce, modify, and distribute your Content in any media.' },
+    dark_patterns:     { violation: true,  label: 'Dark Patterns',      citation: 'You waive any right to participate in a class action lawsuit or class-wide arbitration.' },
+  },
+};
+
 const FEATURES = [
   { icon: Bot,          color: 'text-violet-400',  bg: 'from-violet-500/10 to-violet-500/[0.03]',  border: 'border-violet-500/15',  title: 'AI Training',       desc: 'Can they use your photos, messages, or posts to train their AI? We detect this — usually buried under phrases like "improving our services".' },
   { icon: ShoppingCart, color: 'text-rose-400',    bg: 'from-rose-500/10 to-rose-500/[0.03]',      border: 'border-rose-500/15',    title: 'Data Sharing',      desc: 'Are they selling your name, email, or browsing habits to other companies? We flag it clearly so you know before you sign up.' },
@@ -197,6 +214,20 @@ const STEPS = [
 ];
 
 function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: User | null; onNav: (p: Page) => void }) {
+  const [scanCount, setScanCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const snap = await getCountFromServer(collection(db, 'shared_cache'));
+        setScanCount(snap.data().count);
+      } catch { /* silent — Firestore may be unavailable */ }
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#080b14] text-white overflow-x-hidden">
 
@@ -231,13 +262,19 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
               </span>
             </h1>
 
+            {scanCount !== null && (
+              <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/15 text-indigo-300 text-xs font-semibold px-3 py-1 rounded-full mb-6">
+                🛡 {scanCount.toLocaleString()} policies analyzed and counting
+              </div>
+            )}
+
             <p className="text-base sm:text-lg text-slate-400 max-w-lg leading-relaxed mb-9">
               TLDR Shield reads the full Terms & Conditions or Privacy Policy in seconds
               and gives you a clear SAFE, OKAY or RISKY verdict — so you know exactly what you're agreeing to.
             </p>
 
             <div className="flex flex-col sm:flex-row items-start gap-3 mb-9">
-              <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer"
+              <a href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer"
                 className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5">
                 <Chrome className="w-5 h-5" />
                 Add to Chrome — Free
@@ -330,6 +367,76 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
         </div>
       </section>
 
+      {/* ── See it in action — demo result card ── */}
+      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
+        <div className="max-w-[1600px] mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">Real Example</p>
+            <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">See it in action.</h2>
+          </div>
+
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+            className={`max-w-2xl mx-auto rounded-2xl border ${rating.RISKY.border} ${rating.RISKY.bg} overflow-hidden`}>
+
+            {/* Label */}
+            <div className="px-6 pt-5 pb-0">
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.05] border border-white/[0.07] text-slate-400 text-[11px] font-semibold">
+                Live example · Twitter/X ToS
+              </span>
+            </div>
+
+            {/* Header row */}
+            <div className="flex items-center justify-between px-6 pt-4 pb-3 border-b border-white/[0.06]">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Shield className="w-4 h-4 text-indigo-400" />
+                  <span className="text-white font-black text-sm tracking-tight">TLDR Shield</span>
+                </div>
+                <p className="text-slate-500 text-[11px]">Deep Scan · {DEMO_SCAN.url}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <ScoreRing score={DEMO_SCAN.score} r={DEMO_SCAN.rating} />
+                <span className={`px-3 py-1 rounded-full text-[11px] font-black tracking-wider ${rating.RISKY.badge}`}>
+                  {DEMO_SCAN.rating}
+                </span>
+              </div>
+            </div>
+
+            {/* TLDR */}
+            <div className="px-6 py-4 border-b border-white/[0.06]">
+              <p className="text-slate-400 text-[13px] leading-relaxed">
+                <span className="text-white font-semibold">TLDR: </span>
+                {DEMO_SCAN.tldr}
+              </p>
+            </div>
+
+            {/* Pillar breakdown */}
+            <div className="px-6 py-4 space-y-3">
+              {Object.values(DEMO_SCAN.pillars).map((p) => (
+                <div key={p.label} className="flex items-start gap-2.5">
+                  <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${p.violation ? rating.RISKY.pill : 'bg-emerald-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <span className={`text-[12px] font-bold ${p.violation ? rating.RISKY.text : 'text-slate-400'}`}>
+                      {p.label}
+                    </span>
+                    {p.citation ? (
+                      <p className="text-slate-500 text-[11px] italic mt-0.5">"{p.citation}"</p>
+                    ) : (
+                      <p className="text-slate-600 text-[11px] mt-0.5">No violation detected</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Disclaimer */}
+            <div className="px-6 pb-5">
+              <p className="text-slate-600 text-[11px]">This is a real analysis — results may vary based on policy version.</p>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
       {/* ── Features — true full-width section ── */}
       <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
         <div className="text-center mb-16">
@@ -373,6 +480,59 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
         </div>
       </section>
 
+      {/* ── Privacy Promise — 2x2 grid ── */}
+      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32 border-t border-white/[0.04]">
+        <div className="max-w-[1600px] mx-auto">
+          <div className="text-center mb-16 pt-24">
+            <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">Privacy First</p>
+            <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">Built for your privacy.</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
+            {[
+              {
+                icon: Lock,
+                color: 'text-indigo-400',
+                bg: 'bg-indigo-500/10',
+                heading: 'We never read your browsing history',
+                desc: 'We only analyze text you explicitly submit by clicking Scan.',
+              },
+              {
+                icon: Eye,
+                color: 'text-sky-400',
+                bg: 'bg-sky-500/10',
+                heading: 'Results are cached anonymously',
+                desc: 'No personal data is attached to cached results. User A\'s scan of Spotify is stored without any identifying information.',
+              },
+              {
+                icon: Trash2,
+                color: 'text-rose-400',
+                bg: 'bg-rose-500/10',
+                heading: 'Delete your data anytime',
+                desc: 'Every scan you run is stored under your account and can be deleted in one click from the History page.',
+              },
+              {
+                icon: Zap,
+                color: 'text-amber-400',
+                bg: 'bg-amber-500/10',
+                heading: 'Open source pipeline',
+                desc: 'The scoring logic is documented and the eval dataset is public. No black boxes.',
+              },
+            ].map((item, i) => (
+              <motion.div key={item.heading} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 * i }}
+                className="flex items-start gap-4 p-6 rounded-2xl bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.09] transition-all">
+                <div className={`w-10 h-10 rounded-xl ${item.bg} flex items-center justify-center shrink-0`}>
+                  <item.icon className={`w-5 h-5 ${item.color}`} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-[14px] mb-1">{item.heading}</h3>
+                  <p className="text-slate-500 text-[13px] leading-relaxed">{item.desc}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA Banner — full-width with contained card ── */}
       <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
         <div className="max-w-[1600px] mx-auto">
@@ -385,7 +545,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
               <ShieldCheck className="w-12 h-12 text-indigo-400 mx-auto mb-6" />
               <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] mb-4">Know what you're agreeing to.</h2>
               <p className="text-slate-400 text-[14px] mb-10 leading-relaxed">400 free credits every month. A Quick Scan costs 10 credits, a Deep Scan costs 20. Your data belongs to you — view or delete it at any time.</p>
-              <a href="https://chrome.google.com/webstore" target="_blank" rel="noopener noreferrer"
+              <a href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
                 <Chrome className="w-5 h-5" />
                 Add to Chrome — It's Free
@@ -570,7 +730,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
                   Install the Chrome extension and visit any Terms of Service or Privacy Policy page to see your first scan here.
                 </p>
                 <a
-                  href="https://chrome.google.com/webstore"
+                  href={CHROME_STORE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 text-sm font-semibold transition-colors">
