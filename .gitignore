@@ -29,3 +29,6 @@ result.md
 
 # One-off local utility scripts (Python, no requirements.txt, not in CI)
 scripts/
+
+# Git worktrees
+.worktrees/
