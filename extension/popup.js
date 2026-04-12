@@ -264,6 +264,21 @@ scanBtn.addEventListener('click', async () => {
   }
 });
 
+// ── Open side panel ───────────────────────────────────────────────────────────
+const openPanelBtn = document.getElementById('open-panel');
+if (openPanelBtn) {
+  openPanelBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tabId = tabs[0]?.id;
+      if (tabId && chrome.sidePanel) {
+        chrome.sidePanel.open({ tabId }).catch(() => {});
+      }
+      window.close();
+    });
+  });
+}
+
 // ── Open dashboard ────────────────────────────────────────────────────────────
 openDashBtn.addEventListener('click', (e) => {
   e.preventDefault();

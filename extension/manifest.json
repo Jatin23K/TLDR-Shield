@@ -3,7 +3,8 @@
   "name": "TLDR Shield",
   "version": "2.0",
   "description": "AI-powered privacy analysis for Terms of Service and Privacy Policies. Get SAFE/OKAY/RISKY verdicts with verbatim citations.",
-  "permissions": ["activeTab", "storage", "scripting", "offscreen"],
+  "permissions": ["activeTab", "storage", "scripting", "offscreen", "sidePanel"],
+  "side_panel": { "default_path": "sidepanel.html" },
   "host_permissions": ["*://*.run.app/*", "http://localhost:3000/*"],
   "background": {
     "service_worker": "background.js",

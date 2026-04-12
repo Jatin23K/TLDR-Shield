@@ -6,6 +6,16 @@
 // silently routing to a dev/staging server.
 const DEFAULT_API_URL = 'https://tldr-shield-production.up.railway.app/api/analyze';
 
+// Last scan result — cached so the side panel can retrieve it when opened
+let lastResult = null;
+
+// Open the side panel when the extension action is clicked (Chrome 114+)
+if (chrome.sidePanel && chrome.action && chrome.action.onClicked) {
+  chrome.action.onClicked.addListener((tab) => {
+    chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+  });
+}
+
 // FIX #3: MV3 service workers are killed after ~30s of inactivity.
 // A deep scan can take 25-40s. We keep the worker alive by opening a port
 // to the content script — Chrome does not terminate workers with open ports.
@@ -104,6 +114,11 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     );
     return true;
   }
+  // Side panel requests last cached scan result
+  if (message.type === 'GET_LAST_RESULT') {
+    sendResponse({ data: lastResult });
+    return true;
+  }
   // Allow popup to ping for status
   if (message.type === 'PING') return true;
 });
@@ -187,7 +202,8 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
         if (typeof d.creditsLeft === 'number') creditsLeft = d.creditsLeft;
       } catch (_) {}
       chrome.storage.local.set({ authCredits: 0 });
-      chrome.tabs.sendMessage(tabId, { type: 'OUT_OF_CREDITS', resetDate, creditsLeft });
+      chrome.tabs.sendMessage(tabId, { type: 'OUT_OF_CREDITS', resetDate, creditsLeft }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'OUT_OF_CREDITS', resetDate, creditsLeft }).catch(() => {});
       return;
     }
 
@@ -217,6 +233,8 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
           } else if (data.status) {
             // Forward progress steps to content script so user sees activity
             chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_PROGRESS', status: data.status }).catch(() => {});
+            // Also forward to side panel (may not be open — ignore errors)
+            chrome.runtime.sendMessage({ type: 'ANALYSIS_PROGRESS', status: data.status }).catch(() => {});
           }
         } catch (_) { /* partial chunk, ignore */ }
       }
@@ -227,9 +245,14 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
       if (typeof result.creditsLeft === 'number') {
         chrome.storage.local.set({ authCredits: result.creditsLeft });
       }
-      chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', data: result });
+      // Cache result for side panel retrieval
+      lastResult = result;
+      chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', data: result }).catch(() => {});
+      // Also broadcast to side panel (may not be open — ignore errors)
+      chrome.runtime.sendMessage({ type: 'ANALYSIS_RESULT', data: result }).catch(() => {});
     } else {
-      chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: 'No result returned' });
+      chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: 'No result returned' }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'ANALYSIS_RESULT', error: 'No result returned' }).catch(() => {});
     }
 
   } catch (error) {
