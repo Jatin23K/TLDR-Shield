@@ -101,15 +101,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'CLEAR_AUTH') {
     chrome.storage.local.remove(['authToken', 'authUid', 'authEmail', 'authTokenExpiry']);
   }
-  // Allow popup to read auth state
+  // Allow popup / side panel to read auth state
   if (message.type === 'GET_AUTH') {
     chrome.storage.local.get(
       ['authEmail', 'authUid', 'authTokenExpiry'],
       (data) => {
-        const valid = data.authEmail && data.authTokenExpiry > Date.now();
-        sender.tab
-          ? chrome.tabs.sendMessage(sender.tab.id, { type: 'AUTH_STATE', ...data, valid })
-          : chrome.runtime.sendMessage({ type: 'AUTH_STATE', ...data, valid });
+        const valid = !!(data.authEmail && data.authTokenExpiry > Date.now());
+        if (sender.tab) {
+          // Content-script caller — broadcast back via tab messaging
+          chrome.tabs.sendMessage(sender.tab.id, { type: 'AUTH_STATE', ...data, valid });
+        } else {
+          // Extension-page caller (popup, side panel) — use sendResponse so the
+          // callback passed to chrome.runtime.sendMessage receives the result directly
+          sendResponse({ type: 'AUTH_STATE', ...data, valid });
+        }
       }
     );
     return true;
@@ -260,7 +265,7 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
     const userMessage = error.name === 'AbortError'
       ? 'Analysis timed out. Try again on a shorter page.'
       : 'Analysis failed. Check your connection.';
-    chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: userMessage });
+    chrome.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: userMessage }).catch(() => {});
   } finally {
     // FIX #3: Stop the keepalive ping regardless of success or failure
     if (keepAliveInterval) clearInterval(keepAliveInterval);

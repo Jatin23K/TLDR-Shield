@@ -35,8 +35,8 @@ function hideAll() {
 function showLoading(status) {
   hideAll();
   panelLoading.style.display = 'block';
-  if (status && loadingStatusTxt) {
-    loadingStatusTxt.textContent = status;
+  if (loadingStatusTxt) {
+    loadingStatusTxt.textContent = status || '';
   }
 }
 
@@ -149,13 +149,13 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-// ── Scan Again button ───────────────────────────────────────────────────────
+// ── Go to Tab button ────────────────────────────────────────────────────────
+// window.close() has no effect in a Chrome side panel (panels can only be closed
+// by the user or via chrome.sidePanel.close which requires Chrome 126+).
+// We just focus the active tab so the user can trigger a new scan from the page.
 scanAgainBtn.addEventListener('click', () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs[0]) {
-      chrome.tabs.update(tabs[0].id, { active: true });
-    }
-    window.close();
+    if (tabs[0]) chrome.tabs.update(tabs[0].id, { active: true });
   });
 });
 
