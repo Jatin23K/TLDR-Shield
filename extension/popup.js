@@ -6,24 +6,26 @@ const DEFAULT_API_URL = 'https://tldr-shield-production.up.railway.app/api/analy
 const DASHBOARD_URL   = '';
 
 // ── DOM references ──────────────────────────────────────────────────────────
-const scanBtn      = document.getElementById('scan-btn');
-const statusText   = document.getElementById('status-text');
-const statusDot    = document.getElementById('status-dot');
-const apiUrlInput  = document.getElementById('api-url-input');
-const saveUrlBtn   = document.getElementById('save-url-btn');
-const urlSavedMsg  = document.getElementById('url-saved-msg');
-const eli5Toggle   = document.getElementById('eli5-toggle');
-const eli5Switch   = document.getElementById('eli5-switch');
-const dpToggle     = document.getElementById('dp-toggle');
-const dpSwitch     = document.getElementById('dp-switch');
-const openDashBtn  = document.getElementById('open-dashboard');
-const authBanner   = document.getElementById('auth-banner');
-const userRow      = document.getElementById('user-row');
-const userEmail    = document.getElementById('user-email');
-const signInBtn    = document.getElementById('signin-btn');
-const signOutBtn   = document.getElementById('signout-btn');
-const creditsPill  = document.getElementById('credits-pill');
-const creditsVal   = document.getElementById('credits-val');
+const scanBtn          = document.getElementById('scan-btn');
+const statusText       = document.getElementById('status-text');
+const statusDot        = document.getElementById('status-dot');
+const apiUrlInput      = document.getElementById('api-url-input');
+const saveUrlBtn       = document.getElementById('save-url-btn');
+const urlSavedMsg      = document.getElementById('url-saved-msg');
+const eli5Toggle       = document.getElementById('eli5-toggle');
+const eli5Switch       = document.getElementById('eli5-switch');
+const dpToggle         = document.getElementById('dp-toggle');
+const dpSwitch         = document.getElementById('dp-switch');
+const openDashBtn      = document.getElementById('open-dashboard');
+const authBanner       = document.getElementById('auth-banner');
+const userRow          = document.getElementById('user-row');
+const userEmail        = document.getElementById('user-email');
+const userAvatarInitial = document.getElementById('user-avatar-initial');
+const signInBtn        = document.getElementById('signin-btn');
+const signOutBtn       = document.getElementById('signout-btn');
+const creditsPill      = document.getElementById('credits-pill');
+const creditsVal       = document.getElementById('credits-val');
+const footerApiUrl     = document.getElementById('footer-api-url');
 
 // ── State ───────────────────────────────────────────────────────────────────
 let eli5Mode    = true;
@@ -62,6 +64,9 @@ function renderAuthState({ authEmail, authTokenExpiry } = {}) {
   scanBtn.disabled         = !signedIn;
   if (signedIn) {
     userEmail.textContent = authEmail;
+    if (userAvatarInitial) {
+      userAvatarInitial.textContent = (authEmail[0] || '?').toUpperCase();
+    }
   }
 }
 
@@ -127,6 +132,17 @@ chrome.storage.local.get(
     eli5Mode     = el;
     darkPatterns = dp;
     updateToggleUI();
+    // Show the active backend URL in the footer (base URL without path)
+    if (footerApiUrl) {
+      try {
+        const base = (apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
+        const display = new URL(base).hostname;
+        footerApiUrl.textContent = display;
+        footerApiUrl.title = base;
+      } catch (_) {
+        footerApiUrl.textContent = '';
+      }
+    }
   }
 );
 
