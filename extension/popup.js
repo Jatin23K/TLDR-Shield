@@ -3,7 +3,6 @@
 // Set the production backend URL here before shipping.
 // Intentionally empty so misconfigured builds fail loudly rather than routing to a dev server.
 const DEFAULT_API_URL = 'https://tldr-shield-production.up.railway.app/api/analyze';
-const DASHBOARD_URL   = '';
 
 // ── DOM references ──────────────────────────────────────────────────────────
 const scanBtn          = document.getElementById('scan-btn');
@@ -54,6 +53,8 @@ function setStatus(msg, type = 'idle') {
 function updateToggleUI() {
   eli5Switch.className = 'toggle-switch eli5' + (eli5Mode    ? ' on' : '');
   dpSwitch.className   = 'toggle-switch dp'   + (darkPatterns ? ' on' : '');
+  eli5Toggle.setAttribute('aria-pressed', eli5Mode ? 'true' : 'false');
+  dpToggle.setAttribute('aria-pressed', darkPatterns ? 'true' : 'false');
 }
 
 // ── Auth state ───────────────────────────────────────────────────────────────
@@ -70,14 +71,45 @@ function renderAuthState({ authEmail, authTokenExpiry } = {}) {
   }
 }
 
+// ── Load all settings and auth state in a single storage read ───────────────
 chrome.storage.local.get(
-  ['authEmail', 'authTokenExpiry', 'authCredits', 'authToken', 'apiUrl'],
+  {
+    authEmail: null,
+    authTokenExpiry: 0,
+    authCredits: null,
+    authToken: null,
+    apiUrl: DEFAULT_API_URL,
+    eli5Mode: true,
+    darkPatterns: true,
+  },
   (data) => {
+    // Auth state
     renderAuthState(data);
     if (data.authCredits != null) {
       creditsPill.style.display = 'block';
       creditsVal.textContent = data.authCredits + ' credits';
     }
+
+    // Toggles
+    eli5Mode     = data.eli5Mode;
+    darkPatterns = data.darkPatterns;
+    updateToggleUI();
+
+    // Backend URL input
+    apiUrlInput.value = data.apiUrl || '';
+
+    // Show the active backend URL in the footer (base URL without path)
+    if (footerApiUrl) {
+      try {
+        const base = (data.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
+        const display = new URL(base).hostname;
+        footerApiUrl.textContent = display;
+        footerApiUrl.title = base;
+      } catch (_) {
+        footerApiUrl.textContent = '';
+      }
+    }
+
     // Fetch live credits from server if signed in
     const validToken = data.authToken && data.authTokenExpiry > Date.now() ? data.authToken : null;
     if (validToken && (data.apiUrl || DEFAULT_API_URL)) {
@@ -87,7 +119,6 @@ chrome.storage.local.get(
       fetch(base + '/api/credits', {
         headers: {
           'Authorization': 'Bearer ' + validToken,
-          'X-API-Key': 'd49ba338a35c5305470a006c3708104597dcba71bf1a6032',
         },
         signal: creditsController.signal,
       })
@@ -123,29 +154,6 @@ signOutBtn.addEventListener('click', () => {
   });
 });
 
-// ── Load saved settings ─────────────────────────────────────────────────────
-chrome.storage.local.get(
-  { apiUrl: DEFAULT_API_URL, eli5Mode: true, darkPatterns: true },
-  ({ apiUrl, eli5Mode: el, darkPatterns: dp }) => {
-    apiUrlInput.value = apiUrl || '';
-    apiUrlInput.placeholder = 'https://your-backend.run.app/api/analyze';
-    eli5Mode     = el;
-    darkPatterns = dp;
-    updateToggleUI();
-    // Show the active backend URL in the footer (base URL without path)
-    if (footerApiUrl) {
-      try {
-        const base = (apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
-        const display = new URL(base).hostname;
-        footerApiUrl.textContent = display;
-        footerApiUrl.title = base;
-      } catch (_) {
-        footerApiUrl.textContent = '';
-      }
-    }
-  }
-);
-
 // ── Save URL ─────────────────────────────────────────────────────────────────
 saveUrlBtn.addEventListener('click', () => {
   const val = apiUrlInput.value.trim();
@@ -162,6 +170,17 @@ saveUrlBtn.addEventListener('click', () => {
   chrome.storage.local.set({ apiUrl: val }, () => {
     urlSavedMsg.style.display = 'block';
     setTimeout(() => { urlSavedMsg.style.display = 'none'; }, 2000);
+    // Update footer URL display with new hostname
+    if (footerApiUrl) {
+      try {
+        const base = val.replace(/\/api\/analyze$/, '');
+        const display = new URL(base).hostname;
+        footerApiUrl.textContent = display;
+        footerApiUrl.title = base;
+      } catch (_) {
+        footerApiUrl.textContent = '';
+      }
+    }
   });
 });
 
@@ -231,6 +250,7 @@ scanBtn.addEventListener('click', async () => {
     }
 
     setStatus('Reasoning through document…', 'scanning');
+    // eli5Mode and darkPatterns are read from storage by background.js — not passed in message
     chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text: pageText, tier: selectedTier, url: tab.url || null });
     // Re-enable after sending so user can close popup freely
     setTimeout(() => {
@@ -239,7 +259,6 @@ scanBtn.addEventListener('click', async () => {
     }, 1500);
 
   } catch (err) {
-    console.error('[TLDR Shield Popup] Error:', err);
     setStatus('Error: ' + err.message, 'error');
     scanBtn.disabled = false;
   }
