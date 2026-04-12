@@ -506,6 +506,8 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
               <span className="text-slate-700 mx-1.5">·</span>
               <span className="text-rose-400 font-semibold">{counts.RISKY} RISKY</span>
               <span className="text-slate-700 mx-1.5">·</span>
+              <span className="text-amber-400 font-semibold">{counts.OKAY} OKAY</span>
+              <span className="text-slate-700 mx-1.5">·</span>
               <span className="text-emerald-400 font-semibold">{counts.SAFE} SAFE</span>
             </p>
           ) : (
@@ -591,7 +593,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
               const isExpanded = expanded === scan.id;
               const hasDeepPillars = scan.tier === 'deep' && !!scan.pillars;
               const violatedPillars = hasDeepPillars
-                ? Object.entries(scan.pillars!).filter(([, p]) => p.violation)
+                ? Object.entries(scan.pillars ?? {}).filter(([, p]) => p.violation)
                 : [];
 
               return (
@@ -670,13 +672,14 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
                   <AnimatePresence>
                     {isExpanded && hasDeepPillars && (
                       <motion.div
+                        key="pillar-panel"
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.25, ease: 'easeInOut' }}
                         className="overflow-hidden">
                         <div className="px-4 pb-4 border-t border-white/[0.05] pt-3 space-y-2">
-                          {Object.entries(scan.pillars!).map(([key, p]) => (
+                          {Object.entries(scan.pillars ?? {}).map(([key, p]) => (
                             <div key={key} className="flex items-start gap-2.5">
                               <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${p.violation ? 'bg-rose-400' : 'bg-emerald-400'}`} />
                               <div className="flex-1 min-w-0">
