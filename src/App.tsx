@@ -4,6 +4,7 @@ import {
   Shield, ShieldCheck, Chrome, Zap, Brain,
   LogIn, LogOut, Trash2, Clock, AlertTriangle, CheckCircle,
   Eye, Lock, FileText, Cpu, ArrowRight, Star, Bot, ShoppingCart,
+  Search, X, ChevronDown,
 } from 'lucide-react';
 import { auth, db, signIn, signOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -21,6 +22,7 @@ interface ScanRecord {
   url: string;
   createdAt: Timestamp;
   tier: 'quick' | 'deep';
+  pillars?: Record<string, { violation: boolean; citation?: string }>;
 }
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -416,11 +418,22 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
 
 // ── History Page ──────────────────────────────────────────────────────────────
 
+const PILLAR_LABELS: Record<string, string> = {
+  ai_training: 'AI Training',
+  data_selling: 'Data Selling',
+  transparency: 'Transparency',
+  data_retention: 'Data Retention',
+  content_ownership: 'Ownership',
+  dark_patterns: 'Dark Patterns',
+};
+
 function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => void }) {
   const [scans, setScans] = useState<ScanRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'SAFE' | 'OKAY' | 'RISKY'>('all');
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -437,7 +450,13 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
     try { await deleteDoc(doc(db, 'scans', id)); } finally { setDeleting(null); }
   };
 
-  const filtered = filter === 'all' ? scans : scans.filter(s => s.rating === filter);
+  const filtered = scans
+    .filter(s => filter === 'all' || s.rating === filter)
+    .filter(s => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return s.url?.toLowerCase().includes(q) || s.tldr?.toLowerCase().includes(q);
+    });
 
   // Not signed in
   if (!user) {
@@ -465,7 +484,11 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
     );
   }
 
-  const counts = { SAFE: scans.filter(s => s.rating === 'SAFE').length, OKAY: scans.filter(s => s.rating === 'OKAY').length, RISKY: scans.filter(s => s.rating === 'RISKY').length };
+  const counts = {
+    SAFE: scans.filter(s => s.rating === 'SAFE').length,
+    OKAY: scans.filter(s => s.rating === 'OKAY').length,
+    RISKY: scans.filter(s => s.rating === 'RISKY').length,
+  };
 
   return (
     <div className="min-h-screen bg-[#080b14] text-white pt-28 pb-20 px-6 sm:px-12 lg:px-20 xl:px-32">
@@ -474,26 +497,41 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
       </div>
       <div className="relative max-w-[1600px] mx-auto">
 
-        {/* Header */}
+        {/* Header with inline stats bar */}
         <div className="mb-8">
           <h1 className="text-2xl font-black tracking-[-0.03em] mb-1">Scan History</h1>
-          <p className="text-slate-600 text-sm">{scans.length} scan{scans.length !== 1 ? 's' : ''} saved to your account</p>
+          {scans.length > 0 ? (
+            <p className="text-sm">
+              <span className="text-slate-400">{scans.length} scan{scans.length !== 1 ? 's' : ''}</span>
+              <span className="text-slate-700 mx-1.5">·</span>
+              <span className="text-rose-400 font-semibold">{counts.RISKY} RISKY</span>
+              <span className="text-slate-700 mx-1.5">·</span>
+              <span className="text-emerald-400 font-semibold">{counts.SAFE} SAFE</span>
+            </p>
+          ) : (
+            <p className="text-slate-600 text-sm">No scans yet</p>
+          )}
         </div>
 
-        {/* Stats row */}
-        {scans.length > 0 && (
-          <div className="grid grid-cols-3 gap-3 mb-6 max-w-sm">
-            {(['SAFE', 'OKAY', 'RISKY'] as const).map(r => {
-              const c = rating[r];
-              return (
-                <div key={r} className={`p-4 rounded-2xl ${c.bg} border ${c.border} text-center`}>
-                  <div className={`text-2xl font-black ${c.text}`}>{counts[r]}</div>
-                  <div className={`text-xs font-bold tracking-wider ${c.text} opacity-70`}>{r}</div>
-                </div>
-              );
-            })}
+        {/* Search bar */}
+        <div className="mb-4 max-w-[500px]">
+          <div className="relative flex items-center">
+            <Search className="absolute left-3.5 w-4 h-4 text-slate-600 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by URL or summary..."
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl pl-10 pr-9 py-2.5 text-sm text-white placeholder-slate-600 outline-none focus:border-indigo-500/40 focus:bg-white/[0.06] transition-all"
+            />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 text-slate-600 hover:text-slate-300 transition-colors">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-        )}
+        </div>
 
         {/* Filter pills */}
         <div className="flex items-center gap-2 mb-6">
@@ -522,10 +560,26 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
         {/* Empty */}
         {!loading && filtered.length === 0 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-20">
-            <Shield className="w-10 h-10 text-slate-800 mx-auto mb-4" />
-            <p className="text-slate-600 font-semibold text-sm">
-              {filter === 'all' ? 'No scans yet — install the extension and start browsing.' : `No ${filter} scans found.`}
-            </p>
+            <Shield className="w-14 h-14 text-slate-800/60 mx-auto mb-4" />
+            {filter === 'all' && !search ? (
+              <>
+                <p className="text-slate-400 font-bold text-base mb-2">No scans yet</p>
+                <p className="text-slate-600 text-sm leading-relaxed max-w-xs mx-auto mb-6">
+                  Install the Chrome extension and visit any Terms of Service or Privacy Policy page to see your first scan here.
+                </p>
+                <a
+                  href="https://chrome.google.com/webstore"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 text-sm font-semibold transition-colors">
+                  Get Extension <ArrowRight className="w-3.5 h-3.5" />
+                </a>
+              </>
+            ) : (
+              <p className="text-slate-600 font-semibold text-sm">
+                {search ? `No scans match "${search}".` : `No ${filter} scans found.`}
+              </p>
+            )}
           </motion.div>
         )}
 
@@ -534,43 +588,111 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
           <AnimatePresence>
             {filtered.map((scan, i) => {
               const c = rating[scan.rating];
+              const isExpanded = expanded === scan.id;
+              const hasDeepPillars = scan.tier === 'deep' && !!scan.pillars;
+              const violatedPillars = hasDeepPillars
+                ? Object.entries(scan.pillars!).filter(([, p]) => p.violation)
+                : [];
+
               return (
                 <motion.div key={scan.id}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -16, height: 0, marginBottom: 0, paddingBottom: 0 }}
                   transition={{ delay: i * 0.03, duration: 0.3 }}
-                  className={`group flex items-center gap-4 p-4 rounded-2xl ${c.bg} border ${c.border} hover:border-opacity-50 transition-all duration-200`}>
+                  className={`group rounded-2xl ${c.bg} border ${c.border} hover:border-opacity-50 transition-all duration-200 overflow-hidden`}>
 
-                  {/* Score ring */}
-                  <div className="shrink-0">
-                    <ScoreRing score={scan.score} r={scan.rating} />
-                  </div>
+                  {/* Card body — clickable if deep scan has pillars */}
+                  <div
+                    onClick={() => hasDeepPillars && setExpanded(isExpanded ? null : scan.id)}
+                    className={`flex items-center gap-4 p-4 ${hasDeepPillars ? 'cursor-pointer' : ''}`}>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className={`text-[11px] font-black tracking-wider ${c.text}`}>{scan.rating}</span>
-                      <span className="text-slate-700 text-[11px]">·</span>
-                      <span className="text-slate-600 text-[11px]">{scan.tier === 'deep' ? '🔬 Deep' : '⚡ Quick'}</span>
-                      <span className="text-slate-700 text-[11px]">·</span>
-                      <span className="text-slate-600 text-[11px]">{scan.createdAt ? timeAgo(scan.createdAt) : ''}</span>
+                    {/* Score ring */}
+                    <div className="shrink-0">
+                      <ScoreRing score={scan.score} r={scan.rating} />
                     </div>
-                    <p className="text-white text-[13px] font-semibold truncate mb-0.5">
-                      {scan.url || 'Unknown page'}
-                    </p>
-                    {scan.tldr && (
-                      <p className="text-slate-500 text-[12px] leading-relaxed line-clamp-1">{scan.tldr}</p>
-                    )}
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className={`text-[11px] font-black tracking-wider ${c.text}`}>{scan.rating}</span>
+                        <span className="text-slate-700 text-[11px]">·</span>
+                        <span className="text-slate-600 text-[11px]">{scan.tier === 'deep' ? '🔬 Deep' : '⚡ Quick'}</span>
+                        <span className="text-slate-700 text-[11px]">·</span>
+                        <span className="text-slate-600 text-[11px]">{scan.createdAt ? timeAgo(scan.createdAt) : ''}</span>
+                      </div>
+                      <p className="text-white text-[13px] font-semibold truncate mb-0.5">
+                        {scan.url || 'Unknown page'}
+                      </p>
+                      {scan.tldr && (
+                        <p className="text-slate-500 text-[12px] leading-relaxed line-clamp-1">{scan.tldr}</p>
+                      )}
+
+                      {/* Pillar chips (deep scans only) */}
+                      {hasDeepPillars && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {violatedPillars.length > 0
+                            ? violatedPillars.map(([key]) => (
+                                <span key={key}
+                                  className="bg-rose-500/10 text-rose-400 border border-rose-500/15 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                  {PILLAR_LABELS[key] ?? key}
+                                </span>
+                              ))
+                            : (
+                                <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/15 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                  All Clear
+                                </span>
+                              )
+                          }
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Chevron (deep scans only) + Delete */}
+                    <div className="shrink-0 flex items-center gap-1">
+                      {hasDeepPillars && (
+                        <ChevronDown
+                          className={`w-4 h-4 text-slate-600 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                        />
+                      )}
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDelete(scan.id); }}
+                        disabled={deleting === scan.id}
+                        className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
+                        {deleting === scan.id
+                          ? <div className="w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                          : <Trash2 className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Delete */}
-                  <button onClick={() => handleDelete(scan.id)} disabled={deleting === scan.id}
-                    className="shrink-0 opacity-0 group-hover:opacity-100 w-8 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
-                    {deleting === scan.id
-                      ? <div className="w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
-                      : <Trash2 className="w-3.5 h-3.5" />}
-                  </button>
+                  {/* Expandable pillar breakdown */}
+                  <AnimatePresence>
+                    {isExpanded && hasDeepPillars && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: 'easeInOut' }}
+                        className="overflow-hidden">
+                        <div className="px-4 pb-4 border-t border-white/[0.05] pt-3 space-y-2">
+                          {Object.entries(scan.pillars!).map(([key, p]) => (
+                            <div key={key} className="flex items-start gap-2.5">
+                              <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${p.violation ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+                              <div className="flex-1 min-w-0">
+                                <span className={`text-[11px] font-bold ${p.violation ? 'text-rose-300' : 'text-slate-400'}`}>
+                                  {PILLAR_LABELS[key] ?? key}
+                                </span>
+                                {p.citation && (
+                                  <p className="text-slate-500 text-[11px] italic line-clamp-2 mt-0.5">"{p.citation}"</p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               );
             })}
