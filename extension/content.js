@@ -854,6 +854,7 @@ function updateProgressPanel(status) {
 
   const stepIdx = _progressStepIndex(status);
   if (stepIdx < 0) return;
+  if (stepIdx <= _progressState.currentStep) return; // never go backwards
 
   PROGRESS_STEPS.forEach((step, i) => {
     const row  = stepsContainer.querySelector('#tldr-step-' + step.key);
@@ -1382,11 +1383,12 @@ function showResultPanel(data) {
           chrome.runtime.sendMessage({ type: 'ANALYZE_PDF', url: location.href });
           return;
         }
-        const text = await extractPageText();
+        const text = lastScanText || await extractPageText();
+        const url = lastScanUrl || location.href;
         // keepalive port ensures SW stays alive for the deep scan
         const _port = chrome.runtime.connect({ name: 'keepalive' });
         void _port;
-        chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: location.href, forceDeep: true });
+        chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url, forceDeep: true });
       } catch (err) {
         console.error('[TLDR Shield] Deep scan error:', err);
         showErrorPanel('Failed to start deep scan. Please try again.', location.href);
