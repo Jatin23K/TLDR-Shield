@@ -1614,7 +1614,6 @@ function showResultPanel(data) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-API-Key': 'd49ba338a35c5305470a006c3708104597dcba71bf1a6032',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
           },
           body: JSON.stringify(payload),
