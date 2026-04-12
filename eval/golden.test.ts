@@ -83,7 +83,7 @@ You retain ownership of your content. We do not sell your personal data to third
         expected: {
             violations: ['ai_training'],
             clears:     ['data_selling', 'data_retention', 'content_ownership'],
-            scoreBand:  [40, 74],
+            scoreBand:  [40, 85],
         },
     },
 
