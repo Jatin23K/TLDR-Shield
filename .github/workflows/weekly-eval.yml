@@ -1,0 +1,201 @@
+# TLDR Shield — Weekly Eval + Regression Detection
+# ─────────────────────────────────────────────────────────────────────────────
+# Runs every Monday at 08:00 UTC (or manually via workflow_dispatch).
+# Executes the full eval suite and opens a GitHub issue if a regression
+# is detected against the defined accuracy thresholds.
+#
+# Regression thresholds:
+#   Golden tests       : 10/10 pass
+#   Quick  ratingPct   : ≥ 85%
+#   Quick  parseFails  : = 0
+#   Deep   pillarsPct  : ≥ 90%
+#   Deep   ratingPct   : ≥ 80%
+#   Deep   parseFails  : = 0
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Weekly Eval
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'   # Every Monday at 08:00 UTC
+  workflow_dispatch:        # Allow manual trigger anytime
+
+jobs:
+  weekly-eval:
+    name: Full Eval Suite (golden + quick + deep)
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+      GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Step 1: Golden tests ──────────────────────────────────────────────
+      - name: Golden tests (10 cases)
+        id: golden
+        run: |
+          set +e
+          npx tsx eval/golden.test.ts 2>&1 | tee /tmp/golden.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          set -e
+
+      # ── Step 2: Quick eval ────────────────────────────────────────────────
+      - name: Quick eval (30 cases)
+        id: eval_quick
+        run: npm run eval:quick 2>&1 | tee /tmp/eval-quick.txt
+
+      # ── Step 3: Deep eval ─────────────────────────────────────────────────
+      - name: Deep eval (30 cases)
+        id: eval_deep
+        run: npm run eval:deep 2>&1 | tee /tmp/eval-deep.txt
+
+      # ── Step 4: Regression check ──────────────────────────────────────────
+      - name: Check regression thresholds
+        id: regression
+        run: |
+          node --input-type=module << 'EOF'
+          import { readFileSync, writeFileSync } from 'fs';
+
+          const THRESHOLDS = {
+            quick: { ratingPct: 85, parseFails: 0 },
+            deep:  { pillarsPct: 90, ratingPct: 80, parseFails: 0 },
+          };
+
+          function parseEvalOutput(file) {
+            const raw = readFileSync(file, 'utf8');
+            let depth = 0, start = -1;
+            for (let i = 0; i < raw.length; i++) {
+              if (raw[i] === '{') { if (depth === 0) start = i; depth++; }
+              else if (raw[i] === '}') {
+                depth--;
+                if (depth === 0 && start !== -1) {
+                  try {
+                    const obj = JSON.parse(raw.slice(start, i + 1));
+                    if (obj.tier) return obj;
+                  } catch {}
+                  start = -1;
+                }
+              }
+            }
+            return null;
+          }
+
+          const quick = parseEvalOutput('/tmp/eval-quick.txt');
+          const deep  = parseEvalOutput('/tmp/eval-deep.txt');
+          const goldenRaw = readFileSync('/tmp/golden.txt', 'utf8');
+          const goldenPassed = (goldenRaw.match(/✅ PASS/g) || []).length;
+          const goldenFailed = (goldenRaw.match(/❌ FAIL/g) || []).length;
+
+          const regressions = [];
+
+          // Golden
+          if (goldenFailed > 0) {
+            regressions.push(`Golden tests: ${goldenPassed}/10 passed (${goldenFailed} failed)`);
+          }
+
+          // Quick
+          if (quick) {
+            const { ratingPct, parseFails } = { ...quick.accuracy, parseFails: quick.parseFails };
+            if (parseFails > 0)
+              regressions.push(`Quick parseFails=${parseFails} (threshold=0)`);
+            if (ratingPct < THRESHOLDS.quick.ratingPct)
+              regressions.push(`Quick ratingPct=${ratingPct.toFixed(1)}% < ${THRESHOLDS.quick.ratingPct}%`);
+            console.log(`Quick  | ratingPct=${ratingPct.toFixed(1)}%  parseFails=${parseFails}`);
+          } else {
+            regressions.push('Quick eval output could not be parsed');
+          }
+
+          // Deep
+          if (deep) {
+            const { pillarsPct, ratingPct, parseFails } = { ...deep.accuracy, parseFails: deep.parseFails };
+            if (parseFails > 0)
+              regressions.push(`Deep parseFails=${parseFails} (threshold=0)`);
+            if (pillarsPct < THRESHOLDS.deep.pillarsPct)
+              regressions.push(`Deep pillarsPct=${pillarsPct.toFixed(1)}% < ${THRESHOLDS.deep.pillarsPct}%`);
+            if (ratingPct < THRESHOLDS.deep.ratingPct)
+              regressions.push(`Deep ratingPct=${ratingPct.toFixed(1)}% < ${THRESHOLDS.deep.ratingPct}%`);
+            console.log(`Deep   | pillarsPct=${pillarsPct.toFixed(1)}%  ratingPct=${ratingPct.toFixed(1)}%  parseFails=${parseFails}`);
+          } else {
+            regressions.push('Deep eval output could not be parsed');
+          }
+
+          console.log(`Golden | ${goldenPassed}/10 passed`);
+
+          if (regressions.length > 0) {
+            console.error('\nREGRESSIONS DETECTED:');
+            regressions.forEach(r => console.error('  •', r));
+            // Write summary for issue creation
+            writeFileSync('/tmp/regression-summary.txt', regressions.join('\n'));
+            process.exit(1);
+          }
+          console.log('\nAll thresholds passed. No regressions.');
+          EOF
+
+      # ── Step 5: Open GitHub issue on regression ───────────────────────────
+      - name: Open regression issue
+        if: failure() && steps.regression.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let summary = 'See workflow run for details.';
+            try {
+              summary = fs.readFileSync('/tmp/regression-summary.txt', 'utf8');
+            } catch {}
+
+            const date = new Date().toISOString().split('T')[0];
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Eval Regression Detected — ${date}`,
+              labels: ['regression', 'eval'],
+              body: [
+                '## Accuracy Regression Detected',
+                '',
+                'The weekly eval run detected one or more regressions against defined thresholds.',
+                '',
+                '### Failed checks',
+                ...summary.split('\n').map(l => `- ${l}`),
+                '',
+                '### Thresholds',
+                '| Metric | Threshold |',
+                '|--------|-----------|',
+                '| Golden tests | 10/10 pass |',
+                '| Quick ratingPct | ≥ 85% |',
+                '| Quick parseFails | = 0 |',
+                '| Deep pillarsPct | ≥ 90% |',
+                '| Deep ratingPct | ≥ 80% |',
+                '| Deep parseFails | = 0 |',
+                '',
+                `### Workflow run`,
+                `[View full output](${runUrl})`,
+                '',
+                '**Action required:** Investigate prompt changes, model drift, or dataset issues.',
+              ].join('\n'),
+            });
+
+      # ── Step 6: Upload eval artifacts ─────────────────────────────────────
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results-${{ github.run_id }}
+          path: |
+            /tmp/golden.txt
+            /tmp/eval-quick.txt
+            /tmp/eval-deep.txt
+          retention-days: 30

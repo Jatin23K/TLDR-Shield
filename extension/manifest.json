@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "TLDR Shield",
+  "version": "2.0.0",
+  "description": "AI-powered privacy analysis for Terms of Service and Privacy Policies. Get SAFE/OKAY/RISKY verdicts with verbatim citations.",
+  "permissions": ["activeTab", "storage", "scripting", "offscreen", "sidePanel", "alarms"],
+  "side_panel": { "default_path": "sidepanel.html" },
+  "host_permissions": ["https://*/*", "http://*/*", "*://*.run.app/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*/*", "http://*/*"],
+      "js": ["lib/Readability.js", "lib/mark.min.js", "detection.js", "extraction.js", "content.js", "bridge.js"],
+      "css": ["content.css"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "content.css",
+        "icon16.png",
+        "icon48.png",
+        "icon128.png",
+        "lib/pdf.min.mjs",
+        "lib/pdf.worker.min.mjs",
+        "offscreen.html",
+        "wasm-worker.js"
+      ],
+      "matches": ["https://*/*", "http://*/*"]
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

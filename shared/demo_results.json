@@ -1,0 +1,54 @@
+{
+  "https://www.google.com/policies/privacy/": {
+    "rating": "OKAY",
+    "score": 72,
+    "tldr": "Google collects a vast amount of data across its services but provides clear tools for management and deletion. Their transparency is industry-leading.",
+    "pillars": {
+      "ai_training": { "violation": false, "citation": "We use information to improve our services...", "confidence": "HIGH" },
+      "data_selling": { "violation": false, "citation": "We do not sell your personal information to anyone.", "confidence": "HIGH" },
+      "transparency": { "violation": false, "citation": "You can use the Privacy Checkup to review and adjust your settings.", "confidence": "HIGH" },
+      "data_retention": { "violation": false, "citation": "We keep some data for the life of your Google Account.", "confidence": "MEDIUM" },
+      "content_ownership": { "violation": false, "citation": "You retain ownership of any intellectual property rights...", "confidence": "HIGH" },
+      "dark_patterns": { "violation": false, "citation": "None detected in legal text.", "confidence": "HIGH" }
+    }
+  },
+  "https://www.facebook.com/about/privacy/": {
+    "rating": "RISKY",
+    "score": 35,
+    "tldr": "Meta's privacy policy allows extensive data sharing with third parties and use of content for broad commercial purposes. High risk of data cross-pollination.",
+    "pillars": {
+      "ai_training": { "violation": true, "citation": "to develop, test and improve our Products, including by conducting research and development...", "confidence": "HIGH" },
+      "data_selling": { "violation": true, "citation": "We share information with third-party partners who help us provide and improve our Products...", "confidence": "MEDIUM" },
+      "transparency": { "violation": true, "citation": "Information we share with our partners is sometimes used for purposes not listed...", "confidence": "LOW" },
+      "data_retention": { "violation": true, "citation": "We store data until it is no longer necessary to provide our services...", "confidence": "MEDIUM" },
+      "content_ownership": { "violation": true, "citation": "You grant us a non-exclusive, transferable, sub-licensable, royalty-free license...", "confidence": "HIGH" },
+      "dark_patterns": { "violation": true, "citation": "Difficulty in finding direct opt-out for specific sharing.", "confidence": "MEDIUM" }
+    }
+  },
+  "https://www.instagram.com/legal/privacy/": {
+    "rating": "RISKY",
+    "score": 42,
+    "tldr": "Similar to Facebook, Instagram shares data across the Meta suite. High emphasis on image rights which are granted to the platform.",
+    "pillars": {
+      "ai_training": { "violation": true, "citation": "Metadata from your photos and videos is used to train our systems.", "confidence": "HIGH" },
+      "data_selling": { "violation": false, "citation": "We do not sell your personal data.", "confidence": "HIGH" },
+      "transparency": { "violation": true, "citation": "We share info with Facebook to personalize ads.", "confidence": "HIGH" },
+      "data_retention": { "violation": true, "citation": "Deleted content may remain in backup for 90 days.", "confidence": "MEDIUM" },
+      "content_ownership": { "violation": true, "citation": "You grant us a license to use your content for commercial purposes.", "confidence": "HIGH" },
+      "dark_patterns": { "violation": false, "citation": "None detected.", "confidence": "HIGH" }
+    }
+  },
+  "https://www.tiktok.com/legal/privacy-policy": {
+    "rating": "RISKY",
+    "score": 28,
+    "tldr": "Aggressive data collection policies including biometric identifiers (in some regions) and extensive device metadata harvesting.",
+    "pillars": {
+      "ai_training": { "violation": true, "citation": "We use your content to train our algorithms and machine learning models.", "confidence": "HIGH" },
+      "data_selling": { "violation": true, "citation": "We share your information with our corporate group.", "confidence": "MEDIUM" },
+      "transparency": { "violation": true, "citation": "We may share your data with authorities under broad conditions.", "confidence": "HIGH" },
+      "data_retention": { "violation": true, "citation": "We retain information as long as we deem necessary.", "confidence": "LOW" },
+      "content_ownership": { "violation": true, "citation": "Global, perpetual license to use your content for any purpose.", "confidence": "HIGH" },
+      "dark_patterns": { "violation": true, "citation": "Confusing opt-out paths for personalized advertising.", "confidence": "MEDIUM" }
+    }
+  }
+}

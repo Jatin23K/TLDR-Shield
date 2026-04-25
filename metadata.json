@@ -1,0 +1,5 @@
+{
+  "name": "TLDR Shield",
+  "description": "AI-powered privacy scanner that rates Terms of Service pages as SAFE, OKAY, or RISKY — with verbatim citations, ELI5 explanations, and dark pattern detection.",
+  "requestFramePermissions": []
+}

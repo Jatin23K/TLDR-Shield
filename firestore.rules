@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ===============================================================
+    // users/{userId}
+    // Credits and user metadata are managed exclusively by the server
+    // via Admin SDK (bypasses rules). Clients may only READ their own
+    // document. All WRITE operations (create/update/delete) are
+    // server-only to prevent credit manipulation.
+    // ===============================================================
+    match /users/{userId} {
+      allow read:   if isOwner(userId) || isAdmin();
+      allow create: if false; // server-only via Admin SDK
+      allow update: if false; // server-only — prevents clients setting credits: 9999
+      allow delete: if false;
+    }
+
+    // ===============================================================
+    // scans/{scanId}
+    // Scan records are written exclusively by the server (credit-gated).
+    // Clients may READ and DELETE their own scans only.
+    // All WRITE operations are server-only to prevent bypassing credits.
+    // ===============================================================
+    match /scans/{scanId} {
+      allow read:   if isAuthenticated() && (request.auth.uid == resource.data.uid || isAdmin());
+      allow create: if false; // server-only via Admin SDK
+      allow update: if false; // server-only
+      allow delete: if isAuthenticated() && (resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    // ===============================================================
+    // shared_cache/{hash}
+    // Backend-only cache. Contains NO user identifiers — fully anonymous.
+    // Reads and writes are blocked from all clients.
+    // ===============================================================
+    match /shared_cache/{hash} {
+      allow read:  if false;
+      allow write: if false;
+    }
+
+    // ===============================================================
+    // watches/{watchId}
+    // Policy watch records. Written by server on POST /api/watch.
+    // Clients may read their own watches; all writes are server-side.
+    // ===============================================================
+    match /watches/{watchId} {
+      allow read:   if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if false; // server-only
+      allow update: if false; // server-only
+      allow delete: if false; // DELETE /api/watch/:id handles deletion via Admin SDK
+    }
+
+    // ===============================================================
+    // notifications/{uid}/items/{itemId}
+    // Change-detection notifications. Written by server (/api/recheck).
+    // Users may read and mark their own notifications.
+    // ===============================================================
+    match /notifications/{uid}/items/{itemId} {
+      allow read:   if isOwner(uid);
+      allow create: if false; // server-only
+      // Allow owner to mark notifications as read — ONLY the 'read' field can be changed.
+      // All other fields remain server-only to prevent tampering with history.
+      allow update: if isOwner(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isOwner(uid); // allow user to dismiss
+    }
+
+    // ===============================================================
+    // reports/{reportId}
+    // Incorrect-result reports. Written by server on POST /api/report.
+    // No client access.
+    // ===============================================================
+    match /reports/{reportId} {
+      allow read:  if false;
+      allow write: if false;
+    }
+  }
+}

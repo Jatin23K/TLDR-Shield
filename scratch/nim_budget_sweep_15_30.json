@@ -1,0 +1,581 @@
+{
+  "results": [
+    {
+      "model": "meta/llama-3.3-70b-instruct",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 1500,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 6744,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 912,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 1500,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 6352,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 6744,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "mistralai/mistral-nemotron",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 1525,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 5294,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 1525,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 1297,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 5294,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 4934,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "mistralai/mistral-medium-3-instruct",
+      "quick_ok": 1,
+      "quick_json_ok": 1,
+      "quick_p50_ms": 11186,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 10485,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": false,
+          "ms": 20013,
+          "status": 0,
+          "err": "Request was aborted."
+        },
+        "q2": {
+          "ok": true,
+          "ms": 11186,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 10485,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 10411,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "qwen/qwen3-next-80b-a3b-instruct",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 1036,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 9271,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 797,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 1036,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 4546,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 9271,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "stockmark/stockmark-2-100b-instruct",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 4029,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 19254,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 4029,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 3005,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 19254,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 14015,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "moonshotai/kimi-k2-instruct-0905",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 5160,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 6618,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 5160,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 3282,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 6618,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 3132,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "meta/llama-4-maverick-17b-128e-instruct",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 583,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 2454,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 524,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 583,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 2454,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 2194,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "meta/llama-3.1-70b-instruct",
+      "quick_ok": 1,
+      "quick_json_ok": 1,
+      "quick_p50_ms": 2110,
+      "deep_ok": 0,
+      "deep_json_ok": 0,
+      "deep_p50_ms": null,
+      "basic_15s_pass": true,
+      "deep_30s_pass": false,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 2110,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": false,
+          "ms": 20001,
+          "status": 0,
+          "err": "Request was aborted."
+        },
+        "d1": {
+          "ok": false,
+          "ms": 35010,
+          "status": 0,
+          "err": "Request was aborted."
+        },
+        "d2": {
+          "ok": false,
+          "ms": 35017,
+          "status": 0,
+          "err": "Request was aborted."
+        }
+      }
+    },
+    {
+      "model": "mistralai/mixtral-8x22b-instruct-v0.1",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 676,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 4790,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 672,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 676,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 2878,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 4790,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "mistralai/mixtral-8x7b-instruct-v0.1",
+      "quick_ok": 2,
+      "quick_json_ok": 2,
+      "quick_p50_ms": 1569,
+      "deep_ok": 2,
+      "deep_json_ok": 2,
+      "deep_p50_ms": 6285,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 1569,
+          "json_ok": true
+        },
+        "q2": {
+          "ok": true,
+          "ms": 1371,
+          "json_ok": true
+        },
+        "d1": {
+          "ok": true,
+          "ms": 6285,
+          "json_ok": true
+        },
+        "d2": {
+          "ok": true,
+          "ms": 3415,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "mistralai/mistral-7b-instruct-v0.3",
+      "quick_ok": 0,
+      "quick_json_ok": 0,
+      "quick_p50_ms": null,
+      "deep_ok": 0,
+      "deep_json_ok": 0,
+      "deep_p50_ms": null,
+      "basic_15s_pass": false,
+      "deep_30s_pass": false,
+      "all_raw": {
+        "q1": {
+          "ok": false,
+          "ms": 88,
+          "status": 400,
+          "err": "400 status code (no body)"
+        },
+        "q2": {
+          "ok": false,
+          "ms": 86,
+          "status": 400,
+          "err": "400 status code (no body)"
+        },
+        "d1": {
+          "ok": false,
+          "ms": 81,
+          "status": 400,
+          "err": "400 status code (no body)"
+        },
+        "d2": {
+          "ok": false,
+          "ms": 92,
+          "status": 400,
+          "err": "400 status code (no body)"
+        }
+      }
+    },
+    {
+      "model": "bytedance/seed-oss-36b-instruct",
+      "quick_ok": 0,
+      "quick_json_ok": 0,
+      "quick_p50_ms": null,
+      "deep_ok": 0,
+      "deep_json_ok": 0,
+      "deep_p50_ms": null,
+      "basic_15s_pass": false,
+      "deep_30s_pass": false,
+      "all_raw": {
+        "q1": {
+          "ok": false,
+          "ms": 100,
+          "status": 400,
+          "err": "400 status code (no body)"
+        },
+        "q2": {
+          "ok": false,
+          "ms": 97,
+          "status": 400,
+          "err": "400 status code (no body)"
+        },
+        "d1": {
+          "ok": false,
+          "ms": 95,
+          "status": 400,
+          "err": "400 status code (no body)"
+        },
+        "d2": {
+          "ok": false,
+          "ms": 99,
+          "status": 400,
+          "err": "400 status code (no body)"
+        }
+      }
+    },
+    {
+      "model": "z-ai/glm5",
+      "quick_ok": 0,
+      "quick_json_ok": 0,
+      "quick_p50_ms": null,
+      "deep_ok": 0,
+      "deep_json_ok": 0,
+      "deep_p50_ms": null,
+      "basic_15s_pass": false,
+      "deep_30s_pass": false,
+      "all_raw": {
+        "q1": {
+          "ok": false,
+          "ms": 20016,
+          "status": 0,
+          "err": "Request was aborted."
+        },
+        "q2": {
+          "ok": false,
+          "ms": 20015,
+          "status": 0,
+          "err": "Request was aborted."
+        },
+        "d1": {
+          "ok": false,
+          "ms": 35008,
+          "status": 0,
+          "err": "Request was aborted."
+        },
+        "d2": {
+          "ok": false,
+          "ms": 35003,
+          "status": 0,
+          "err": "Request was aborted."
+        }
+      }
+    },
+    {
+      "model": "z-ai/glm4.7",
+      "quick_ok": 2,
+      "quick_json_ok": 0,
+      "quick_p50_ms": 15881,
+      "deep_ok": 1,
+      "deep_json_ok": 1,
+      "deep_p50_ms": 10179,
+      "basic_15s_pass": false,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 15881,
+          "json_ok": false
+        },
+        "q2": {
+          "ok": true,
+          "ms": 1513,
+          "json_ok": false
+        },
+        "d1": {
+          "ok": false,
+          "ms": 35004,
+          "status": 0,
+          "err": "Request was aborted."
+        },
+        "d2": {
+          "ok": true,
+          "ms": 10179,
+          "json_ok": true
+        }
+      }
+    },
+    {
+      "model": "nvidia/llama-3.1-nemotron-51b-instruct",
+      "quick_ok": 0,
+      "quick_json_ok": 0,
+      "quick_p50_ms": null,
+      "deep_ok": 0,
+      "deep_json_ok": 0,
+      "deep_p50_ms": null,
+      "basic_15s_pass": false,
+      "deep_30s_pass": false,
+      "all_raw": {
+        "q1": {
+          "ok": false,
+          "ms": 115,
+          "status": 404,
+          "err": "404 status code (no body)"
+        },
+        "q2": {
+          "ok": false,
+          "ms": 115,
+          "status": 404,
+          "err": "404 status code (no body)"
+        },
+        "d1": {
+          "ok": false,
+          "ms": 115,
+          "status": 404,
+          "err": "404 status code (no body)"
+        },
+        "d2": {
+          "ok": false,
+          "ms": 104,
+          "status": 404,
+          "err": "404 status code (no body)"
+        }
+      }
+    },
+    {
+      "model": "stepfun-ai/step-3.5-flash",
+      "quick_ok": 2,
+      "quick_json_ok": 0,
+      "quick_p50_ms": 5780,
+      "deep_ok": 1,
+      "deep_json_ok": 0,
+      "deep_p50_ms": 24632,
+      "basic_15s_pass": true,
+      "deep_30s_pass": true,
+      "all_raw": {
+        "q1": {
+          "ok": true,
+          "ms": 5780,
+          "json_ok": false
+        },
+        "q2": {
+          "ok": true,
+          "ms": 1193,
+          "json_ok": false
+        },
+        "d1": {
+          "ok": true,
+          "ms": 24632,
+          "json_ok": false
+        },
+        "d2": {
+          "ok": false,
+          "ms": 35005,
+          "status": 0,
+          "err": "Request was aborted."
+        }
+      }
+    }
+  ],
+  "summary": {
+    "tested": 16,
+    "pass_both": [
+      "meta/llama-3.3-70b-instruct",
+      "mistralai/mistral-nemotron",
+      "mistralai/mistral-medium-3-instruct",
+      "qwen/qwen3-next-80b-a3b-instruct",
+      "stockmark/stockmark-2-100b-instruct",
+      "moonshotai/kimi-k2-instruct-0905",
+      "meta/llama-4-maverick-17b-128e-instruct",
+      "mistralai/mixtral-8x22b-instruct-v0.1",
+      "mistralai/mixtral-8x7b-instruct-v0.1",
+      "stepfun-ai/step-3.5-flash"
+    ],
+    "pass_basic_only": [
+      "meta/llama-3.1-70b-instruct"
+    ],
+    "pass_deep_only": [
+      "z-ai/glm4.7"
+    ],
+    "fail_both": [
+      "mistralai/mistral-7b-instruct-v0.3",
+      "bytedance/seed-oss-36b-instruct",
+      "z-ai/glm5",
+      "nvidia/llama-3.1-nemotron-51b-instruct"
+    ]
+  }
+}

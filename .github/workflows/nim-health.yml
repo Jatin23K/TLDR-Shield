@@ -1,0 +1,114 @@
+name: NIM Key Health Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # Every 6 hours
+  workflow_dispatch:           # Allow manual trigger
+
+jobs:
+  nim-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run NIM key health check
+        id: health
+        env:
+          NIM_API_KEY_1: ${{ secrets.NIM_API_KEY_1 }}
+          NIM_API_KEY_2: ${{ secrets.NIM_API_KEY_2 }}
+          NIM_API_KEY_3: ${{ secrets.NIM_API_KEY_3 }}
+        run: |
+          set +e
+          npx tsx eval/nimHealthMonitor.ts > health_report.json 2>health_errors.txt
+          EXIT_CODE=$?
+          cat health_report.json
+          cat health_errors.txt >&2
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+      - name: Upload health report
+        uses: actions/upload-artifact@v4
+        with:
+          name: nim-health-report
+          path: health_report.json
+          retention-days: 7
+
+      - name: Open issue on key failure
+        if: steps.health.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Ensure required labels exist (creates them if absent, ignores 422 if they already exist)
+            const labelsToEnsure = [
+              { name: 'nim-health', color: 'e11d48', description: 'NIM API key health alerts' },
+              { name: 'infrastructure', color: '6366f1', description: 'Infrastructure and ops issues' },
+            ];
+            for (const label of labelsToEnsure) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description,
+                });
+              } catch (e) {
+                if (e.status !== 422) throw e; // 422 = label already exists, safe to ignore
+              }
+            }
+
+            const fs = require('fs');
+            let report = {};
+            try { report = JSON.parse(fs.readFileSync('health_report.json', 'utf8')); } catch {}
+
+            const failingKeys = (report.keys || [])
+              .filter(k => !k.ok)
+              .map(k => `Key ${k.keyIndex}: ${k.error || 'unknown error'}`)
+              .join('\n');
+
+            const title = `⚠️ NIM Key Health Check Failed — ${report.healthy ?? '?'}/${report.total ?? '?'} keys healthy`;
+            const body = [
+              '## NIM Key Health Check Failed',
+              '',
+              `**Time:** ${report.timestamp ?? new Date().toISOString()}`,
+              `**Healthy keys:** ${report.healthy ?? '?'} / ${report.total ?? '?'}`,
+              '',
+              '### Failing keys',
+              '```',
+              failingKeys || 'Unknown — see workflow logs',
+              '```',
+              '',
+              '### Action required',
+              '- Check NVIDIA NIM dashboard for quota/rate limit status',
+              '- Rotate any expired keys and update Cloud Run + GitHub secrets',
+              '- Re-run this workflow manually after fixing to verify',
+              '',
+              `[View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+            ].join('\n');
+
+            // Check if an open issue already exists to avoid duplicates
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'nim-health',
+            });
+
+            if (issues.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['nim-health', 'infrastructure'],
+              });
+            }

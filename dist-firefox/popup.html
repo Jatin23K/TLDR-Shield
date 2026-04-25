@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TLDR Shield</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0b0c10;
+      --bg-card:      rgba(18, 19, 26, 0.75);
+      --bg-elevated:  rgba(26, 27, 37, 0.85);
+      --border:       rgba(255,255,255,0.065);
+      --border-gold:  rgba(197,157,60,0.25);
+      --text:         #dde3ed;
+      --text-sub:     #6b7891;
+      --text-muted:   #2e3547;
+      --gold:         #c59d3c;
+      --gold-bright:  #e8be62;
+      --indigo:       #4f46e5;
+      --radius:       14px;
+      --font-display: 'Cormorant Garamond', serif;
+      --font-body:    'Inter', -apple-system, sans-serif;
+      --risky:        #ef4444;
+    }
+
+    body {
+      width: 330px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 8px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 14px;
+      background: rgba(11, 12, 16, 0.6);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-wrap {
+      width: 32px; height: 32px;
+      border-radius: 9px;
+      background: linear-gradient(145deg, #1a1b25, #0b0c10);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .header-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .title-accent { color: var(--gold); }
+    .version-badge {
+      font-size: 8px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: var(--bg-card);
+      color: var(--text-sub);
+      border: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    #credits-pill {
+      display: none;
+      margin-left: auto;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 20px;
+      background: rgba(197,157,60,0.1);
+      color: var(--gold);
+      border: 1px solid var(--border-gold);
+      white-space: nowrap;
+    }
+
+    /* ── Auth Banner ── */
+    #auth-banner {
+      display: none;
+      margin: 14px;
+      padding: 18px 16px;
+      background: linear-gradient(135deg, rgba(79,70,229,0.1) 0%, rgba(79,70,229,0.02) 100%);
+      border: 1px solid rgba(79,70,229,0.2);
+      border-radius: var(--radius);
+      text-align: center;
+    }
+    .auth-tagline {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 14px;
+    }
+    #signin-btn {
+      width: 100%;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 11px;
+      background: white;
+      color: #0b0c10;
+      border: none; border-radius: 10px;
+      font-family: inherit; font-size: 13px; font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    #signin-btn:hover { transform: translateY(-1.5px); box-shadow: 0 6px 16px rgba(0,0,0,0.4); }
+
+    /* ── User Row ── */
+    #user-row {
+      display: none;
+      margin: 14px;
+      padding: 10px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      align-items: center; gap: 12px;
+    }
+    .user-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold), #7c3aed);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; color: white;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    }
+    #user-email { font-size: 11px; color: var(--text-sub); overflow: hidden; text-overflow: ellipsis; }
+    #signout-btn {
+      font-size: 9px; font-weight: 700; color: var(--text-muted);
+      background: none; border: none; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      transition: color 0.15s;
+    }
+    #signout-btn:hover { color: var(--risky); }
+
+    /* ── Status Box ── */
+    .status-box {
+      margin: 14px;
+      padding: 12px 14px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .status-indicator {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--text-muted); flex-shrink: 0;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .status-indicator.scanning { background: var(--gold); box-shadow: 0 0 12px var(--gold); animation: pulse 1.5s infinite; }
+    .status-indicator.done     { background: #22c55e; box-shadow: 0 0 10px rgba(34,197,94,0.4); }
+    .status-indicator.error    { background: #ef4444; box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+    @keyframes pulse { 0%,100%{opacity:1; transform: scale(1);} 50%{opacity:0.4; transform: scale(0.8);} }
+    #status-text { font-size: 12px; color: var(--text-sub); line-height: 1.4; flex: 1; font-style: italic; }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 10px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.12em; color: var(--text-muted);
+      padding: 0 16px; margin: 18px 0 8px;
+    }
+
+    /* ── Tier Cards ── */
+    .tier-group {
+      display: flex; gap: 10px; margin: 0 14px 16px;
+    }
+    .tier-btn {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      position: relative;
+    }
+    .tier-btn:hover { border-color: rgba(255,255,255,0.1); background: var(--bg-elevated); }
+    .tier-btn.active {
+      border-color: var(--border-gold);
+      background: linear-gradient(135deg, rgba(197,157,60,0.08) 0%, rgba(197,157,60,0.01) 100%);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(197,157,60,0.1);
+    }
+    .tier-name {
+      font-family: var(--font-display);
+      font-size: 16px; font-weight: 700; color: var(--text);
+      display: block; margin-bottom: 2px;
+    }
+    .tier-btn.active .tier-name { color: var(--gold-bright); }
+    .tier-cost {
+      font-size: 9px; font-weight: 700; color: var(--text-sub);
+      background: var(--bg-card); padding: 2px 6px; border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .tier-btn.active .tier-cost { color: var(--gold); border-color: var(--border-gold); }
+    .tier-desc { font-size: 10px; color: var(--text-muted); margin-top: 6px; line-height: 1.3; }
+    .tier-btn.active .tier-desc { color: var(--text-sub); }
+    .tier-recommended {
+      position: absolute; top: -8px; right: 10px;
+      font-size: 8px; font-weight: 800; padding: 2px 6px;
+      border-radius: 4px; background: var(--gold); color: #000;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+
+    /* ── Scan Button ── */
+    #scan-btn {
+      width: calc(100% - 28px); margin: 0 14px;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--gold), #8a6a1f);
+      color: #000; border: none; border-radius: 12px;
+      font-size: 13px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.05em; cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      box-shadow: 0 10px 30px rgba(197,157,60,0.15);
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    #scan-btn:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.1); box-shadow: 0 15px 40px rgba(197,157,60,0.2); }
+    #scan-btn:active:not(:disabled) { transform: translateY(0); }
+    #scan-btn:disabled { opacity: 0.2; cursor: not-allowed; filter: grayscale(1); }
+
+    /* ── Toggles ── */
+    .toggles { display: flex; flex-direction: column; gap: 8px; padding: 16px 14px; }
+    .toggle-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px; background: var(--bg-card); border-radius: 12px;
+      border: 1px solid var(--border); cursor: pointer; transition: all 0.2s;
+    }
+    .toggle-item:hover { border-color: rgba(255,255,255,0.1); background: var(--bg-elevated); }
+    .toggle-label { font-size: 12px; font-weight: 700; color: var(--text); display: block; }
+    .toggle-desc { font-size: 10px; color: var(--text-sub); margin-top: 1px; }
+    .toggle-switch {
+      width: 32px; height: 18px; border-radius: 10px;
+      background: var(--text-muted); position: relative; transition: all 0.3s;
+    }
+    .toggle-switch.on { background: var(--gold); }
+    .toggle-switch::after {
+      content: ''; position: absolute; width: 14px; height: 14px;
+      background: white; border-radius: 50%; top: 2px; left: 2px;
+      transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+    .toggle-switch.on::after { transform: translateX(14px); }
+
+    .divider { height: 1px; background: var(--border); margin: 4px 14px 0; }
+
+    /* ── Inline Result Card ── */
+    #result-card {
+      display: none;
+      margin: 14px 14px 0;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      animation: fadeSlideIn 0.3s ease;
+    }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .result-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px;
+    }
+    .result-header.safe   { background: rgba(52,211,153,0.08); border-bottom: 1px solid rgba(52,211,153,0.15); }
+    .result-header.okay   { background: rgba(251,191,36,0.08);  border-bottom: 1px solid rgba(251,191,36,0.15); }
+    .result-header.risky  { background: rgba(248,113,113,0.08); border-bottom: 1px solid rgba(248,113,113,0.15); }
+    .result-rating-badge {
+      font-size: 10px; font-weight: 800; padding: 3px 8px;
+      border-radius: 6px; text-transform: uppercase; letter-spacing: 0.06em;
+      flex-shrink: 0;
+    }
+    .result-rating-badge.safe  { background: rgba(52,211,153,0.15); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.25); }
+    .result-rating-badge.okay  { background: rgba(251,191,36,0.15);  color: #fcd34d; border: 1px solid rgba(251,191,36,0.25); }
+    .result-rating-badge.risky { background: rgba(248,113,113,0.15); color: #fca5a5; border: 1px solid rgba(248,113,113,0.25); }
+    .cautious-chip {
+      display: inline-block; margin-left: 6px; padding: 1px 6px;
+      background: rgba(251,146,60,0.18); border: 1px solid rgba(251,146,60,0.45);
+      border-radius: 4px; font-size: 9px; font-weight: 700;
+      letter-spacing: 0.08em; color: #fb923c; vertical-align: middle;
+    }
+    .result-score {
+      font-size: 13px; font-weight: 800;
+    }
+    .result-score.safe  { color: #34d399; }
+    .result-score.okay  { color: #fbbf24; }
+    .result-score.risky { color: #f87171; }
+    .result-tldr {
+      padding: 10px 14px;
+      font-size: 11px; line-height: 1.5; color: var(--text-sub);
+      background: var(--bg-card);
+    }
+    .scan-type-label {
+      display: none;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      line-height: 1;
+    }
+    .cache-label {
+      display: none;
+      font-size: 9px; font-weight: 600;
+      color: #6366f1;
+      letter-spacing: 0.04em;
+      line-height: 1;
+    }
+
+    /* ── Quick Scan Flags (no citations — just violated/safe per pillar) ── */
+    #result-quick-flags {
+      display: none;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      padding: 6px 14px 9px;
+    }
+    .quick-flags-header {
+      font-size: 9px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-muted);
+      padding: 4px 0 5px;
+    }
+    .quick-flags-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 3px 6px;
+    }
+    .quick-flag-item {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10px; color: var(--text-sub);
+      padding: 1px 0;
+    }
+    .quick-flag-item.violated { color: #fca5a5; }
+
+    /* ── Audit Footer ── */
+    .result-audit-footer {
+      display: none;
+      padding: 5px 14px;
+      font-size: 9px; color: var(--text-muted);
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Pillar Breakdown (deep scan only) ── */
+    #result-pillars {
+      display: none;
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      padding: 4px 0;
+    }
+    .pillar-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 14px;
+      transition: background 0.15s;
+    }
+    .pillar-row:hover { background: var(--bg-elevated); }
+    .pillar-icon { font-size: 11px; flex-shrink: 0; margin-top: 1px; line-height: 1.4; }
+    .pillar-body { flex: 1; min-width: 0; }
+    .pillar-name {
+      font-size: 11px; font-weight: 600; color: var(--text);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .pillar-citation {
+      font-size: 10px; color: var(--text-sub);
+      margin-top: 2px; font-style: italic;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 230px;
+    }
+    .conf-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+    .conf-dot.high   { background: #34d399; }
+    .conf-dot.medium { background: #fbbf24; }
+    .conf-dot.low    { background: transparent; border: 1.5px solid #4b5563; }
+    .pillars-header {
+      font-size: 9px; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-muted);
+      padding: 6px 14px 2px;
+    }
+
+    .result-page-hint {
+      padding: 7px 14px;
+      font-size: 10px; color: var(--text-muted);
+      background: var(--bg-card);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; gap: 5px;
+    }
+    .result-truncated-warn {
+      padding: 6px 14px;
+      font-size: 10px; color: #fbbf24;
+      background: rgba(251,191,36,0.05);
+      border-top: 1px solid rgba(251,191,36,0.15);
+      display: flex; align-items: center; gap: 5px;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px 8px; margin-top: 4px; border-top: 1px solid var(--border);
+    }
+    .footer-links { display: flex; gap: 16px; }
+    .footer a {
+      font-size: 10px; color: var(--text-sub); text-decoration: none;
+      font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      transition: color 0.15s;
+    }
+    .footer a:hover { color: var(--gold); }
+    .footer-url {
+      font-size: 9px; color: var(--text-4);
+      font-family: 'Courier New', monospace;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 130px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo-wrap">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1L13.5 3.5V8C13.5 11.5 10.5 14 8 15C5.5 14 2.5 11.5 2.5 8V3.5L8 1Z"
+          fill="rgba(255,255,255,0.12)" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M5.5 8L7 9.5L10.5 6" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="header-title-group">
+      <span class="title"><span class="title-accent">TLDR</span> Shield</span>
+      <span class="version-badge">v2.0</span>
+    </div>
+    <div id="credits-pill">⚡ <span id="credits-val">–</span></div>
+  </div>
+
+  <!-- Auth banner (signed-out state) -->
+  <div id="auth-banner">
+    <p class="auth-tagline">Analyze any Terms of Service or Privacy Policy</p>
+    <button id="signin-btn">
+      <div class="g-icon">
+        <svg width="16" height="16" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+          <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+          <path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/>
+          <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.163 6.656 3.58 9 3.58z"/>
+        </svg>
+      </div>
+      Continue with Google
+    </button>
+  </div>
+
+  <!-- Signed-in user row -->
+  <div id="user-row">
+    <div class="user-avatar" id="user-avatar-initial">?</div>
+    <div class="user-info">
+      <span id="user-email"></span>
+    </div>
+    <div class="online-dot"></div>
+    <button id="signout-btn">Sign out</button>
+  </div>
+
+  <!-- Status -->
+  <div class="status-box">
+    <div class="status-indicator" id="status-dot"></div>
+    <p id="status-text">Ready to analyze the active tab.</p>
+    <span id="local-ai-badge" style="display:none; background:#6366f1; color:#fff; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:6px;">&#9889; Local AI</span>
+  </div>
+
+  <!-- Tier selector -->
+  <div class="section-label">Scan Tier</div>
+  <div class="tier-group">
+    <button class="tier-btn active" id="tier-quick" data-tier="quick">
+      <div class="tier-card-top">
+        <span class="tier-name">⚡ Quick</span>
+        <span class="tier-cost">10 credits</span>
+      </div>
+      <div class="tier-desc">~5 seconds · Badge only</div>
+    </button>
+    <button class="tier-btn" id="tier-deep" data-tier="deep">
+      <span class="tier-recommended">Recommended</span>
+      <div class="tier-card-top">
+        <span class="tier-name">🔬 Deep</span>
+        <span class="tier-cost">20 credits</span>
+      </div>
+      <div class="tier-desc">~30 seconds · Full pillar breakdown</div>
+    </button>
+  </div>
+
+  <!-- Scan button -->
+  <button id="scan-btn">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L19 5.5V12C19 16.5 15.5 20 12 21C8.5 20 5 16.5 5 12V5.5L12 2Z"/>
+      <path d="M9 12L11 14L15 10"/>
+    </svg>
+    Scan This Page
+  </button>
+
+  <!-- Inline result card (shown after scan completes) -->
+  <div id="result-card">
+    <div class="result-header" id="result-header">
+      <span class="result-rating-badge" id="result-rating-badge">–</span>
+      <span id="result-tldr-short" style="font-size:11px; color:var(--text); font-weight:600; flex:1; line-height:1.3;"></span>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:3px; margin-left:auto;">
+        <span class="result-score" id="result-score">–/100</span>
+        <span class="scan-type-label" id="scan-type-label"></span>
+        <span class="cache-label" id="cache-label"></span>
+      </div>
+    </div>
+    <div class="result-tldr" id="result-tldr-full"></div>
+    <!-- Quick scan flag summary — pillar violated/safe without citations (quick tier only) -->
+    <div id="result-quick-flags"></div>
+    <!-- Pillar breakdown — shown for deep scans only -->
+    <div id="result-pillars"></div>
+    <div id="result-truncated" class="result-truncated-warn" style="display:none">
+      ⚠️ Document too large — first 80,000 chars analyzed
+    </div>
+    <div class="result-page-hint">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Full breakdown &amp; highlights are on the page
+    </div>
+    <!-- Audit footer: model, chunk count, request ID -->
+    <div class="result-audit-footer" id="result-audit-footer"></div>
+  </div>
+
+  <!-- Toggles -->
+  <div class="toggles">
+    <div class="toggle-item" id="eli5-toggle" role="button" tabindex="0" aria-pressed="true">
+      <div class="toggle-text">
+        <span class="toggle-label">ELI5 Mode</span>
+        <span class="toggle-desc">Plain English citations</span>
+      </div>
+      <div class="toggle-switch eli5" id="eli5-switch"></div>
+    </div>
+    <div class="toggle-item" id="dp-toggle" role="button" tabindex="0" aria-pressed="true">
+      <div class="toggle-text">
+        <span class="toggle-label">Dark Patterns</span>
+        <span class="toggle-desc">Extra liability checks</span>
+      </div>
+      <div class="toggle-switch dp" id="dp-switch"></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Settings (hidden in production — dev only) -->
+  <div class="settings" style="display:none">
+    <p class="settings-label">Backend URL</p>
+    <div class="url-input-wrap">
+      <input type="text" id="api-url-input"
+        placeholder="https://your-backend.run.app/api/analyze"
+        spellcheck="false" autocomplete="off" />
+      <button id="save-url-btn">Save</button>
+    </div>
+    <p id="url-saved-msg">✓ Saved</p>
+  </div>
+
+  <!-- Batch Scan Section -->
+  <div id="batch-section" style="display:none; padding: 0 16px 12px;">
+    <button id="batch-scan-btn" disabled title="No legal links found on this page" style="
+      width: 100%; padding: 9px 14px; border-radius: 8px;
+      background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.25);
+      color: #a5b4fc; font-size: 12px; font-weight: 600; cursor: pointer;
+      letter-spacing: 0.02em; text-align: left;
+    ">🔍 Scan All Legal Links on This Page</button>
+
+    <!-- Progress / results panel -->
+    <div id="batch-progress" style="display:none; margin-top: 10px;">
+      <div id="batch-status" style="font-size: 11px; color: rgba(255,255,255,0.4); margin-bottom: 8px;"></div>
+      <div id="batch-results-list" style="display:flex; flex-direction:column; gap:6px; max-height:180px; overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- Auto-close countdown bar -->
+  <div id="auto-close-bar" style="
+    height: 2px; width: 100%; background: rgba(255,255,255,0.04); overflow: hidden;
+  ">
+    <div id="auto-close-progress" style="
+      height: 100%; width: 100%;
+      background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+      transform-origin: left;
+      transition: transform 5s linear;
+    "></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <div class="footer-links">
+      <a href="#" id="open-dashboard">View History →</a>
+      <a href="#" id="open-panel">Open Panel →</a>
+    </div>
+    <span class="footer-url" id="footer-api-url" style="display:none"></span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

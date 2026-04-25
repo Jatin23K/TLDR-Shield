@@ -1,0 +1,50 @@
+{
+  "social_media": {
+    "label": "Social Media",
+    "avgScore": 28,
+    "riskiest": "TikTok",
+    "safest": "LinkedIn",
+    "commonViolations": ["ai_training", "data_selling", "content_ownership"],
+    "sites": ["Twitter/X", "Instagram", "Facebook", "TikTok", "LinkedIn", "Snapchat"]
+  },
+  "streaming": {
+    "label": "Streaming",
+    "avgScore": 42,
+    "riskiest": "Spotify",
+    "safest": "Apple Music",
+    "commonViolations": ["ai_training", "data_selling"],
+    "sites": ["Spotify", "Netflix", "YouTube", "Apple Music", "Amazon Prime Video"]
+  },
+  "cloud_storage": {
+    "label": "Cloud Storage",
+    "avgScore": 51,
+    "riskiest": "Google Drive",
+    "safest": "iCloud",
+    "commonViolations": ["data_retention", "transparency"],
+    "sites": ["Dropbox", "Google Drive", "iCloud", "OneDrive", "Box"]
+  },
+  "ecommerce": {
+    "label": "E-Commerce",
+    "avgScore": 35,
+    "riskiest": "Amazon",
+    "safest": "Etsy",
+    "commonViolations": ["data_selling", "dark_patterns", "data_retention"],
+    "sites": ["Amazon", "eBay", "Etsy", "Shopify", "Walmart"]
+  },
+  "gaming": {
+    "label": "Gaming",
+    "avgScore": 38,
+    "riskiest": "Epic Games",
+    "safest": "Steam",
+    "commonViolations": ["content_ownership", "dark_patterns", "ai_training"],
+    "sites": ["Steam", "Epic Games", "Xbox", "PlayStation", "EA"]
+  },
+  "productivity": {
+    "label": "Productivity",
+    "avgScore": 55,
+    "riskiest": "Google Workspace",
+    "safest": "Notion",
+    "commonViolations": ["ai_training", "data_retention"],
+    "sites": ["Google Workspace", "Microsoft 365", "Notion", "Slack", "Zoom"]
+  }
+}

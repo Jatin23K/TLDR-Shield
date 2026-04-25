@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TLDR Shield</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0b0c10;
+      --bg-card:      rgba(18, 19, 26, 0.7);
+      --bg-elevated:  rgba(26, 27, 37, 0.8);
+      --border:       rgba(255,255,255,0.065);
+      --border-glow:  rgba(197,157,60,0.22);
+      --text:         #dde3ed;
+      --text-sub:     #6b7891;
+      --text-muted:   #2e3547;
+      --gold:         #c59d3c;
+      --gold-bright:  #e8be62;
+      --safe:         #22c55e;
+      --okay:         #f59e0b;
+      --risky:        #f43f5e;
+      --radius:       16px;
+      --radius-sm:    10px;
+      --font-display: 'Cormorant Garamond', serif;
+      --font-body:    'Inter', -apple-system, sans-serif;
+    }
+
+    body {
+      width: 100%;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      background: rgba(11, 12, 16, 0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+    .logo-wrap {
+      width: 32px; height: 32px;
+      border-radius: 9px;
+      background: linear-gradient(145deg, #1a1b25, #0b0c10);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .header-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .title-accent { color: var(--gold); }
+    .version-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-card);
+      color: var(--text-sub);
+      border: 1px solid var(--border);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    /* ── Main content area ── */
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── Loading state ── */
+    #panel-loading {
+      display: none;
+      text-align: center;
+      padding: 40px 0;
+    }
+    .loading-status {
+      font-size: 12px;
+      color: var(--text-sub);
+      margin-bottom: 24px;
+      font-style: italic;
+    }
+    .shimmer-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .shimmer-bar {
+      height: 12px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-elevated) 50%, var(--bg-card) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite linear;
+    }
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    /* ── Empty state ── */
+    #panel-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 16px;
+      gap: 16px;
+      animation: slide-up 0.4s ease-out;
+    }
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .empty-icon {
+      width: 56px; height: 56px;
+      border-radius: 18px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--gold);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+    .empty-title {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .empty-desc {
+      font-size: 13px;
+      color: var(--text-sub);
+      line-height: 1.6;
+      max-width: 260px;
+    }
+
+    /* ── Result section ── */
+    #panel-result {
+      display: none;
+      flex-direction: column;
+      gap: 20px;
+      animation: fade-in 0.5s ease-out;
+    }
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* Rating banner */
+    .rating-banner {
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .rating-banner.safe   { background: linear-gradient(135deg, rgba(34,197,94,0.1) 0%, rgba(34,197,94,0.02) 100%); border-color: rgba(34,197,94,0.2); }
+    .rating-banner.okay   { background: linear-gradient(135deg, rgba(245,158,11,0.1) 0%, rgba(245,158,11,0.02) 100%); border-color: rgba(245,158,11,0.2); }
+    .rating-banner.risky  { background: linear-gradient(135deg, rgba(244,63,94,0.1) 0%, rgba(244,63,94,0.02) 100%); border-color: rgba(244,63,94,0.2); }
+
+    .rating-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-sub);
+    }
+    .safe  .rating-label { color: var(--safe); }
+    .okay  .rating-label { color: var(--okay); }
+    .risky .rating-label { color: var(--risky); }
+    .cautious-chip {
+      display: inline-block; margin-left: 8px; padding: 2px 8px;
+      background: rgba(251,146,60,0.18); border: 1px solid rgba(251,146,60,0.45);
+      border-radius: 5px; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.1em; color: #fb923c; vertical-align: middle;
+      font-family: var(--font-body); text-transform: uppercase;
+    }
+
+    .rating-score {
+      font-family: var(--font-display);
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      margin: 4px 0;
+    }
+    .safe  .rating-score { color: #4ade80; text-shadow: 0 0 20px rgba(34,197,94,0.3); }
+    .okay  .rating-score { color: #fbbf24; text-shadow: 0 0 20px rgba(245,158,11,0.3); }
+    .risky .rating-score { color: #fb7185; text-shadow: 0 0 20px rgba(244,63,94,0.3); }
+
+    /* Meta row */
+    .result-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+    }
+    .result-url {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-sub);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 70%;
+    }
+    .tier-pill {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: var(--bg-card);
+      color: var(--gold);
+      border: 1px solid var(--border);
+    }
+
+    /* TLDR Summary */
+    .tldr-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      position: relative;
+    }
+    .tldr-label {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .tldr-text {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.6;
+      font-style: italic;
+    }
+
+    /* Pillars breakdown */
+    #pillars-section { display: none; margin-top: 10px; }
+    .pillars-heading {
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      padding-left: 4px;
+    }
+    .pillar-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 8px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .pillar-row:hover {
+      background: var(--bg-elevated);
+      border-color: rgba(255,255,255,0.1);
+    }
+    .pillar-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .pillar-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .pillar-dot.clear     { background: var(--safe);  box-shadow: 0 0 10px rgba(34,197,94,0.4); }
+    .pillar-dot.violation { background: var(--risky); box-shadow: 0 0 10px rgba(244,63,94,0.4); }
+    .pillar-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .pillar-confidence {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .pillar-confidence.high   { background: #34d399; }
+    .pillar-confidence.medium { background: #fbbf24; }
+    .pillar-confidence.low    { background: transparent; border: 1.5px solid #4b5563; }
+    .pillar-citation {
+      font-family: var(--font-display);
+      font-size: 12px;
+      color: var(--text-sub);
+      font-style: italic;
+      line-height: 1.6;
+      padding-left: 14px;
+      border-left: 1px solid var(--border);
+      margin-top: 6px;
+    }
+
+    /* Scan Again button */
+    #scan-again-btn {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--gold), #8a6a1f);
+      color: #000;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: transform 0.2s, filter 0.2s;
+      margin-top: 10px;
+      box-shadow: 0 8px 24px rgba(197,157,60,0.15);
+    }
+    #scan-again-btn:hover { transform: translateY(-1.5px); filter: brightness(1.1); }
+    #scan-again-btn:active { transform: translateY(0); }
+
+    /* GDPR Section */
+    #gdpr-section { margin-top: 10px; }
+    #gdpr-toggle-btn {
+      width: 100%; padding: 12px; border-radius: var(--radius-sm);
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--gold); font-size: 12px; font-weight: 600; cursor: pointer;
+      text-align: left; transition: background 0.2s;
+    }
+    #gdpr-toggle-btn:hover { background: var(--bg-elevated); }
+
+    #gdpr-form-expanded {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      margin-top: 8px;
+    }
+    #gdpr-email-input {
+      width: 100%; padding: 10px; border-radius: 6px;
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      color: var(--text); font-size: 13px; margin-bottom: 12px; outline: none;
+    }
+    #gdpr-generate-btn {
+      width: 100%; padding: 10px; border-radius: 6px;
+      background: var(--gold); border: none; color: #000;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+    }
+    #gdpr-body-area {
+      width: 100%; margin-top: 12px; padding: 10px; border-radius: 6px;
+      background: rgba(0,0,0,0.2); border: 1px solid var(--border);
+      color: var(--text-sub); font-size: 11px; resize: vertical; outline: none;
+    }
+    #gdpr-copy-btn {
+      width: 100%; margin-top: 10px; padding: 10px; border-radius: 6px;
+      background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3);
+      color: #4ade80; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+
+    /* ── Error state ── */
+    #panel-error {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 60px 20px;
+      text-align: center;
+    }
+    .error-icon {
+      width: 48px; height: 48px;
+      border-radius: 14px;
+      background: rgba(244,63,94,0.08);
+      border: 1px solid rgba(244,63,94,0.2);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--risky);
+    }
+    #panel-error-msg {
+      font-size: 13px;
+      color: var(--text-sub);
+      line-height: 1.6;
+    }
+    #retry-btn {
+      padding: 10px 24px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #retry-btn:hover { background: var(--bg-elevated); }
+
+    /* Deductions section */
+    #deductions-section {
+      background: rgba(255,255,255,0.03);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 12px;
+    }
+    .deductions-heading {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .deduction-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      margin-bottom: 4px;
+      color: var(--text-2);
+    }
+    .deduction-reason {
+      flex: 1;
+      padding-right: 8px;
+    }
+    .deduction-points {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--rose);
+      font-weight: 700;
+    }
+
+    /* ─── Rich Loading Steps ──────────────────────────────────────────────────── */
+    .tldr-loading-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 20px;
+      padding: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      width: 100%;
+      text-align: left;
+    }
+    .tldr-loading-step {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      transition: all 0.3s ease;
+    }
+    .tldr-loading-step.active {
+      color: #fff;
+    }
+    .tldr-loading-step.done {
+      color: #4ade80;
+    }
+    .tldr-step-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.1);
+      flex-shrink: 0;
+    }
+    .tldr-loading-step.active .tldr-step-dot {
+      background: #fbbf24;
+      box-shadow: 0 0 8px rgba(251,191,36,0.6);
+      animation: tldr-pulse 1.5s infinite;
+    }
+    .tldr-loading-step.done .tldr-step-dot {
+      background: #4ade80;
+      box-shadow: none;
+    }
+    @keyframes tldr-pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.5); opacity: 0.5; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo-wrap">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+        <path d="M8 1L13.5 3.5V8C13.5 11.5 10.5 14 8 15C5.5 14 2.5 11.5 2.5 8V3.5L8 1Z"
+          fill="rgba(255,255,255,0.12)" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M5.5 8L7 9.5L10.5 6" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="header-title-group">
+      <span class="title"><span class="title-accent">TLDR</span> Shield</span>
+      <span class="version-badge">v2.0</span>
+    </div>
+  </div>
+
+  <!-- Panel body (scrollable) -->
+  <div class="panel-body" aria-live="polite">
+
+    <!-- Loading state -->
+    <div id="panel-loading" style="text-align:center; padding: 40px 20px;">
+      <div style="font-weight:700; font-size:11px; letter-spacing:0.1em; color:var(--gold); margin-bottom:8px; text-transform:uppercase;">AI Privacy Audit</div>
+      <p class="loading-status" id="loading-status-text" style="font-size:13px; color:var(--text-sub); margin-bottom:20px;">Initializing...</p>
+    </div>
+
+    <!-- Empty state -->
+    <div id="panel-empty">
+      <div class="empty-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.7)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L19 5.5V12C19 16.5 15.5 20 12 21C8.5 20 5 16.5 5 12V5.5L12 2Z"/>
+        </svg>
+      </div>
+      <p class="empty-title">Run a scan to see results here</p>
+      <p class="empty-desc">Open a Terms of Service or Privacy Policy page and click the TLDR Shield button.</p>
+      <div id="panel-signin-prompt">
+        <button id="panel-signin-btn">
+          <svg width="15" height="15" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/>
+            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.163 6.656 3.58 9 3.58z"/>
+          </svg>
+          Sign in to scan
+        </button>
+      </div>
+    </div>
+
+    <!-- Result section -->
+    <div id="panel-result">
+      <div id="stale-banner" style="display:none; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:var(--amber); padding:8px 12px; border-radius:8px; font-size:11px; font-weight:600; text-align:center; margin-bottom:4px;">
+        ⚠️ This result is from a different page or is outdated.
+      </div>
+      <div class="rating-banner" id="rating-banner">
+        <span class="rating-label" id="rating-label">SAFE</span>
+        <span class="rating-score" id="rating-score">–</span>
+      </div>
+
+      <!-- Low-confidence warning — shown when all violations are uncertain -->
+      <div id="confidence-warning" style="display:none; background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#f5a623; padding:8px 12px; border-radius:8px; font-size:11px; font-weight:600; margin:6px 0 2px; line-height:1.4;">
+        ⚠ Low confidence — AI flags are uncertain. Review the policy yourself before deciding.
+      </div>
+
+      <div class="result-meta">
+        <span class="result-url" id="result-url"></span>
+        <span class="tier-pill" id="tier-pill"></span>
+      </div>
+
+      <div id="deductions-section" style="display:none;">
+        <div class="deductions-heading">Audit Findings</div>
+        <div id="deductions-list"></div>
+      </div>
+
+      <div class="tldr-card">
+        <div class="tldr-label">Summary</div>
+        <p class="tldr-text" id="tldr-text"></p>
+      </div>
+
+      <div id="pillars-section">
+        <div class="pillars-heading">Privacy Pillars</div>
+        <div id="pillars-list"></div>
+      </div>
+
+      <!-- GDPR Email Generator (deep scans on RISKY/OKAY only) -->
+      <div id="gdpr-section" style="display:none; margin-top: 12px;">
+        <div id="gdpr-form-collapsed">
+          <button id="gdpr-toggle-btn" style="
+            width: 100%; padding: 10px 14px; border-radius: 8px;
+            background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.3);
+            color: #a5b4fc; font-size: 12px; font-weight: 600; cursor: pointer;
+            text-align: left; letter-spacing: 0.02em;
+          ">✉ Generate GDPR Opt-Out Email →</button>
+        </div>
+        <div id="gdpr-form-expanded" style="display:none; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin-top: 6px;">
+          <p style="color: var(--text-3); font-size: 11px; margin: 0 0 10px;">Generate a GDPR Article 17 Right to Erasure request addressed to this company.</p>
+          <input id="gdpr-email-input" type="email" placeholder="Your email address" style="
+            width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 6px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+            color: var(--text-1); font-size: 12px; margin-bottom: 8px; outline: none;
+          " />
+          <button id="gdpr-generate-btn" style="
+            width: 100%; padding: 8px; border-radius: 6px;
+            background: var(--indigo); border: none; color: #fff;
+            font-size: 12px; font-weight: 600; cursor: pointer;
+          ">Generate Email (5 credits)</button>
+          <div id="gdpr-result" style="display:none; margin-top: 10px;">
+            <div style="font-size: 11px; color: var(--text-3); margin-bottom: 4px;" id="gdpr-subject-label"></div>
+            <textarea id="gdpr-body-area" rows="8" readonly style="
+              width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px;
+              background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+              color: var(--text-2); font-size: 11px; resize: vertical; font-family: inherit;
+            "></textarea>
+            <button id="gdpr-copy-btn" style="
+              width: 100%; margin-top: 6px; padding: 7px; border-radius: 6px;
+              background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3);
+              color: var(--emerald); font-size: 12px; font-weight: 600; cursor: pointer;
+            ">Copy to Clipboard ✓</button>
+          </div>
+          <div id="gdpr-error" style="display:none; color: var(--rose); font-size: 11px; margin-top: 8px;"></div>
+        </div>
+      </div>
+
+      <button id="scan-again-btn">Go to Tab &amp; Scan Again &rarr;</button>
+    </div>
+
+    <!-- Error state -->
+    <div id="panel-error">
+      <div class="error-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(244,63,94,0.85)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <p id="panel-error-msg"></p>
+      <button id="retry-btn">Retry</button>
+    </div>
+
+  </div><!-- .panel-body -->
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

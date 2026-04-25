@@ -1,0 +1,153 @@
+# TLDR Shield — CI Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+# Runs on every push and pull request to master.
+#
+# Jobs (sequential to avoid NIM API rate limits):
+#   lint        — TypeScript type-check (no build, fast)
+#   golden      — 10 hand-crafted deep-tier citation tests (quality gate)
+#   eval-quick  — 30-case quick-tier accuracy check (master branch only)
+#
+# Required GitHub Secrets:
+#   GEMINI_API_KEY    Google Gemini API key (primary)
+#   GEMINI_API_KEY_2  Google Gemini API key (failover 2)
+#   GEMINI_API_KEY_3  Google Gemini API key (failover 3)
+#   GEMINI_API_KEY_4  Google Gemini API key (failover 4)
+#   GEMINI_API_KEY_5  Google Gemini API key (failover 5)
+#
+# Regression thresholds (eval-quick):
+#   ratingPct  ≥ 80%
+#   parseFails = 0
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # ── 1. TypeScript lint ──────────────────────────────────────────────────────
+  lint:
+    name: Lint (tsc --noEmit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run lint
+
+  # ── 2. Golden tests (deep-tier citation verification) ──────────────────────
+  golden:
+    name: Golden Tests (CI subset)
+    runs-on: ubuntu-latest
+    needs: lint
+    continue-on-error: true  # API rate limits must not block deploys
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+      GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+      # Use 3.1 Flash-Lite Preview — independent daily quota bucket from 2.5
+      # Flash-Lite. When one model's RPD is exhausted, the other is still fresh.
+      GEMINI_MODEL: gemini-3.1-flash-lite-preview
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run golden tests (CI subset — 6 core cases)
+        run: npx tsx eval/golden.test.ts --ci
+
+  # ── 3. Quick-tier eval accuracy check (master only, runs after golden) ──────
+  eval-quick:
+    name: Eval Quick (30 cases, master only)
+    runs-on: ubuntu-latest
+    needs: golden
+    if: github.ref == 'refs/heads/master'
+    continue-on-error: true  # accuracy regressions are tracked via weekly-eval, not CI gate
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+      GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+      GEMINI_MODEL: gemini-3.1-flash-lite-preview
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run quick eval
+        run: npm run eval:quick 2>&1 | tee /tmp/eval-quick.txt
+
+      - name: Check accuracy thresholds
+        run: |
+          node --input-type=module << 'EOF'
+          import { readFileSync } from 'fs';
+          const raw = readFileSync('/tmp/eval-quick.txt', 'utf8');
+
+          // Extract the JSON block from eval output
+          let result = null;
+          let depth = 0, start = -1;
+          for (let i = 0; i < raw.length; i++) {
+            if (raw[i] === '{') { if (depth === 0) start = i; depth++; }
+            else if (raw[i] === '}') {
+              depth--;
+              if (depth === 0 && start !== -1) {
+                try {
+                  const obj = JSON.parse(raw.slice(start, i + 1));
+                  if (obj.tier === 'quick') { result = obj; break; }
+                } catch {}
+                start = -1;
+              }
+            }
+          }
+
+          if (!result) {
+            console.error('ERROR: Could not parse eval output.');
+            process.exit(1);
+          }
+
+          const { ratingPct } = result.accuracy;
+          const { parseFails } = result;
+          const errors = result.perCase.filter(c => c.error).length;
+
+          console.log(`ratingPct  : ${ratingPct.toFixed(1)}%  (threshold ≥ 80%)`);
+          console.log(`parseFails : ${parseFails}  (threshold = 0)`);
+          console.log(`429 errors : ${errors}`);
+
+          let blocked = false;
+          if (parseFails > 0) {
+            console.error(`BLOCKED: parseFails = ${parseFails} > 0`);
+            blocked = true;
+          }
+          if (ratingPct < 80) {
+            console.error(`BLOCKED: ratingPct = ${ratingPct.toFixed(1)}% < 80%`);
+            blocked = true;
+          }
+          if (blocked) process.exit(1);
+          console.log('PASS — accuracy within thresholds.');
+          EOF

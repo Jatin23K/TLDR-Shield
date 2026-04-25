@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "outDir": "dist-server",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ESNext"],
+    "types": ["node"],
+    "resolveJsonModule": true
+  },
+  "include": ["server.ts", "env.d.ts"],
+  "exclude": ["node_modules", "dist", "extension"]
+}

@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "Scan": {
+      "title": "Scan",
+      "description": "A privacy policy scan result stored per-user.",
+      "type": "object",
+      "properties": {
+        "uid":       { "type": "string",  "description": "Firebase UID of the user who ran the scan." },
+        "url":       { "type": "string",  "description": "URL of the scanned page." },
+        "rating":    { "type": "string",  "description": "Overall rating: SAFE | OKAY | RISKY" },
+        "score":     { "type": "number",  "description": "Numerical score 0-100." },
+        "tldr":      { "type": "string",  "description": "Plain-English one-paragraph summary." },
+        "pillars":   { "type": "object",  "description": "Per-pillar breakdown. null for Quick scans; object for Deep scans." },
+        "tier":      { "type": "string",  "description": "Scan tier: quick | deep" },
+        "model":     { "type": "string",  "description": "NIM model ID used for the scan (e.g. meta/llama-3.3-70b-instruct)." },
+        "cached":    { "type": "boolean", "description": "true if the result was served from L2 Firestore cache." },
+        "latencyMs": { "type": "number",  "description": "Total analysis latency in milliseconds." },
+        "createdAt": { "type": "string",  "format": "date-time", "description": "ISO timestamp when the scan was created." }
+      },
+      "required": ["uid", "url", "rating", "score", "tldr", "tier", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile with monthly credit tracking.",
+      "type": "object",
+      "properties": {
+        "uid":            { "type": "string", "description": "Firebase UID." },
+        "credits":        { "type": "number", "description": "Remaining scan credits (resets to 400 on the 1st of each month)." },
+        "lastResetMonth": { "type": "string", "description": "Last reset month in YYYY-MM format." },
+        "role":           { "type": "string", "description": "User role. Currently only 'admin' is used." }
+      },
+      "required": ["uid", "credits", "lastResetMonth"]
+    },
+    "SharedCache": {
+      "title": "SharedCache",
+      "description": "Anonymous cross-user result cache. Written by Admin SDK only — client access is blocked by Firestore rules.",
+      "type": "object",
+      "properties": {
+        "result":        { "type": "object", "description": "Full scan result payload (same shape as Scan minus uid)." },
+        "tier":          { "type": "string", "description": "quick | deep" },
+        "scannedAt":     { "type": "string", "format": "date-time", "description": "When the original scan was run." },
+        "expiresAt":     { "type": "string", "format": "date-time", "description": "Cache expiry: 48h for Quick, 7d for Deep." },
+        "scanCount":     { "type": "number", "description": "Number of times this cached result has been served." },
+        "sourceUrlHash": { "type": "string", "description": "SHA-256 of the source URL (for lookup without exposing full URL)." }
+      },
+      "required": ["result", "tier", "scannedAt", "expiresAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "User-submitted feedback on an incorrect scan result.",
+      "type": "object",
+      "properties": {
+        "uid":       { "type": "string", "description": "Firebase UID of the reporter." },
+        "url":       { "type": "string", "description": "URL of the scanned page being reported." },
+        "rating":    { "type": "string", "description": "The rating the user believes is wrong." },
+        "score":     { "type": "number", "description": "The score the user believes is wrong." },
+        "pillars":   { "type": "object", "description": "Pillar breakdown from the disputed scan." },
+        "requestId": { "type": "string", "description": "X-Request-ID from the original analysis response." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the report was submitted." }
+      },
+      "required": ["uid", "url", "rating", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/scans/{scanId}": {
+      "schema": "Scan",
+      "description": "Per-user scan history. Document ID is auto-generated."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile and credit balance. Document ID is the Firebase UID."
+    },
+    "/shared_cache/{hash}": {
+      "schema": "SharedCache",
+      "description": "Anonymous cross-user result cache. Document ID is SHA-256(text + tier + eli5 + darkPatterns + modelId). Client-read-blocked."
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "User feedback on incorrect results. Document ID is auto-generated."
+    }
+  }
+}

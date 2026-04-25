@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-server/
+dist-chrome/
+dist-firefox/
+.env*
+!.env.example
+coverage/
+.git/
+.github/
+*.log
+tmp_*.txt
+*.tmp
+*_result.md
+*_results.md
+scripts/
+.worktrees/
