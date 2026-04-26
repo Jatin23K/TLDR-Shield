@@ -70,7 +70,7 @@ Analyze the legal text against these privacy pillars:
    • "kept for 5 years to meet financial regulations" → VIOLATION
    • "3 years after account deletion for legal obligations" → VIOLATION
    • "retained for 18 months for analytics" → VIOLATION
-   Do NOT let the words "tax", "regulatory", "legal", "compliance", "safety", or "fraud prevention" override this rule. If the number is over 12 months, mark violation:true regardless of the reason. Only ≤90 days is acceptable.
+   Do NOT let the words "tax", "regulatory", "legal", "compliance", "safety", or "fraud prevention" override this rule. If the number is over 12 months, mark violation:true regardless of the reason. Only periods of 12 months or less (1 year or less) post-deletion are acceptable.
 5. content_ownership — Broad IP rights beyond what is needed to show your content on the platform? VIOLATION EXAMPLES: worldwide royalty-free sublicensable license "for any purpose", right to modify/adapt/redistribute content beyond the platform, commercial reuse of content. NOT a violation: "non-exclusive license to host, display, and distribute your content on our platform" or "license scoped to operating the service/platform" — these are required for the service to function.${darkPillar}
 
 VIOLATION RULES:
