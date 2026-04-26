@@ -15,7 +15,7 @@ let applyDenialVeto: (pillars: Record<string, any>, fullText: string) => void;
 async function loadFunction(): Promise<boolean> {
     try {
         // Dynamic import so we get a clean error message when not yet implemented.
-        const mod = await import('../denial-veto.js');
+        const mod = await import('../denial-veto.ts');
         applyDenialVeto = mod.applyDenialVeto;
         return true;
     } catch {

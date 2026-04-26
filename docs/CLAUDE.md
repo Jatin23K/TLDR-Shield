@@ -169,7 +169,7 @@ NIM_MODEL_DEEP=meta/llama-3.3-70b-instruct   # Default model for deep tier
 # Production
 APP_URL=https://your-cloud-run-url.run.app
 PORT=3000                     # Cloud Run sets this automatically
-INTERNAL_API_KEY=...          # Optional: require X-API-Key header on all endpoints
+INTERNAL_API_KEY=...          # Optional: require x-internal-key header on all endpoints
 ALLOW_UNMETERED_LOCAL=true    # Dev only: bypass credit check when Firestore is offline
 ```
 
@@ -190,7 +190,7 @@ All endpoints live in `server.ts`. Rate limit: 30 requests per 15 minutes per IP
 | `POST` | `/api/analyze` | Firebase ID token (Bearer) | Main scan — SSE stream |
 | `GET` | `/api/credits` | Firebase ID token (Bearer) | Current credit balance |
 | `POST` | `/api/report` | Firebase ID token (Bearer) | Submit incorrect result feedback |
-| `DELETE` | `/api/cache` | INTERNAL_API_KEY | Clear L1/L2 cache (dev only — 403 in prod) |
+| `DELETE` | `/api/cache` | INTERNAL_API_KEY | Clear L1 cache (Redis) |
 
 **`POST /api/analyze` request body:**
 ```json

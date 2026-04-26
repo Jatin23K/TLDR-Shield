@@ -233,7 +233,7 @@ bash build-extension.sh
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | Local dev | Path to Firebase service account JSON |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | PaaS | Inline service account JSON string |
 | `APP_URL` | Production | Deployed backend URL (CORS allowlist) |
-| `INTERNAL_API_KEY` | Optional | Require `X-Internal-Key` header on internal endpoints |
+| `INTERNAL_API_KEY` | Optional | Require `x-internal-key` header on internal endpoints |
 | `NIM_PER_KEY_TIMEOUT_MS` | Optional | Per-key timeout in ms (default: 12000) |
 | `NIM_RETRY_ROUNDS` | Optional | Retry rounds on NIM failure (default: 3) |
 | `NIM_MODEL_QUICK` | Optional | Override quick scan model ID |
@@ -255,8 +255,8 @@ bash build-extension.sh
 | `DELETE` | `/api/watch/:watchId` | Firebase Bearer token | — | Unwatch a URL |
 | `GET` | `/api/watch` | Firebase Bearer token | — | List all watched URLs for the current user |
 | `GET` | `/api/notifications` | Firebase Bearer token | — | Get unread policy change notifications |
-| `POST` | `/api/recheck` | `X-Internal-Key` | — | Internal: check all due watches for changes (invoked by Cloud Scheduler) |
-| `DELETE` | `/api/cache` | API key (dev only) | — | Clear L1/L2 cache by URL or hash |
+| `POST` | `/api/recheck` | `x-internal-key` | — | Internal: purge cache for a URL to force fresh scan |
+| `DELETE` | `/api/cache` | `x-internal-key` | — | Internal: clear global hot cache (Redis) |
 | `GET` | `/health` | None | — | Uptime, memory, cache stats |
 
 ---
