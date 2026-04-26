@@ -82,48 +82,42 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
 
     const urlHash = url ? crypto.createHash('sha256').update(url).digest('hex') : null;
 
-    // 1. Demo Mode Check (Fix #5)
-    if (url && (demoResults as any)[url]) {
-        console.log(`[TLDR Shield] Demo Mode: ${url}`);
-        return res.json({ ...(demoResults as any)[url], cached: true });
-    }
-
-    // 2. Persistent Cache Check (Fix #3)
-    const redisKey = `cache:${urlHash || crypto.createHash('sha256').update(text.slice(0, 500)).digest('hex')}`;
-    const currentContentHash = crypto.createHash('sha256').update(text.slice(0, 10000)).digest('hex');
-    
-    const cachedData = await getCache(redisKey);
-    
-    if (cachedData) {
-        // Verify if the content has changed since the last scan
-        if (cachedData.contentHash === currentContentHash) {
-            console.log('[TLDR Shield] L1 Redis Hit (Hash Verified)');
-            return res.json({ ...cachedData.result, cached: true });
-        } else {
-            console.log('[TLDR Shield] Cache Stale: Content changed. Rescanning...');
-        }
-    }
-
-    // 3. Shared Cache Check
-    if (urlHash) {
-        const l2Cache = await getSharedCache(firestoreDb, urlHash);
-        if (l2Cache) {
-            // Verify content hash for L2 as well
-            if (l2Cache.contentHash === currentContentHash) {
-                console.log('[TLDR Shield] L2 Firestore Hit (Hash Verified)');
-                await setCache(redisKey, l2Cache, 3600); // Backfill Redis
-                return res.json({ ...l2Cache.result, cached: true });
-            }
-        }
-    }
-
-    // 4. Credit Check
+    // 1. Credit Check & Role Validation (Deduct first)
     const cost = tier === 'deep' ? 20 : 10;
     const isAdmin = (req as any).isAdmin === true;
     
     if (!isAdmin) {
         const credit = await checkAndDeductCredits(firestoreDb, uid, cost, true);
         if (!credit.ok) return res.status(402).json(credit);
+    }
+
+    // 2. Demo Mode Check
+    if (url && (demoResults as any)[url]) {
+        console.log(`[TLDR Shield] Demo Mode Hit: ${url}`);
+        return res.json({ ...(demoResults as any)[url], cached: true });
+    }
+
+    // 3. Persistent Cache Check (L1)
+    const redisKey = `cache:${urlHash || crypto.createHash('sha256').update(text.slice(0, 500)).digest('hex')}`;
+    const currentContentHash = crypto.createHash('sha256').update(text.slice(0, 10000)).digest('hex');
+    
+    const cachedData = await getCache(redisKey);
+    
+    if (cachedData) {
+        if (cachedData.contentHash === currentContentHash) {
+            console.log('[TLDR Shield] L1 Redis Hit (Credits Consumed)');
+            return res.json({ ...cachedData.result, cached: true });
+        }
+    }
+
+    // 4. Shared Cache Check (L2)
+    if (urlHash) {
+        const l2Cache = await getSharedCache(firestoreDb, urlHash);
+        if (l2Cache && l2Cache.contentHash === currentContentHash) {
+            console.log('[TLDR Shield] L2 Firestore Hit (Credits Consumed)');
+            await setCache(redisKey, l2Cache, 3600); // Backfill Redis
+            return res.json({ ...l2Cache.result, cached: true });
+        }
     }
 
     // 5. HYBRID KEY POOL ARCHITECTURE
