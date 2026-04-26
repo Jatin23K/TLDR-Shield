@@ -16,6 +16,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import { readFileSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Modular Services
 import { authMiddleware } from './server/middleware/auth.js';
@@ -38,6 +43,9 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+
+// Serve static files from the Vite build directory
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // --- Firebase Init (Simplified) ---
 let firestoreDb: any = null;
@@ -392,6 +400,10 @@ app.post('/api/admin/config', authMiddleware, async (req, res) => {
     }
 });
 
+// Catch-all route to serve the frontend (SPA support)
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`[TLDR Shield] Server listening on ${PORT}`));
