@@ -142,8 +142,17 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     const hybridPool = [...scanLane, ...utilLane];
 
     const paidKey = (process.env.GEMINI_PRO_KEY ?? '').trim();
-    const isProMasterOn = process.env.GEMINI_PRO_MODE === 'true';
-    const allowUsersPro = process.env.GEMINI_PRO_FOR_USERS === 'true';
+    
+    // ── Hot Config Check (Redis) ──
+    // We check Redis first for real-time overrides. If missing, we use .env defaults.
+    const hotConfig = await getCache('system:config') || {};
+    const isProMasterOn = hotConfig.GEMINI_PRO_MODE !== undefined 
+        ? hotConfig.GEMINI_PRO_MODE === true 
+        : process.env.GEMINI_PRO_MODE === 'true';
+        
+    const allowUsersPro = hotConfig.GEMINI_PRO_FOR_USERS !== undefined
+        ? hotConfig.GEMINI_PRO_FOR_USERS === true
+        : process.env.GEMINI_PRO_FOR_USERS === 'true';
 
     // Model selection — read from .env, never hardcoded
     const primaryModel = (process.env.GEMINI_MODEL_SCAN_PRIMARY || 'gemini-2.5-flash').trim();
@@ -359,6 +368,33 @@ app.delete('/api/cache', authMiddleware, async (req, res) => {
         res.json({ success: true, message: 'Global cache purge initiated.' });
     } catch (err: any) {
         res.status(500).json({ error: 'Failed to clear cache.' });
+    }
+});
+
+/**
+ * ADMIN ROUTE: Update System Config
+ * Allows real-time toggling of Pro Mode without redeploying.
+ * Keys: GEMINI_PRO_MODE (boolean), GEMINI_PRO_FOR_USERS (boolean)
+ */
+app.post('/api/admin/config', authMiddleware, async (req, res) => {
+    const isAdmin = (req as any).isAdmin === true;
+    if (!isAdmin) return res.status(403).json({ error: 'Admin access required.' });
+
+    const { GEMINI_PRO_MODE, GEMINI_PRO_FOR_USERS } = req.body;
+    
+    try {
+        const currentConfig = await getCache('system:config') || {};
+        const newConfig = {
+            ...currentConfig,
+            ...(GEMINI_PRO_MODE !== undefined && { GEMINI_PRO_MODE }),
+            ...(GEMINI_PRO_FOR_USERS !== undefined && { GEMINI_PRO_FOR_USERS })
+        };
+
+        await setCache('system:config', newConfig, 0); // No expiry for system config
+        console.log('[TLDR Shield] System Config Updated:', newConfig);
+        res.json({ success: true, config: newConfig });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to update config.' });
     }
 });
 
