@@ -30,13 +30,12 @@
     "check:nim": "tsx eval/checkNimKeys.ts",
     "check:nim:health": "npx tsx eval/nimHealthMonitor.ts",
     "check:gemini": "tsx eval/checkGeminiKeys.ts",
-    "warm:cache": "tsx scripts/warmCache.ts",
-    "build:firefox": "tsx scripts/buildFirefox.ts",
     "predeploy": "npm run lint && npm run build",
     "deploy": "gcloud run deploy tldr-shield --source . --region us-central1 --project gen-lang-client-0199678316 --allow-unauthenticated",
     "deploy:rules": "firebase deploy --only firestore:rules --project gen-lang-client-0199678316",
-    "recheck": "curl -X POST https://tldr-shield-292798741977.us-central1.run.app/api/recheck -H \"Content-Type: application/json\" -H \"x-internal-key: $INTERNAL_API_KEY\""
+    "recheck": "curl -X POST https://tldr-shield-292798741977.us-central1.run.app/api/recheck -H \"Content-Type: application/json\" -H \"x-internal-key: %INTERNAL_API_KEY%\""
   },
+
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
     "@sentry/node": "^10.49.0",
