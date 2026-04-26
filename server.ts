@@ -45,7 +45,9 @@ app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
 // Serve static files from the Vite build directory
-app.use(express.static(path.join(__dirname, 'dist')));
+// Note: When running from dist-server/server.js, we need to go up one level to find /dist
+const publicPath = path.join(__dirname, '..', 'dist');
+app.use(express.static(publicPath));
 
 // --- Firebase Init (Simplified) ---
 let firestoreDb: any = null;
@@ -402,7 +404,7 @@ app.post('/api/admin/config', authMiddleware, async (req, res) => {
 
 // Catch-all route to serve the frontend (SPA support)
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
 });
 
 const PORT = process.env.PORT || 8080;
