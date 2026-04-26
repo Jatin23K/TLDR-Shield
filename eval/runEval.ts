@@ -487,9 +487,18 @@ async function main() {
   console.log(`[eval] Using backend: ${backendLabel}`);
   console.log(`[eval] Dataset: ${rows.length} cases | darkPatterns=${darkPatterns}`);
 
-  for (const t of tiers) {
-    const res = await runTier(t, rows, darkPatterns);
-    console.log(JSON.stringify(res, null, 2));
+  // Run all tiers simultaneously so wall-clock time = max(tier times) instead of sum.
+  // Promise.allSettled ensures we always print whatever results we have, even if one tier errors.
+  const tierResults = await Promise.allSettled(
+    tiers.map((t) => runTier(t, rows, darkPatterns))
+  );
+
+  for (const outcome of tierResults) {
+    if (outcome.status === "fulfilled") {
+      console.log(JSON.stringify(outcome.value, null, 2));
+    } else {
+      console.error("[eval] tier failed:", outcome.reason);
+    }
   }
 }
 
