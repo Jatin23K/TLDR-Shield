@@ -373,7 +373,7 @@ async function runTier(tier: Tier, rows: DatasetRow[], darkPatterns: boolean) {
     const pct = Math.round(((rowIdx + 1) / rows.length) * 100);
     const filled = Math.round((pct / 100) * 24);
     const bar = '█'.repeat(filled) + '░'.repeat(24 - filled);
-    process.stderr.write(`\r[eval ${tier}] [${bar}] ${rowIdx + 1}/${rows.length} (${pct}%) — ${row.id}${' '.repeat(10)}`);
+    process.stderr.write(`\n[eval ${tier}] [${bar}] ${rowIdx + 1}/${rows.length} (${pct}%) — ${row.id}`);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), model.timeoutMs);
     const start = Date.now();
@@ -493,12 +493,17 @@ async function main() {
     tiers.map((t) => runTier(t, rows, darkPatterns))
   );
 
+  let anyFailed = false;
   for (const outcome of tierResults) {
     if (outcome.status === "fulfilled") {
       console.log(JSON.stringify(outcome.value, null, 2));
     } else {
       console.error("[eval] tier failed:", outcome.reason);
+      anyFailed = true;
     }
+  }
+  if (anyFailed) {
+    process.exit(1);
   }
 }
 
