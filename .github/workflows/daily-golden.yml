@@ -1,0 +1,56 @@
+# .github/workflows/daily-golden.yml
+name: Daily Golden Tests
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 6am UTC daily
+  workflow_dispatch:
+
+jobs:
+  golden:
+    name: Golden Tests (6 CI cases)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      GEMINI_API_KEY:   ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
+      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
+      GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
+      GEMINI_MODEL: gemini-2.5-flash-lite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run golden tests (CI subset)
+        id: golden
+        run: |
+          set +e
+          npx tsx eval/golden.test.ts --ci 2>&1 | tee /tmp/golden-daily.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          set -e
+      - name: Open issue on failure
+        if: steps.golden.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('/tmp/golden-daily.txt', 'utf8');
+            const failed = (output.match(/❌ FAIL/g) || []).length;
+            const date = new Date().toISOString().split('T')[0];
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 Daily Golden Tests Failed — ${date} (${failed} case(s))`,
+              labels: ['regression', 'golden'],
+              body: `## Daily Golden Test Failure\n\n${failed} golden test case(s) failed.\n\n\`\`\`\n${output.slice(-3000)}\n\`\`\`\n\n[View run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+            });
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-golden-${{ github.run_id }}
+          path: /tmp/golden-daily.txt
+          retention-days: 14
