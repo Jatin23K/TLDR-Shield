@@ -5,8 +5,15 @@
 const BACKEND_URL = (process.env.APP_URL || 'https://tldr-shield-292798741977.us-central1.run.app').replace(/\/$/, '');
 
 async function main() {
-  const res = await fetch(`${BACKEND_URL}/health`);
-  if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND_URL}/health`, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!res!.ok) throw new Error(`Health check failed: ${res!.status}`);
   const h: any = await res.json();
 
   const date = new Date().toISOString().split('T')[0];
