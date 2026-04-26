@@ -22,11 +22,17 @@ jobs:
         run: |
           set +e
           npm audit --json > /tmp/audit.json 2>&1
-          CRITICAL=$(node -e "const a=require('/tmp/audit.json'); console.log(a.metadata?.vulnerabilities?.critical ?? 0)")
-          HIGH=$(node -e "const a=require('/tmp/audit.json'); console.log(a.metadata?.vulnerabilities?.high ?? 0)")
-          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
-          echo "high=$HIGH" >> $GITHUB_OUTPUT
-          echo "Audit: critical=$CRITICAL high=$HIGH"
+          if [ ! -s /tmp/audit.json ]; then
+            echo "critical=0" >> $GITHUB_OUTPUT
+            echo "high=0" >> $GITHUB_OUTPUT
+            echo "Audit: audit.json empty or missing — skipping"
+          else
+            CRITICAL=$(node -e "try { const a=require('/tmp/audit.json'); console.log(a.metadata?.vulnerabilities?.critical ?? 0); } catch(e) { console.log(0); }" 2>/dev/null || echo 0)
+            HIGH=$(node -e "try { const a=require('/tmp/audit.json'); console.log(a.metadata?.vulnerabilities?.high ?? 0); } catch(e) { console.log(0); }" 2>/dev/null || echo 0)
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+            echo "Audit: critical=$CRITICAL high=$HIGH"
+          fi
           set -e
       - name: Open issue if high/critical found
         if: steps.audit.outputs.critical != '0' || steps.audit.outputs.high != '0'
