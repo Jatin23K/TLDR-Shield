@@ -576,10 +576,18 @@ async function runCase(tc: typeof GOLDEN_CASES[0], idx: number): Promise<void> {
     console.log('TLDR Shield — Golden Test Suite');
     console.log('═'.repeat(60));
 
-    for (let i = 0; i < cases.length; i++) {
-        if (i > 0) await new Promise(r => setTimeout(r, 8000)); // 8s — free-tier RPM headroom
-        await runCase(cases[i], i);
-    }
+    // Stagger launches by 3s to respect free-tier RPM (20 RPM = 1 req/3s).
+    // Parallel execution cuts wall-clock from ~112s to ~30s for 14 cases.
+    const STAGGER_MS = 3000;
+    const settled = await Promise.allSettled(
+        cases.map((tc, i) =>
+            new Promise<void>(resolve =>
+                setTimeout(() => runCase(tc, i).then(resolve).catch(resolve), i * STAGGER_MS)
+            )
+        )
+    );
+    // settled is always fulfilled (runCase never rejects — errors are caught internally)
+    void settled;
 
     console.log('\n' + '═'.repeat(60));
     console.log(`Results: ${passed}/${cases.length} passed, ${failed} failed, ${rateLimitedCases} rate-limited`);
