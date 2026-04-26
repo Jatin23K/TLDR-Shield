@@ -144,7 +144,6 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     const paidKey = (process.env.GEMINI_PRO_KEY ?? '').trim();
     const isProMasterOn = process.env.GEMINI_PRO_MODE === 'true';
     const allowUsersPro = process.env.GEMINI_PRO_FOR_USERS === 'true';
-    const isAdmin = (req as any).isAdmin === true;
 
     // Model selection — read from .env, never hardcoded
     const primaryModel = (process.env.GEMINI_MODEL_SCAN_PRIMARY || 'gemini-2.5-flash').trim();
