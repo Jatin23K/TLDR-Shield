@@ -138,3 +138,54 @@ DEDUCTIONS RULES:
 - Points values must sum to exactly (100 - score).
 - If score is 100, return an empty array: "deductions": []`;
 }
+
+const PILLAR_DEFINITIONS: Record<string, string> = {
+  ai_training: `TASK: Determine if this document permits training AI/ML models on user data WITHOUT a simple opt-out.
+VIOLATION = true only if text EXPLICITLY mentions training, fine-tuning, or building AI/ML models with user content.
+NOT a violation: "improve our services", "recommendations", "personalization", "search quality" — these are generic product improvement.
+REQUIRED for violation: "train our models", "training data for AI", "fine-tune our language models", "generative AI trained on user data".`,
+
+  data_selling: `TASK: Determine if this document shares personal data with THIRD PARTIES for their own commercial benefit.
+VIOLATION = true if personal data is explicitly shared with advertisers, data brokers, marketing partners, or other companies for their own purposes.
+NOT a violation: sharing with service providers (Stripe for payments, Datadog for monitoring) who act on our behalf.
+REQUIRED for violation: explicit named third-party recipients for commercial/advertising purposes.`,
+
+  transparency: `TASK: Determine if this document contains SELF-CONTRADICTORY language — where two statements in the same document directly contradict each other.
+VIOLATION = true ONLY for active contradictions (e.g. "we only collect what we need" then immediately "we may collect any data for any purpose").
+NOT a violation: legal language, referencing other documents, being concise, using defined terms, vague but consistent language.`,
+
+  data_retention: `TASK: Determine if this document retains personal data for MORE THAN 1 YEAR after account deletion.
+ABSOLUTE RULE — NO EXCEPTIONS: Any explicit retention period over 12 months post-deletion = VIOLATION, regardless of stated reason.
+"7 years for tax compliance" = VIOLATION. "5 years for regulatory requirements" = VIOLATION. "18 months for analytics" = VIOLATION.
+The justification does NOT matter. Only the duration. Periods of 12 months or less post-deletion are acceptable.
+Also a violation: completely silent on deletion timeline with no reference to when data is removed.`,
+
+  content_ownership: `TASK: Determine if this document claims IP rights over user content beyond what is needed to display it on the platform.
+VIOLATION = worldwide sublicensable royalty-free license "for any purpose", right to modify/adapt/redistribute content commercially.
+NOT a violation: "non-exclusive license to host and display on our platform" — this is required to operate the service.
+REQUIRED for violation: "sublicense", "for any purpose", "modify and distribute", "beyond platform operation".`,
+
+  dark_patterns: `TASK: Determine if this document contains unfair contractual clauses.
+VIOLATION = ANY of: liability cap under $1000, class action waiver, forced individual arbitration removing class action rights, statute of limitations under 2 years.
+Examples: "aggregate liability shall not exceed $100" = VIOLATION. "waive right to class action" = VIOLATION. "binding individual arbitration" = VIOLATION. "claims must be filed within 1 year" = VIOLATION.`,
+};
+
+export function buildPillarPrompt(pillar: string, eli5: boolean): string {
+  const def = PILLAR_DEFINITIONS[pillar];
+  if (!def) throw new Error(`Unknown pillar: ${pillar}`);
+
+  const citRule = eli5
+    ? "citation: plain-English ELI5 explanation of what the policy says about this."
+    : `citation: VERBATIM copy-paste of 15-60 consecutive words from the text proving the violation. If no violation, write '[NOT_FOUND]' or copy the protective clause verbatim.`;
+
+  return `You are a senior privacy attorney. Analyze ONLY the ${pillar} pillar.
+
+${def}
+
+${citRule}
+
+Output ONLY valid JSON — no markdown:
+{"violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW"}
+
+CONFIDENCE: HIGH = explicit unambiguous clause. MEDIUM = ambiguous or silent. LOW = inferred from indirect language.`;
+}

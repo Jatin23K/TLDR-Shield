@@ -32,7 +32,7 @@ import { getCache, setCache } from './server/lib/redis.js';
 
 // Shared Logic
 import { calculateScoreAndRating } from './shared/scoring.js';
-import { buildSystemPrompt } from './server/prompts.js';
+import { buildSystemPrompt, buildPillarPrompt } from './server/prompts.js';
 import { applyConsistencyCrossCheck, sanitizeCitations, updatePillarConfidence } from './server/postprocess.js';
 
 // Demo Data
@@ -183,14 +183,39 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
 
     try {
         const sysPrompt = buildSystemPrompt(false, false, tier);
+        const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership', 'dark_patterns'];
+        const useParallelPillars = tier === 'deep' && process.env.PARALLEL_PILLARS === 'true';
 
         // Execute all chunks in parallel with downshifting
         const results = await Promise.all(chunks.map(async (chunk, i) => {
             res.write(`data: ${JSON.stringify({ status: `Analyzing block ${i + 1}/${chunks.length}...` })}\n\n`);
             try {
-                // Try Primary Model, then Fallback Model if Rate Limited
-                // Ensemble Pass: Parallel analysis by two models (Primary + Corroborator)
                 const corroborator = (tier === 'deep') ? (process.env.GEMINI_MODEL_SCAN_CORROBORATOR || 'gemini-1.5-flash') : null;
+
+                if (useParallelPillars) {
+                    // A1: Fan-out 6 parallel pillar-specific calls for deep scans.
+                    const pillarSettled = await Promise.allSettled(
+                        PILLAR_KEYS.map(async (pillar) => {
+                            const pPrompt = buildPillarPrompt(pillar, false);
+                            const resp = await callGeminiEnsemble(pPrompt, chunk, 256, 20000, modelStack[0], corroborator as string, keyPool);
+                            const pResult = extractJSON(resp.content);
+                            return { pillar, result: pResult };
+                        })
+                    );
+                    const pillars: Record<string, any> = {};
+                    for (const s of pillarSettled) {
+                        if (s.status === 'fulfilled' && s.value.result) {
+                            const { pillar, result } = s.value;
+                            pillars[pillar] = result;
+                            if (result?.violation && result?.citation) {
+                                pillars[pillar].citation = findVerbatimInChunk(result.citation, chunk);
+                            }
+                        }
+                    }
+                    return { pillars };
+                }
+
+                // Default path: single combined call (ensemble)
                 const response = await callGeminiEnsemble(sysPrompt, chunk, 1024, 35000, modelStack[0], corroborator as string, keyPool);
                 const parsed = extractJSON(response.content);
                 // Pass 1: verbatim citation grounding — replace LLM paraphrases with exact source text
