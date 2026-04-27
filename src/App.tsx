@@ -149,10 +149,11 @@ function ScoreRing({ score, r = 'RISKY' }: { score: number; r: 'SAFE' | 'OKAY' |
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
-function Nav({ page, onNav, user, onSignIn, onSignOut, credits, unreadCount, onBellClick }: {
+function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadCount, onBellClick }: {
   page: Page; onNav: (p: Page) => void;
   user: User | null; onSignIn: () => void; onSignOut: () => void;
   credits: number | null;
+  isAdmin: boolean;
   unreadCount: number;
   onBellClick: () => void;
 }) {
@@ -211,27 +212,29 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, unreadCount, onB
 
           {user && credits !== null && (
             <div className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[12px] font-black overflow-hidden
-              ${credits > 100
+              ${isAdmin
+                ? 'shadow-[0_0_16px_rgba(99,102,241,0.25)] border border-indigo-400/30'
+                : credits > 100
                 ? 'shadow-[0_0_16px_rgba(52,211,153,0.18)] border border-emerald-400/25'
                 : credits > 20
                 ? 'shadow-[0_0_16px_rgba(251,191,36,0.18)] border border-amber-400/25'
                 : 'shadow-[0_0_16px_rgba(248,113,113,0.18)] border border-rose-400/25'
               }`}>
-              {/* gradient bg */}
               <div className={`absolute inset-0 ${
-                credits > 100
+                isAdmin
+                  ? 'bg-gradient-to-r from-indigo-500/[0.18] to-violet-500/[0.10]'
+                  : credits > 100
                   ? 'bg-gradient-to-r from-emerald-500/[0.14] to-teal-500/[0.08]'
                   : credits > 20
                   ? 'bg-gradient-to-r from-amber-500/[0.14] to-yellow-500/[0.08]'
                   : 'bg-gradient-to-r from-rose-500/[0.14] to-red-500/[0.08]'
               }`} />
-              {/* top shine */}
               <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
               <div className="relative flex items-center gap-2">
-                <Zap className={`w-3 h-3 ${credits > 100 ? 'text-emerald-300' : credits > 20 ? 'text-amber-300' : 'text-rose-300'}`}
-                  style={{ filter: `drop-shadow(0 0 4px ${credits > 100 ? 'rgba(52,211,153,0.8)' : credits > 20 ? 'rgba(251,191,36,0.8)' : 'rgba(248,113,113,0.8)'})` }} />
-                <span className={`tracking-tight ${credits > 100 ? 'text-emerald-300' : credits > 20 ? 'text-amber-300' : 'text-rose-300'}`}>
-                  {credits.toLocaleString()} <span className="font-medium opacity-70">credits</span>
+                <Zap className={`w-3 h-3 ${isAdmin ? 'text-indigo-300' : credits > 100 ? 'text-emerald-300' : credits > 20 ? 'text-amber-300' : 'text-rose-300'}`}
+                  style={{ filter: `drop-shadow(0 0 4px ${isAdmin ? 'rgba(99,102,241,0.9)' : credits > 100 ? 'rgba(52,211,153,0.8)' : credits > 20 ? 'rgba(251,191,36,0.8)' : 'rgba(248,113,113,0.8)'})` }} />
+                <span className={`tracking-tight ${isAdmin ? 'text-indigo-300' : credits > 100 ? 'text-emerald-300' : credits > 20 ? 'text-amber-300' : 'text-rose-300'}`}>
+                  {isAdmin ? '∞' : credits.toLocaleString()} <span className="font-medium opacity-70">credits</span>
                 </span>
               </div>
             </div>
@@ -239,9 +242,16 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, unreadCount, onB
 
           {user ? (
             <div className="flex items-center gap-2 pl-2 border-l border-white/[0.08]">
-              {user.photoURL && <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full ring-1 ring-white/20" />}
-              <span className="text-[13px] text-slate-400 font-medium hidden sm:block">
-                {user.displayName?.split(' ')[0]}
+              {user.photoURL && (
+                <img
+                  src={user.photoURL}
+                  alt=""
+                  title={isAdmin ? 'Admin' : (user.email ?? '')}
+                  className={`w-7 h-7 rounded-full ring-2 ${isAdmin ? 'ring-indigo-500/60' : 'ring-white/20'}`}
+                />
+              )}
+              <span className={`text-[13px] font-medium hidden sm:block ${isAdmin ? 'text-indigo-400' : 'text-slate-400'}`}>
+                {isAdmin ? 'Admin' : user.displayName?.split(' ')[0]}
               </span>
               <button onClick={onSignOut} aria-label="Sign out"
                 className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
@@ -1835,6 +1845,7 @@ export default function App() {
   const [page, setPage] = useState<Page>('landing');
   const [user, setUser] = useState<User | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [notifPanelOpen, setNotifPanelOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
@@ -1877,14 +1888,13 @@ export default function App() {
     const userRef = doc(db, 'users', user.uid);
     const unsub = onSnapshot(userRef, (snap) => {
       if (!snap.exists()) {
-        // New user — the server creates the Firestore doc via Admin SDK on first scan
-        // (Firestore rules block client-side create on users/{uid}).
-        // Show 400 credits optimistically; the real doc is created when they scan.
         setCredits(400);
+        setIsAdmin(false);
       } else {
         const d = snap.data();
-        // Show fresh credits if a new month started
-        setCredits(d.lastResetMonth !== currentMonth ? 400 : (d.credits ?? 400));
+        const admin = d.role === 'ADMIN';
+        setIsAdmin(admin);
+        setCredits(admin ? -1 : (d.lastResetMonth !== currentMonth ? 400 : (d.credits ?? 400)));
       }
     });
     return unsub;
@@ -1937,7 +1947,7 @@ export default function App() {
 
   return (
     <div className="bg-[#080b14]">
-      <Nav page={page} onNav={setPage} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} credits={credits}
+      <Nav page={page} onNav={setPage} user={user} onSignIn={handleSignIn} onSignOut={handleSignOut} credits={credits} isAdmin={isAdmin}
         unreadCount={notifications.length} onBellClick={() => setNotifPanelOpen(o => !o)} />
 
       <AnimatePresence mode="wait">
