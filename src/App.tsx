@@ -695,7 +695,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
               <span className="w-px h-3 bg-white/10" />
               <span className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-emerald-500/70" />400 free credits/month</span>
               <span className="w-px h-3 bg-white/10" />
-              <span className="flex items-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-500/70" />98%+ accuracy</span>
+              <span className="flex items-center gap-1.5"><Star className="w-3.5 h-3.5 text-amber-500/70" />85%+ accuracy</span>
             </div>
           </motion.div>
 
