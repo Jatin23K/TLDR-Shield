@@ -1001,6 +1001,10 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
   const [benchmarkData, setBenchmarkData] = useState<BenchmarkCategory | null>(null);
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
   const [benchmarkError, setBenchmarkError] = useState('');
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<Record<string, {role:'user'|'assistant', content:string}[]>>({});
+  const [chatInput, setChatInput] = useState<Record<string, string>>({});
+  const [chatLoading, setChatLoading] = useState<string | null>(null);
   // Watch state
   const [watches, setWatches] = useState<WatchRecord[]>([]);
   const [watchingId, setWatchingId] = useState<string | null>(null); // scan.id being watched
@@ -1020,6 +1024,29 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
   const handleDelete = async (id: string) => {
     setDeleting(id);
     try { await deleteDoc(doc(db, 'scans', id)); } finally { setDeleting(null); }
+  };
+
+  const sendChat = async (scanId: string, cardId: string) => {
+    const message = (chatInput[cardId] || '').trim();
+    if (!message || chatLoading) return;
+    setChatInput(p => ({ ...p, [cardId]: '' }));
+    setChatMessages(p => ({ ...p, [cardId]: [...(p[cardId] || []), { role: 'user', content: message }] }));
+    setChatLoading(cardId);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const backendUrl = (import.meta as any).env?.VITE_API_URL ?? '';
+      const res = await fetch(`${backendUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ scanId, message }),
+      });
+      const data = await res.json();
+      setChatMessages(p => ({ ...p, [cardId]: [...(p[cardId] || []), { role: 'assistant', content: data.reply || data.error || 'No response.' }] }));
+    } catch {
+      setChatMessages(p => ({ ...p, [cardId]: [...(p[cardId] || []), { role: 'assistant', content: 'Chat unavailable. Try again.' }] }));
+    } finally {
+      setChatLoading(null);
+    }
   };
 
   // Load watches for the current user
@@ -1357,6 +1384,39 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
                       </motion.div>
                     )}
                   </AnimatePresence>
+                  {/* Chat panel — collapsible per scan */}
+                  {activeChatId === scan.id ? (
+                    <div className="mt-3 border-t border-white/10 pt-3">
+                      <div className="space-y-2 max-h-48 overflow-y-auto mb-2">
+                        {(chatMessages[scan.id] || []).map((m, i) => (
+                          <div key={i} className={`text-xs px-3 py-2 rounded-lg ${m.role === 'user' ? 'bg-indigo-500/20 text-indigo-200 ml-8' : 'bg-white/5 text-gray-300 mr-8'}`}>
+                            {m.content}
+                          </div>
+                        ))}
+                        {chatLoading === scan.id && <div className="text-xs text-gray-500 px-3">Thinking...</div>}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                          placeholder="Ask about this scan..."
+                          value={chatInput[scan.id] || ''}
+                          onChange={e => setChatInput(p => ({ ...p, [scan.id]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') sendChat(scan.id, scan.id); }}
+                        />
+                        <button
+                          onClick={() => sendChat(scan.id, scan.id)}
+                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs text-white"
+                        >Send</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setActiveChatId(scan.id)}
+                      className="mt-2 text-xs text-indigo-400 hover:text-indigo-300"
+                    >
+                      💬 Ask a question about this scan
+                    </button>
+                  )}
                 </motion.div>
               );
             })}
