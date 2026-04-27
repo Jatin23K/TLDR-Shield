@@ -293,7 +293,7 @@ const FEATURES = [
 
 
 const STEPS = [
-  { n: '01', title: 'Install the Extension', desc: 'One-click install from the Chrome Web Store. Sign in with Google to activate 400 free credits — no payment required.' },
+  { n: '01', title: 'Install the Extension', desc: 'Load the extension manually in Chrome. Sign in with Google to activate 400 free credits — no payment required.' },
   { n: '02', title: 'Browse as Normal', desc: 'TLDR Shield automatically detects Terms & Conditions and Privacy Policy pages as you browse, and shows a discreet badge on screen.' },
   { n: '03', title: 'Get an Instant Verdict', desc: 'Click the badge for a clear SAFE, OKAY, or RISKY rating — with a plain summary of exactly what you\'re being asked to agree to.' },
 ];
@@ -942,10 +942,11 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
                   Add to Chrome — It's Free
                 </a>
               ) : (
-                <div className="inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600/50 to-violet-600/50 rounded-2xl font-bold text-[15px] text-white/60 cursor-not-allowed select-none">
-                  <Chrome className="w-5 h-5" />
-                  Coming Soon to Chrome Web Store
-                </div>
+                <a href="https://github.com/Jatin23K/TLDR-Shield" target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
+                  <Shield className="w-5 h-5" />
+                  Load Extension Manually
+                </a>
               )}
             </div>
           </div>
@@ -962,10 +963,6 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
             <span className="text-slate-400 text-sm font-bold">TLDR Shield</span>
           </div>
           <p className="text-slate-700 text-xs">© {new Date().getFullYear()} TLDR Shield · AI-powered privacy analysis</p>
-<div className="flex items-center gap-4 text-slate-700 text-xs">
-            {/* Privacy/Terms/Contact pages not yet published — links hidden until ready */}
-            <span className="text-slate-800 text-xs">© {new Date().getFullYear()} TLDR Shield</span>
-          </div>
         </div>
       </footer>
     </div>
