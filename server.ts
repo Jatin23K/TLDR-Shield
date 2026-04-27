@@ -427,6 +427,58 @@ app.post('/api/admin/config', authMiddleware, async (req, res) => {
     }
 });
 
+app.post('/api/chat', authMiddleware, async (req, res) => {
+    const { scanId, message } = req.body;
+    const uid = (req as any).uid;
+
+    if (!message || typeof message !== 'string' || message.length > 500) {
+        return res.status(400).json({ error: 'Invalid message.' });
+    }
+    if (!scanId) return res.status(400).json({ error: 'scanId required.' });
+
+    let scanDoc: any = null;
+    try {
+        const snap = await firestoreDb.collection('scans').doc(scanId).get();
+        if (!snap.exists || snap.data()?.uid !== uid) {
+            return res.status(404).json({ error: 'Scan not found.' });
+        }
+        scanDoc = snap.data();
+    } catch {
+        return res.status(500).json({ error: 'Failed to load scan.' });
+    }
+
+    const context = `Scan result for ${scanDoc.url || 'unknown URL'}:
+Rating: ${scanDoc.rating}, Score: ${scanDoc.score}/100
+TL;DR: ${scanDoc.tldr}
+Pillars: ${JSON.stringify(scanDoc.pillars || {}, null, 2)}`;
+
+    const systemPrompt = `You are a privacy expert assistant. The user has just scanned a Terms of Service or Privacy Policy and received the following analysis result:\n\n${context}\n\nAnswer the user's follow-up questions about this scan in 2-4 clear sentences. Be specific about the policy language. Do not make up information not present in the scan result.`;
+
+    try {
+        const utilPool = (() => {
+            const keys: string[] = [];
+            for (let i = 1; i <= 3; i++) {
+                const k = (process.env[`GEMINI_UTIL_KEY_${i}`] ?? '').trim();
+                if (k) keys.push(k);
+            }
+            return keys.length > 0 ? keys : (() => {
+                const scanKeys: string[] = [];
+                for (let i = 1; i <= 3; i++) {
+                    const k = (process.env[`GEMINI_SCAN_KEY_${i}`] ?? '').trim();
+                    if (k) scanKeys.push(k);
+                }
+                return scanKeys;
+            })();
+        })();
+
+        const model = (process.env.GEMINI_MODEL_SCAN_FALLBACK || 'gemini-2.5-flash-8b').trim();
+        const resp = await callGemini(systemPrompt, message, 300, 15000, model, utilPool);
+        return res.json({ reply: resp.content });
+    } catch (e: any) {
+        return res.status(500).json({ error: 'Chat unavailable.' });
+    }
+});
+
 // Catch-all route to serve the frontend (SPA support)
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
