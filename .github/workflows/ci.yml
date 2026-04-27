@@ -8,11 +8,11 @@
 #   eval-quick  — 30-case quick-tier accuracy check (master branch only)
 #
 # Required GitHub Secrets:
-#   GEMINI_API_KEY    Google Gemini API key (primary)
-#   GEMINI_API_KEY_2  Google Gemini API key (failover 2)
-#   GEMINI_API_KEY_3  Google Gemini API key (failover 3)
-#   GEMINI_API_KEY_4  Google Gemini API key (failover 4)
-#   GEMINI_API_KEY_5  Google Gemini API key (failover 5)
+#   GEMINI_SCAN_KEY_1  Google Gemini API key (scan primary)
+#   GEMINI_SCAN_KEY_2  Google Gemini API key (scan failover)
+#   GEMINI_SCAN_KEY_3  Google Gemini API key (scan failover)
+#   GEMINI_UTIL_KEY_1  Google Gemini API key (util primary)
+#   GEMINI_UTIL_KEY_2  Google Gemini API key (util failover)
 #
 # Regression thresholds (eval-quick):
 #   ratingPct  ≥ 80%
@@ -53,14 +53,12 @@ jobs:
     needs: lint
     continue-on-error: true  # API rate limits must not block deploys
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
-      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
-      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
-      GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
-      # Use 3.1 Flash-Lite Preview — independent daily quota bucket from 2.5
-      # Flash-Lite. When one model's RPD is exhausted, the other is still fresh.
-      GEMINI_MODEL: gemini-3.1-flash-lite-preview
+      GEMINI_SCAN_KEY_1: ${{ secrets.GEMINI_SCAN_KEY_1 }}
+      GEMINI_SCAN_KEY_2: ${{ secrets.GEMINI_SCAN_KEY_2 }}
+      GEMINI_SCAN_KEY_3: ${{ secrets.GEMINI_SCAN_KEY_3 }}
+      GEMINI_UTIL_KEY_1: ${{ secrets.GEMINI_UTIL_KEY_1 }}
+      GEMINI_UTIL_KEY_2: ${{ secrets.GEMINI_UTIL_KEY_2 }}
+      GEMINI_MODEL: gemini-2.5-flash-lite
     steps:
       - uses: actions/checkout@v4
 
@@ -83,12 +81,12 @@ jobs:
     if: github.ref == 'refs/heads/master'
     continue-on-error: true  # accuracy regressions are tracked via weekly-eval, not CI gate
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
-      GEMINI_API_KEY_3: ${{ secrets.GEMINI_API_KEY_3 }}
-      GEMINI_API_KEY_4: ${{ secrets.GEMINI_API_KEY_4 }}
-      GEMINI_API_KEY_5: ${{ secrets.GEMINI_API_KEY_5 }}
-      GEMINI_MODEL: gemini-3.1-flash-lite-preview
+      GEMINI_SCAN_KEY_1: ${{ secrets.GEMINI_SCAN_KEY_1 }}
+      GEMINI_SCAN_KEY_2: ${{ secrets.GEMINI_SCAN_KEY_2 }}
+      GEMINI_SCAN_KEY_3: ${{ secrets.GEMINI_SCAN_KEY_3 }}
+      GEMINI_UTIL_KEY_1: ${{ secrets.GEMINI_UTIL_KEY_1 }}
+      GEMINI_UTIL_KEY_2: ${{ secrets.GEMINI_UTIL_KEY_2 }}
+      GEMINI_MODEL: gemini-2.5-flash-lite
     steps:
       - uses: actions/checkout@v4
 
