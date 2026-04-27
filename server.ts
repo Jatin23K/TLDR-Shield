@@ -13,6 +13,7 @@
 import * as Sentry from "@sentry/node";
 import express from "express";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import { readFileSync } from "fs";
@@ -65,6 +66,14 @@ let firestoreDb: any = null;
         console.warn('[TLDR Shield] Firestore disabled:', err);
     }
 })();
+
+const chatLimiter = rateLimit({
+    windowMs: 60 * 1000,   // 1 minute
+    max: 10,               // 10 chat messages per minute per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many chat requests. Please wait a minute.' },
+});
 
 // --- Routes ---
 
@@ -427,14 +436,16 @@ app.post('/api/admin/config', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/chat', authMiddleware, async (req, res) => {
+app.post('/api/chat', chatLimiter, authMiddleware, async (req, res) => {
     const { scanId, message } = req.body;
     const uid = (req as any).uid;
 
     if (!message || typeof message !== 'string' || message.length > 500) {
         return res.status(400).json({ error: 'Invalid message.' });
     }
-    if (!scanId) return res.status(400).json({ error: 'scanId required.' });
+    if (!scanId || typeof scanId !== 'string' || !/^[\w-]{1,128}$/.test(scanId)) {
+        return res.status(400).json({ error: 'Invalid scanId.' });
+    }
 
     let scanDoc: any = null;
     try {
@@ -447,10 +458,11 @@ app.post('/api/chat', authMiddleware, async (req, res) => {
         return res.status(500).json({ error: 'Failed to load scan.' });
     }
 
-    const context = `Scan result for ${scanDoc.url || 'unknown URL'}:
-Rating: ${scanDoc.rating}, Score: ${scanDoc.score}/100
-TL;DR: ${scanDoc.tldr}
-Pillars: ${JSON.stringify(scanDoc.pillars || {}, null, 2)}`;
+    const safe = (s: any, max: number) => String(s ?? '').replace(/[\r\n]+/g, ' ').slice(0, max);
+    const context = `Scan result for ${safe(scanDoc.url, 200)}:
+Rating: ${safe(scanDoc.rating, 10)}, Score: ${safe(scanDoc.score, 5)}/100
+TL;DR: ${safe(scanDoc.tldr, 500)}
+Pillars: ${JSON.stringify(scanDoc.pillars || {}, null, 2).slice(0, 1000)}`;
 
     const systemPrompt = `You are a privacy expert assistant. The user has just scanned a Terms of Service or Privacy Policy and received the following analysis result:\n\n${context}\n\nAnswer the user's follow-up questions about this scan in 2-4 clear sentences. Be specific about the policy language. Do not make up information not present in the scan result.`;
 
