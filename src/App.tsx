@@ -1034,6 +1034,11 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
     setChatLoading(cardId);
     try {
       const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        setChatMessages(p => ({ ...p, [cardId]: [...(p[cardId] || []), { role: 'assistant' as const, content: 'Please sign in to use chat.' }] }));
+        setChatLoading(null);
+        return;
+      }
       const backendUrl = (import.meta as any).env?.VITE_API_URL ?? '';
       const res = await fetch(`${backendUrl}/api/chat`, {
         method: 'POST',
