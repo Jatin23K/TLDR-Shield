@@ -170,7 +170,7 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadC
     }`}>
       <div className="w-full flex items-center justify-between px-6 sm:px-12 lg:px-20 xl:px-32 h-[60px]">
         {/* Logo */}
-        <button onClick={() => onNav('landing')} aria-label="TLDR Shield home" className="flex items-center gap-2.5">
+        <button onClick={() => onNav('landing')} aria-label="TLDR Shield home" className="flex items-center gap-2.5 cursor-pointer">
           <div className="relative w-8 h-8 rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
             <Shield className="w-4 h-4 text-white" />
           </div>
