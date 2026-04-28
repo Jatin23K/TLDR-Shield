@@ -1881,12 +1881,19 @@ async function syncTokenToExtension(user: User | null) {
 // ── Admin Console ─────────────────────────────────────────────────────────────
 
 function AdminConsole({ isOpen, onClose, onToast, onAdminClaimed, user }: { isOpen: boolean; onClose: () => void; onToast: (m: string, t: 'success' | 'error') => void; onAdminClaimed?: () => void; user?: any }) {
-  const [internalKey, setInternalKey] = useState('');
+  // Persist key across open/close cycles — component unmounts on close so state resets without this
+  const [internalKey, setInternalKey] = useState<string>(() => localStorage.getItem('tldr_internal_key') ?? '');
   const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ active: boolean } | null>(null);
 
   const API_BASE = (import.meta as any).env?.VITE_API_URL ?? '';
+
+  const handleKeyChange = (val: string) => {
+    setInternalKey(val);
+    if (val) localStorage.setItem('tldr_internal_key', val);
+    else localStorage.removeItem('tldr_internal_key');
+  };
 
   const fetchStatus = async (key: string) => {
     if (!key) return;
@@ -1902,6 +1909,7 @@ function AdminConsole({ isOpen, onClose, onToast, onAdminClaimed, user }: { isOp
     } catch { /* silent */ }
   };
 
+  // Auto-fetch pro mode status whenever console opens (key is pre-filled from localStorage)
   useEffect(() => {
     if (isOpen) fetchStatus(internalKey);
   }, [isOpen]);
@@ -1981,7 +1989,7 @@ function AdminConsole({ isOpen, onClose, onToast, onAdminClaimed, user }: { isOp
               <input
                 type={showKey ? 'text' : 'password'}
                 value={internalKey}
-                onChange={e => setInternalKey(e.target.value)}
+                onChange={e => handleKeyChange(e.target.value)}
                 placeholder="ts-admin-..."
                 className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 pr-11 text-sm text-indigo-200 placeholder-slate-700 outline-none focus:border-indigo-500/50 focus:bg-indigo-500/[0.02] transition-all"
               />
