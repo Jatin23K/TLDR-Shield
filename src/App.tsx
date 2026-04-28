@@ -161,6 +161,31 @@ function ScoreRing({ score, r = 'RISKY' }: { score: number; r: 'SAFE' | 'OKAY' |
   );
 }
 
+// ── Hero Score Ring (one-shot Framer Motion, decoupled from text count-up) ────
+
+function HeroScoreRing({ displayScore }: { displayScore: number }) {
+  const radius = 20;
+  const circ = 2 * Math.PI * radius;
+  const targetOffset = ((100 - 34) / 100) * circ; // fixed final value
+  const color = '#f87171';
+  return (
+    <svg width="52" height="52" className="rotate-[-90deg]">
+      <circle cx="26" cy="26" r={radius} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
+      <motion.circle
+        cx="26" cy="26" r={radius} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round"
+        style={{ strokeDasharray: circ, strokeDashoffset: circ }}
+        animate={{ strokeDashoffset: targetOffset }}
+        transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+      />
+      <text x="26" y="26" textAnchor="middle" dominantBaseline="central"
+        fill={color} fontSize="11" fontWeight="800"
+        style={{ transform: 'rotate(90deg)', transformOrigin: '26px 26px' }}>
+        {displayScore}
+      </text>
+    </svg>
+  );
+}
+
 // ── Nav ───────────────────────────────────────────────────────────────────────
 
 function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadCount, onBellClick }: {
@@ -179,8 +204,10 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadC
   }, []);
 
   return (
-    <nav className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
-      scrolled ? 'bg-[#080b14]/90 backdrop-blur-2xl border-b border-white/[0.05] shadow-xl shadow-black/30' : 'bg-transparent'
+    <nav className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 backdrop-blur-xl ${
+      scrolled
+        ? 'bg-[#080b14]/90 border-b border-white/[0.06] shadow-xl shadow-black/30'
+        : 'bg-[#080b14]/40 border-b border-white/[0.03]'
     }`}>
       <div className="w-full flex items-center justify-between px-6 sm:px-12 lg:px-20 xl:px-32 h-[60px]">
         {/* Logo */}
@@ -510,11 +537,19 @@ function PasteScanner({ user, onSignIn }: { user: User | null; onSignIn: () => v
             </div>
 
             <button onClick={handleScan} disabled={!canScan} aria-label="Scan pasted text"
-              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[13px] font-bold transition-all duration-200 ${
-                canScan
+              className={`group relative overflow-hidden flex items-center gap-2 px-5 py-2 rounded-xl text-[13px] font-bold transition-all duration-200 ${
+                loading
+                  ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-500/20 cursor-wait'
+                  : canScan
                   ? 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-lg shadow-indigo-500/20 hover:-translate-y-px'
                   : 'bg-white/[0.04] text-slate-600 cursor-not-allowed'
               }`}>
+              {loading && (
+                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-shimmer pointer-events-none" />
+              )}
+              {!loading && canScan && (
+                <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12 pointer-events-none" />
+              )}
               {loading
                 ? <><div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />Scanning…</>
                 : <><Zap className="w-3.5 h-3.5" />Scan Now</>}
@@ -548,8 +583,8 @@ function PasteScanner({ user, onSignIn }: { user: User | null; onSignIn: () => v
         {/* Result card */}
         <AnimatePresence>
           {result && (
-            <motion.div key="result" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-              transition={{ duration: 0.35 }}
+            <motion.div key="result" initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 28, mass: 0.8 }}
               className={`mt-5 rounded-2xl border ${rating[result.rating].border} ${rating[result.rating].bg} overflow-hidden`}>
 
               {/* Result header */}
@@ -631,6 +666,40 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
     return () => clearInterval(interval);
   }, []);
 
+  const [heroReady, setHeroReady] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setHeroReady(true), 350);
+    return () => clearTimeout(id);
+  }, []);
+
+  const [heroScore, setHeroScore] = useState(0);
+  useEffect(() => {
+    if (!heroReady) return;
+    const target = 34;
+    const duration = 1100;
+    const start = performance.now();
+    const raf = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setHeroScore(Math.round(eased * target));
+      if (t < 1) requestAnimationFrame(raf);
+    };
+    const id = requestAnimationFrame(raf);
+    return () => cancelAnimationFrame(id);
+  }, [heroReady]);
+
+  const [pillarsVisible, setPillarsVisible] = useState(false);
+  const pillarsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = pillarsRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setPillarsVisible(true); obs.disconnect(); }
+    }, { threshold: 0.3 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#080b14] text-white overflow-x-hidden">
 
@@ -651,7 +720,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
 
           {/* ── Left: copy ── */}
           <motion.div initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.55 }}
-            className="flex-1 min-w-0">
+            className="lg:w-[55%] min-w-0">
 
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/[0.08] border border-indigo-500/20 mb-7">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
@@ -679,14 +748,16 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
             <div className="flex flex-col sm:flex-row items-start gap-3 mb-9">
               {CHROME_STORE_URL ? (
                 <a href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer"
-                  className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5">
+                  className="group relative overflow-hidden flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5">
+                  <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12 pointer-events-none" />
                   <Chrome className="w-5 h-5" />
                   Add to Chrome — Free
                   <ArrowRight className="w-4 h-4 opacity-60 group-hover:translate-x-0.5 transition-transform" />
                 </a>
               ) : (
                 <a href="https://github.com/Jatin23K/TLDR-Shield" target="_blank" rel="noopener noreferrer"
-                  className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5">
+                  className="group relative overflow-hidden flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5">
+                  <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12 pointer-events-none" />
                   <Shield className="w-5 h-5" />
                   Load Extension Manually
                   <ArrowRight className="w-4 h-4 opacity-60 group-hover:translate-x-0.5 transition-transform" />
@@ -716,7 +787,9 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
 
           {/* ── Right: mock result card ── */}
           <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.55, delay: 0.1 }}
-            className="flex-1 min-w-0 w-full lg:max-w-[520px] xl:max-w-[580px]">
+            whileHover={{ rotateY: -3, rotateX: 2, scale: 1.01 }}
+            style={{ perspective: 1000, transformStyle: 'preserve-3d' }}
+            className="lg:w-[45%] min-w-0 w-full">
             <div className="relative rounded-2xl overflow-hidden border border-[rgba(70,69,84,0.25)] bg-[#10131c] shadow-[0px_32px_64px_rgba(0,0,0,0.5),0px_0px_0px_1px_rgba(99,102,241,0.06)]">
               {/* shimmer top line */}
               <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/60 to-transparent z-10" />
@@ -738,18 +811,24 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
                 </div>
                 <p className="text-slate-500 text-[11px]">Deep Scan · 4 issues found</p>
               </div>
-              {/* score bar */}
-              <div className="px-5 py-4 border-b border-[rgba(70,69,84,0.12)]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-slate-400 text-[11px] font-semibold">Privacy Score</span>
-                  <span className="text-rose-400 font-black text-sm">34 / 100</span>
+              {/* score ring */}
+              <div className="px-5 py-4 border-b border-[rgba(70,69,84,0.12)] flex items-center justify-between">
+                <div>
+                  <span className="text-slate-400 text-[11px] font-semibold block mb-0.5">Privacy Score</span>
+                  {!heroReady ? (
+                    <span className="inline-block h-[18px] w-16 rounded bg-rose-400/[0.15] animate-pulse" />
+                  ) : (
+                    <span className="text-rose-400 font-black text-sm tabular-nums">{heroScore} / 100</span>
+                  )}
                 </div>
-                <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                  <div className="h-full w-[34%] rounded-full bg-gradient-to-r from-rose-500 to-rose-400" />
-                </div>
+                {!heroReady ? (
+                  <div className="w-[52px] h-[52px] rounded-full border-[3px] border-white/[0.05] animate-pulse" />
+                ) : (
+                  <HeroScoreRing displayScore={heroScore} />
+                )}
               </div>
               {/* pillars */}
-              <div className="px-5 py-4 flex flex-col gap-2.5">
+              <div ref={pillarsRef} className="px-5 py-4 flex flex-col gap-2.5">
                 {[
                   { label: 'AI Training', score: 10, color: 'text-rose-400', bar: 'bg-rose-500', w: '10%' },
                   { label: 'Data Sharing', score: 25, color: 'text-rose-400', bar: 'bg-rose-500', w: '25%' },
@@ -757,11 +836,12 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
                   { label: 'Content Ownership', score: 55, color: 'text-amber-400', bar: 'bg-amber-400', w: '55%' },
                   { label: 'Policy Clarity', score: 60, color: 'text-amber-400', bar: 'bg-amber-400', w: '60%' },
                   { label: 'Unfair Clauses', score: 20, color: 'text-rose-400', bar: 'bg-rose-500', w: '20%' },
-                ].map(p => (
+                ].map((p, i) => (
                   <div key={p.label} className="flex items-center gap-3">
                     <span className="text-slate-500 text-[11px] w-36 shrink-0">{p.label}</span>
                     <div className="flex-1 h-1 rounded-full bg-white/[0.05]">
-                      <div className={`h-full rounded-full ${p.bar}`} style={{ width: p.w }} />
+                      <div className={`h-full rounded-full transition-all duration-700 ${p.bar}`}
+                        style={{ width: pillarsVisible ? p.w : '0%', transitionDelay: pillarsVisible ? `${i * 80}ms` : '0ms' }} />
                     </div>
                     <span className={`text-[11px] font-bold w-6 text-right ${p.color}`}>{p.score}</span>
                   </div>
@@ -986,13 +1066,15 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
               <p className="text-[#c7c4d7]/60 text-[14px] mb-10 leading-relaxed">400 free credits every month. A Quick Scan costs 10 credits, a Deep Scan costs 20. Your data belongs to you — view or delete it at any time.</p>
 {CHROME_STORE_URL ? (
                 <a href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
+                  className="group relative overflow-hidden inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
+                  <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12 pointer-events-none" />
                   <Chrome className="w-5 h-5" />
                   Add to Chrome — It's Free
                 </a>
               ) : (
                 <a href="https://github.com/Jatin23K/TLDR-Shield" target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
+                  className="group relative overflow-hidden inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
+                  <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12 pointer-events-none" />
                   <Shield className="w-5 h-5" />
                   Load Extension Manually
                 </a>

@@ -16,6 +16,13 @@ body { font-family: var(--font-sans); }
 /* Selection colour */
 ::selection { background: rgba(99,102,241,0.3); color: #fff; }
 
+/* Scanning button sweep animation */
+@keyframes shimmer-sweep {
+  0%   { transform: translateX(-100%) skewX(-12deg); }
+  100% { transform: translateX(200%) skewX(-12deg); }
+}
+.animate-shimmer { animation: shimmer-sweep 1.4s ease-in-out infinite; }
+
 /* Thin indigo scrollbar across the app */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
