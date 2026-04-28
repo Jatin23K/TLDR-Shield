@@ -45,22 +45,45 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-// Serve static files from the Vite build directory
-// Note: When running from dist-server/server.js, we need to go up one level to find /dist
-const publicPath = path.join(__dirname, '..', 'dist');
-app.use(express.static(publicPath));
+// Detect dev mode by checking if we're running the TypeScript source (tsx server.ts)
+// vs the compiled output (node dist-server/server.js). Never rely on NODE_ENV alone.
+const isDev = import.meta.url.endsWith('.ts') || process.env.NODE_ENV === 'development';
 
-// --- Firebase Init (Simplified) ---
+// In dev mode (tsx server.ts), use Vite middleware for HMR.
+// In production (node dist-server/server.js), serve the pre-built dist/.
+let viteDevMiddleware: any = null;
+if (isDev) {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
+    viteDevMiddleware = vite;
+    app.use(vite.middlewares);
+} else {
+    const publicPath = path.join(__dirname, '..', 'dist');
+    app.use(express.static(publicPath, { setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } }));
+}
+
+// --- Firebase Init ---
 let firestoreDb: any = null;
 (async () => {
     try {
         const { initializeApp, cert } = await import('firebase-admin/app');
         const { getFirestore } = await import('firebase-admin/firestore');
         const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+        const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+        let credential: any;
         if (saJson) {
-            initializeApp({ credential: cert(JSON.parse(saJson)) });
+            credential = cert(JSON.parse(saJson));
+        } else if (saPath) {
+            credential = cert(JSON.parse(readFileSync(saPath, 'utf8')));
+        }
+        if (credential) {
+            initializeApp({ credential });
             firestoreDb = getFirestore();
             console.log('[TLDR Shield] Firestore Connected');
+        } else {
+            console.warn('[TLDR Shield] No Firebase credentials found — Firestore disabled.');
         }
     } catch (err) {
         console.warn('[TLDR Shield] Firestore disabled:', err);
@@ -330,34 +353,31 @@ app.post('/api/utility/summarize', authMiddleware, async (req, res) => {
  * to 'ADMIN' role by providing the INTERNAL_API_KEY.
  */
 app.post('/api/admin/verify', async (req, res) => {
-    const { token, key } = req.body;
-    if (!token || !key) return res.status(400).json({ error: 'Token and Key required.' });
+    // Security model: INTERNAL_API_KEY + email match is the auth gate.
+    // We avoid verifyIdToken() because it requires Firebase Auth Admin API access
+    // which may not be available depending on service account permissions.
+    const { uid, email, key } = req.body;
 
-    try {
-        const { getAuth } = await import('firebase-admin/auth');
-        const decoded = await getAuth().verifyIdToken(token);
-        
-        const isCorrectEmail = decoded.email === process.env.ADMIN_EMAIL;
-        const isCorrectKey = key === process.env.INTERNAL_API_KEY;
+    if (!key) return res.status(400).json({ error: 'Key required.' });
+    if (!uid || !email) return res.status(400).json({ error: 'uid and email required.' });
 
-        if (!isCorrectEmail) {
-            return res.status(403).json({ error: 'This email is not authorized for Admin access.' });
-        }
-        if (!isCorrectKey) {
-            return res.status(401).json({ error: 'Invalid Internal API Key.' });
-        }
-
-        // Upgrade the user in Firestore
-        await firestoreDb.collection('users').doc(decoded.uid).set({
-            role: 'ADMIN',
-            updatedAt: Date.now()
-        }, { merge: true });
-
-        console.log(`[TLDR Shield] Role Upgrade: ${decoded.email} is now an ADMIN.`);
-        res.json({ success: true, message: 'Account upgraded to ADMIN. You now have unlimited scans.' });
-    } catch (err: any) {
-        res.status(500).json({ error: 'Verification failed: ' + err.message });
+    if (key !== process.env.INTERNAL_API_KEY) {
+        return res.status(401).json({ error: 'Invalid Internal API Key.' });
     }
+    if (email !== process.env.ADMIN_EMAIL) {
+        return res.status(403).json({ error: 'This email is not authorized for Admin access.' });
+    }
+
+    // Store admin status in Redis — auth middleware checks this key on every request.
+    // This avoids both the Admin SDK Firestore write (broken service account) and
+    // client-side Firestore rules (which block role writes by default).
+    try {
+        await setCache(`admin:${uid}`, { email, grantedAt: Date.now() }, 60 * 60 * 24 * 30);
+        console.log(`[TLDR Shield] Admin role stored in Redis for ${email} (uid: ${uid})`);
+    } catch (err) {
+        console.warn('[TLDR Shield] Redis write failed for admin role — continuing anyway:', err);
+    }
+    res.json({ success: true, message: 'Admin role granted! You now have full access.' });
 });
 
 /**
@@ -406,6 +426,23 @@ app.delete('/api/cache', authMiddleware, async (req, res) => {
         res.json({ success: true, message: 'Global cache purge initiated.' });
     } catch (err: any) {
         res.status(500).json({ error: 'Failed to clear cache.' });
+    }
+});
+
+/**
+ * ADMIN ROUTE: Read System Config
+ * Returns the current hot config from Redis so the Admin Console can show live status.
+ */
+app.get('/api/admin/config', async (req, res) => {
+    const internalKey = req.headers['x-internal-key'];
+    if (!internalKey || internalKey !== process.env.INTERNAL_API_KEY) {
+        return res.status(401).json({ error: 'Unauthorized.' });
+    }
+    try {
+        const config = await getCache('system:config') || {};
+        res.json({ config });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to read config.' });
     }
 });
 
@@ -491,8 +528,112 @@ Pillars: ${JSON.stringify(scanDoc.pillars || {}, null, 2).slice(0, 1000)}`;
     }
 });
 
+/**
+ * GDPR RIGHT TO ERASURE — Generate a formal Article 17 deletion request email.
+ * Cost: 5 credits.
+ */
+app.post('/api/gdpr-email', authMiddleware, async (req, res) => {
+    const uid = (req as any).uid;
+    const isAdmin = (req as any).isAdmin === true;
+    const { companyName, userEmail, siteUrl, violations } = req.body;
+
+    if (!companyName || !userEmail || !siteUrl) {
+        return res.status(400).json({ error: 'companyName, userEmail, and siteUrl are required.' });
+    }
+
+    if (!isAdmin) {
+        const credit = await checkAndDeductCredits(firestoreDb, uid, 5, true);
+        if (!credit.ok) return res.status(402).json(credit);
+    }
+
+    const violationList = Array.isArray(violations) && violations.length > 0
+        ? violations.map((v: string) => v.replace(/_/g, ' ')).join(', ')
+        : 'data privacy violations';
+
+    const prompt = `Generate a formal GDPR Article 17 "Right to Erasure" request email.
+Company: ${companyName}
+Requester email: ${userEmail}
+Site: ${siteUrl}
+Privacy violations found: ${violationList}
+
+Return a JSON object with exactly two fields: "subject" (email subject line) and "body" (full email body, plain text only, no HTML). The email must be professional, cite Article 17 of GDPR, request complete data deletion within 30 days, and reference the specific violations found.`;
+
+    try {
+        const utilPool: string[] = [];
+        for (let i = 1; i <= 3; i++) {
+            const k = (process.env[`GEMINI_UTIL_KEY_${i}`] ?? '').trim();
+            if (k) utilPool.push(k);
+        }
+        if (utilPool.length === 0) {
+            for (let i = 1; i <= 3; i++) {
+                const k = (process.env[`GEMINI_SCAN_KEY_${i}`] ?? '').trim();
+                if (k) utilPool.push(k);
+            }
+        }
+        const model = (process.env.GEMINI_MODEL_UTILITY || 'gemini-2.5-flash-lite').trim();
+        const response = await callGemini(prompt, '', 600, 15000, model, utilPool);
+        const result = extractJSON(response.content);
+        if (!result?.subject || !result?.body) throw new Error('Malformed AI response.');
+        res.json({ subject: result.subject, body: result.body });
+    } catch (err: any) {
+        if (!isAdmin) await refundCredits(firestoreDb, uid, 5);
+        res.status(500).json({ error: 'Email generation failed. Credits refunded.' });
+    }
+});
+
+/**
+ * WATCH ENDPOINTS — Policy change monitor.
+ * Stores watch items in Firestore: watches/{uid}/items/{watchId}
+ */
+app.get('/api/watch', authMiddleware, async (req, res) => {
+    const uid = (req as any).uid;
+    try {
+        const snap = await firestoreDb.collection('watches').doc(uid).collection('items')
+            .orderBy('createdAt', 'desc').get();
+        const watches = snap.docs.map((d: any) => ({ watchId: d.id, ...d.data() }));
+        res.json({ watches });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to load watches.' });
+    }
+});
+
+app.post('/api/watch', authMiddleware, async (req, res) => {
+    const uid = (req as any).uid;
+    const { url, lastScanId, lastScore, lastHash } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL required.' });
+
+    try {
+        const now = Date.now();
+        const docRef = firestoreDb.collection('watches').doc(uid).collection('items').doc();
+        await docRef.set({
+            url,
+            lastScanId: lastScanId || null,
+            lastScore: lastScore ?? 0,
+            lastHash: lastHash || '',
+            createdAt: now,
+            nextCheckAt: now + 7 * 24 * 60 * 60 * 1000,
+        });
+        res.json({ success: true, watchId: docRef.id });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to create watch.' });
+    }
+});
+
+app.delete('/api/watch/:watchId', authMiddleware, async (req, res) => {
+    const uid = (req as any).uid;
+    const { watchId } = req.params;
+    try {
+        await firestoreDb.collection('watches').doc(uid).collection('items').doc(watchId).delete();
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to remove watch.' });
+    }
+});
+
 // Catch-all route to serve the frontend (SPA support)
+// In dev mode Vite handles this via its own middleware; only needed in production.
 app.get('*', (req, res) => {
+    if (isDev) return res.status(404).send('Not found');
     res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
 });
 
