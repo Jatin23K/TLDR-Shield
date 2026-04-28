@@ -1881,8 +1881,9 @@ async function syncTokenToExtension(user: User | null) {
 // ── Admin Console ─────────────────────────────────────────────────────────────
 
 function AdminConsole({ isOpen, onClose, onToast, onAdminClaimed, user }: { isOpen: boolean; onClose: () => void; onToast: (m: string, t: 'success' | 'error') => void; onAdminClaimed?: () => void; user?: any }) {
-  // Persist key across open/close cycles — component unmounts on close so state resets without this
-  const [internalKey, setInternalKey] = useState<string>(() => localStorage.getItem('tldr_internal_key') ?? '');
+  // Persist key for the lifetime of this browser session only (sessionStorage clears on tab/browser close)
+  // Intentionally NOT localStorage — raw admin key must never sit in a persistent plaintext store
+  const [internalKey, setInternalKey] = useState<string>(() => sessionStorage.getItem('tldr_internal_key') ?? '');
   const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ active: boolean } | null>(null);
@@ -1891,8 +1892,8 @@ function AdminConsole({ isOpen, onClose, onToast, onAdminClaimed, user }: { isOp
 
   const handleKeyChange = (val: string) => {
     setInternalKey(val);
-    if (val) localStorage.setItem('tldr_internal_key', val);
-    else localStorage.removeItem('tldr_internal_key');
+    if (val) sessionStorage.setItem('tldr_internal_key', val);
+    else sessionStorage.removeItem('tldr_internal_key');
   };
 
   const fetchStatus = async (key: string) => {
@@ -2105,7 +2106,8 @@ export default function App() {
 
   // Auth state + token sync to extension
   useEffect(() => {
-    localStorage.removeItem('tldr_admin_key'); // purge any old saved key
+    localStorage.removeItem('tldr_admin_key');      // purge legacy key (old format)
+    localStorage.removeItem('tldr_internal_key');   // purge any plaintext key left by previous build
     return onAuthStateChanged(auth, u => {
       setUser(u);
       syncTokenToExtension(u);
