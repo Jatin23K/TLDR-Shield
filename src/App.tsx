@@ -3,12 +3,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Shield, ShieldCheck, Chrome, Zap, Brain,
   LogIn, LogOut, Trash2, Clock, AlertTriangle, CheckCircle,
-  Eye, Lock, FileText, Cpu, ArrowRight, Star, Bot, ShoppingCart,
-  Search, X, ChevronDown, Mail, BarChart2, Bell, BellOff, Upload, Activity,
+  Eye, EyeOff, Lock, FileText, Cpu, ArrowRight, Star, Bot, ShoppingCart,
+  Search, X, ChevronDown, Mail, BarChart2, Bell, Upload, Activity, ExternalLink,
 } from 'lucide-react';
 import { auth, db, signIn, signOut } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, Timestamp, setDoc, getCountFromServer, updateDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, Timestamp, getCountFromServer, updateDoc } from 'firebase/firestore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -94,6 +94,20 @@ function detectCategory(url: string): string | null {
   return null;
 }
 
+const BENCHMARK_CATEGORIES: Record<string, BenchmarkCategory> = {
+  social_media:  { label: 'Social Media',  avgScore: 22, riskiest: 'TikTok',    safest: 'LinkedIn', commonViolations: ['ai_training', 'data_selling', 'content_ownership'], sites: ['Twitter', 'Instagram', 'Facebook'] },
+  streaming:     { label: 'Streaming',     avgScore: 38, riskiest: 'Spotify',   safest: 'Netflix',  commonViolations: ['data_selling', 'data_retention'],                  sites: ['Netflix', 'YouTube', 'Spotify'] },
+  cloud_storage: { label: 'Cloud Storage', avgScore: 45, riskiest: 'Dropbox',   safest: 'iCloud',   commonViolations: ['content_ownership', 'transparency'],               sites: ['Google Drive', 'Dropbox', 'OneDrive'] },
+  ecommerce:     { label: 'E-commerce',    avgScore: 35, riskiest: 'Amazon',    safest: 'Etsy',     commonViolations: ['data_selling', 'dark_patterns'],                   sites: ['Amazon', 'eBay', 'Etsy'] },
+  gaming:        { label: 'Gaming',        avgScore: 30, riskiest: 'EA',        safest: 'Xbox',     commonViolations: ['dark_patterns', 'data_retention'],                 sites: ['Steam', 'Epic Games', 'Xbox'] },
+  productivity:  { label: 'Productivity',  avgScore: 55, riskiest: 'Google',    safest: 'Notion',   commonViolations: ['ai_training', 'transparency'],                     sites: ['Google', 'Microsoft', 'Slack'] },
+};
+
+function getBenchmarkData(url: string): BenchmarkCategory | null {
+  const cat = detectCategory(url);
+  return cat ? (BENCHMARK_CATEGORIES[cat] ?? null) : null;
+}
+
 function timeAgo(ts: Timestamp): string {
   const diff = Date.now() - ts.toMillis();
   const m = Math.floor(diff / 60000);
@@ -174,8 +188,8 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadC
           <div className="relative w-8 h-8 rounded-[10px] bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
             <Shield className="w-4 h-4 text-white" />
           </div>
-          <span className="font-black text-white text-[15px] tracking-[-0.02em]">TLDR Shield</span>
-          {localStorage.getItem('tldr_admin_key') && (
+          <span className="heading-display font-bold text-[#e0e2ef] text-[15px] tracking-[-0.02em]">TLDR Shield</span>
+          {isAdmin && (
             <AdminBadge active={false} />
           )}
         </button>
@@ -193,8 +207,7 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadC
             </button>
           )}
 
-          {/* Notifications — Hidden for Portfolio MVP (Coming Soon) */}
-          {/* user && (
+          {user && (
             <button
               onClick={onBellClick}
               aria-label="Policy change notifications"
@@ -208,7 +221,7 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadC
                 </span>
               )}
             </button>
-          ) */}
+          )}
 
           {user && credits !== null && (
             <div className={`relative flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-[12px] font-black overflow-hidden
@@ -251,7 +264,7 @@ function Nav({ page, onNav, user, onSignIn, onSignOut, credits, isAdmin, unreadC
                 />
               )}
               <span className={`text-[13px] font-medium hidden sm:block ${isAdmin ? 'text-indigo-400' : 'text-slate-400'}`}>
-                {isAdmin ? 'Admin' : user.displayName?.split(' ')[0]}
+                {user.displayName?.split(' ')[0]}
               </span>
               <button onClick={onSignOut} aria-label="Sign out"
                 className="p-2 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
@@ -310,7 +323,7 @@ const STEPS = [
 
 // ── Paste Scanner ─────────────────────────────────────────────────────────────
 
-const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'https://tldr-shield-292798741977.us-central1.run.app';
+const API_BASE = (import.meta as any).env?.VITE_API_URL ?? '';
 
 interface PasteScanResult {
   rating: 'SAFE' | 'OKAY' | 'RISKY';
@@ -424,14 +437,14 @@ function PasteScanner({ user, onSignIn }: { user: User | null; onSignIn: () => v
   };
 
   return (
-    <section className="w-full py-24 px-6 sm:px-12 lg:px-20 xl:px-32">
-      <div className="max-w-3xl mx-auto">
+    <section className="w-full py-20 px-6 sm:px-12 lg:px-20 xl:px-32">
+      <div className="max-w-5xl mx-auto">
 
         {/* Header */}
         <div className="text-center mb-10">
-          <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">Try It Yourself</p>
-          <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] mb-3">Scan any T&C — instantly.</h2>
-          <p className="text-slate-400 text-sm leading-relaxed max-w-xl mx-auto">
+          <p className="section-label mb-3">Try It Yourself</p>
+          <h2 className="heading-display text-3xl sm:text-4xl text-[#e0e2ef] mb-3">Scan any T&C — instantly.</h2>
+          <p className="text-[#c7c4d7]/60 text-sm leading-relaxed max-w-xl mx-auto">
             Got a T&C from an app installer, mobile app, or PDF? Paste it below.
             No extension needed.
           </p>
@@ -442,9 +455,10 @@ function PasteScanner({ user, onSignIn }: { user: User | null; onSignIn: () => v
           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-          className={`rounded-2xl border overflow-hidden shadow-2xl shadow-black/20 transition-all duration-200 ${
-            dragOver ? 'border-indigo-500/50 bg-indigo-500/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'
-          }`}>
+          className={`input-glow relative rounded-xl overflow-hidden transition-all duration-300 ${
+            dragOver ? 'border-indigo-500/50 bg-indigo-500/[0.04]' : 'bg-[#1c1f29]'
+          }`}
+          style={{ border: `1px solid ${dragOver ? 'rgba(99,102,241,0.5)' : 'rgba(70,69,84,0.25)'}`, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
 
           {/* Drag overlay hint */}
           {dragOver && (
@@ -458,7 +472,7 @@ function PasteScanner({ user, onSignIn }: { user: User | null; onSignIn: () => v
             onChange={e => { setText(e.target.value); setResult(null); setError(''); }}
             placeholder="Paste Terms of Service, Privacy Policy, or any legal agreement here… or drag & drop a .txt / .pdf file"
             rows={8}
-            className="w-full bg-transparent px-5 pt-5 pb-3 text-[13px] text-slate-300 placeholder-slate-600 outline-none resize-none leading-relaxed"
+            className="w-full bg-transparent px-5 pt-5 pb-3 text-[13px] text-[#c7c4d7] placeholder-[#464554] outline-none resize-none leading-relaxed"
           />
 
           {/* Toolbar */}
@@ -639,14 +653,14 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
           <motion.div initial={{ opacity: 0, x: -24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.55 }}
             className="flex-1 min-w-0">
 
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold tracking-wider uppercase mb-7">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/[0.08] border border-indigo-500/20 mb-7">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-              AI-Powered Privacy Protection
+              <span className="section-label" style={{ color: '#a5b4fc' }}>AI-Powered Privacy Protection</span>
             </div>
 
-            <h1 className="text-5xl sm:text-6xl lg:text-[64px] xl:text-[76px] 2xl:text-[88px] font-black tracking-[-0.04em] leading-[0.93] mb-6">
+            <h1 className="heading-display text-5xl sm:text-6xl lg:text-[66px] xl:text-[78px] 2xl:text-[90px] tracking-[-0.04em] leading-[0.92] mb-6 text-[#e0e2ef]">
               Stop agreeing<br />to things<br />
-              <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-500 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-indigo-400 via-violet-300 to-purple-400 bg-clip-text text-transparent">
                 you haven't read.
               </span>
             </h1>
@@ -657,7 +671,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
               </div>
             )}
 
-            <p className="text-base sm:text-lg text-slate-400 max-w-lg leading-relaxed mb-9">
+            <p className="text-base sm:text-lg text-[#c7c4d7] max-w-lg leading-relaxed mb-9" style={{ fontFamily: 'var(--font-sans)' }}>
               TLDR Shield reads the full Terms & Conditions or Privacy Policy in seconds
               and gives you a clear SAFE, OKAY or RISKY verdict — so you know exactly what you're agreeing to.
             </p>
@@ -671,11 +685,12 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
                   <ArrowRight className="w-4 h-4 opacity-60 group-hover:translate-x-0.5 transition-transform" />
                 </a>
               ) : (
-                <div title="Load the extension manually via chrome://extensions → Load unpacked"
-                  className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600/50 to-violet-600/50 rounded-2xl font-bold text-[15px] text-white/60 cursor-default select-none shadow-2xl shadow-indigo-500/10">
-                  <Chrome className="w-5 h-5" />
+                <a href="https://github.com/Jatin23K/TLDR-Shield" target="_blank" rel="noopener noreferrer"
+                  className="group flex items-center gap-3 px-7 py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all duration-300 shadow-2xl shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5">
+                  <Shield className="w-5 h-5" />
                   Load Extension Manually
-                </div>
+                  <ArrowRight className="w-4 h-4 opacity-60 group-hover:translate-x-0.5 transition-transform" />
+                </a>
               )}
               {user ? (
                 <button onClick={() => onNav('history')}
@@ -702,16 +717,18 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
           {/* ── Right: mock result card ── */}
           <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.55, delay: 0.1 }}
             className="flex-1 min-w-0 w-full lg:max-w-[520px] xl:max-w-[580px]">
-            <div className="relative rounded-3xl overflow-hidden border border-white/[0.07] bg-[#0e1120] shadow-2xl shadow-black/50">
+            <div className="relative rounded-2xl overflow-hidden border border-[rgba(70,69,84,0.25)] bg-[#10131c] shadow-[0px_32px_64px_rgba(0,0,0,0.5),0px_0px_0px_1px_rgba(99,102,241,0.06)]">
+              {/* shimmer top line */}
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/60 to-transparent z-10" />
               {/* window chrome */}
-              <div className="flex items-center gap-1.5 px-5 py-3.5 border-b border-white/[0.06] bg-white/[0.02]">
+              <div className="flex items-center gap-1.5 px-5 py-3.5 border-b border-[rgba(70,69,84,0.15)] bg-[#0b0e17]">
                 <span className="w-3 h-3 rounded-full bg-rose-500/60" />
                 <span className="w-3 h-3 rounded-full bg-amber-500/60" />
                 <span className="w-3 h-3 rounded-full bg-emerald-500/60" />
                 <span className="ml-3 text-slate-600 text-[11px] font-mono">spotify.com/legal/privacy-policy</span>
               </div>
               {/* header */}
-              <div className="px-5 pt-5 pb-4 border-b border-white/[0.05]">
+              <div className="px-5 pt-5 pb-4 border-b border-[rgba(70,69,84,0.12)]">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
                     <Shield className="w-4 h-4 text-indigo-400" />
@@ -722,7 +739,7 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
                 <p className="text-slate-500 text-[11px]">Deep Scan · 4 issues found</p>
               </div>
               {/* score bar */}
-              <div className="px-5 py-4 border-b border-white/[0.05]">
+              <div className="px-5 py-4 border-b border-[rgba(70,69,84,0.12)]">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-slate-400 text-[11px] font-semibold">Privacy Score</span>
                   <span className="text-rose-400 font-black text-sm">34 / 100</span>
@@ -765,14 +782,14 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
       </section>
 
       {/* ── See it in action — demo result card ── */}
-      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
+      <section className="w-full py-20 px-6 sm:px-12 lg:px-20 xl:px-32">
         <div className="max-w-[1600px] mx-auto">
           <div className="text-center mb-12">
-            <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">Real Example</p>
-            <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">See it in action.</h2>
+            <p className="section-label mb-3">Real Example</p>
+            <h2 className="heading-display text-3xl sm:text-4xl text-[#e0e2ef]">See it in action.</h2>
           </div>
 
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+          <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5 }}
             className={`max-w-2xl mx-auto rounded-2xl border ${rating.RISKY.border} ${rating.RISKY.bg} overflow-hidden`}>
 
             {/* Label */}
@@ -838,42 +855,52 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
       <PasteScanner user={user} onSignIn={onSignIn} />
 
       {/* ── Features — true full-width section ── */}
-      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
+      <section className="w-full py-20 px-6 sm:px-12 lg:px-20 xl:px-32">
         <div className="text-center mb-16">
-          <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">What We Check</p>
-          <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">6 checks. Every scan. Nothing gets missed.</h2>
+          <p className="section-label mb-3">What We Check</p>
+          <h2 className="heading-display text-3xl sm:text-4xl text-[#e0e2ef]">6 checks. Every scan. Nothing gets missed.</h2>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5 max-w-[1600px] mx-auto">
           {FEATURES.map((f, i) => (
-            <motion.div key={f.title} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 * i }}
-              className={`group p-7 rounded-2xl bg-gradient-to-br ${f.bg} border ${f.border} hover:border-opacity-50 transition-all duration-300`}>
-              <div className={`w-11 h-11 rounded-xl bg-white/[0.05] flex items-center justify-center mb-5 group-hover:scale-105 transition-transform`}>
+            <motion.div key={f.title}
+              initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5, delay: 0.06 * i }}
+              className={`group relative p-7 rounded-xl bg-[#1c1f29] border border-[rgba(70,69,84,0.2)] hover:border-[rgba(99,102,241,0.25)] hover:bg-[#1f2230] transition-all duration-300 overflow-hidden`}
+              style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
+              {/* shimmer top line */}
+              <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              {/* ambient glow on hover */}
+              <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${f.bg}`} />
+              <div className={`relative w-11 h-11 rounded-xl bg-[#272a34] border border-[rgba(70,69,84,0.3)] flex items-center justify-center mb-5 group-hover:scale-105 group-hover:border-[rgba(99,102,241,0.3)] transition-all duration-300`}>
                 <f.icon className={`w-5 h-5 ${f.color}`} />
               </div>
-              <h3 className="font-bold text-white text-[15px] mb-2">{f.title}</h3>
-              <p className="text-slate-500 text-[13px] leading-relaxed">{f.desc}</p>
+              <h3 className="heading-display font-bold text-[#e0e2ef] text-[15px] mb-2">{f.title}</h3>
+              <p className="text-[#c7c4d7]/60 text-[13px] leading-relaxed">{f.desc}</p>
             </motion.div>
           ))}
         </div>
       </section>
 
       {/* ── How it works — full-width with divider ── */}
-      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32 border-t border-white/[0.04]">
+      <section className="w-full py-20 px-6 sm:px-12 lg:px-20 xl:px-32 border-t border-white/[0.04]">
         <div className="max-w-[1600px] mx-auto">
-          <div className="text-center mb-16 pt-24">
-            <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">How it works</p>
-            <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">Up and running in three steps.</h2>
+          <div className="text-center mb-16">
+            <p className="section-label mb-3">How it works</p>
+            <h2 className="heading-display text-3xl sm:text-4xl text-[#e0e2ef]">Up and running in three steps.</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-            <div className="hidden md:block absolute top-7 left-[16%] right-[16%] h-px bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {STEPS.map((s, i) => (
-              <motion.div key={s.n} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 * i }}
-                className="relative flex flex-col items-center text-center p-8 rounded-2xl bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.09] transition-all">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-500/10 border border-indigo-500/20 flex items-center justify-center mb-5 text-indigo-300 font-black text-sm tracking-wider">
-                  {s.n}
+              <motion.div key={s.n}
+                initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5, delay: 0.1 * i }}
+                className="relative flex flex-col items-center text-center p-8 rounded-xl bg-[#181b25] border border-[rgba(70,69,84,0.2)] hover:border-[rgba(99,102,241,0.25)] hover:bg-[#1c1f29] transition-all duration-300 overflow-hidden group"
+                style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/35 to-transparent" />
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500/15 to-violet-500/[0.08] border border-indigo-500/20 flex items-center justify-center mb-5 group-hover:border-indigo-500/40 transition-colors">
+                  <span className="heading-display text-indigo-300 font-bold text-sm tracking-widest">{s.n}</span>
                 </div>
-                <h3 className="font-bold text-white mb-3 text-[16px]">{s.title}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{s.desc}</p>
+                <h3 className="heading-display font-bold text-[#e0e2ef] mb-3 text-[16px]">{s.title}</h3>
+                <p className="text-[#c7c4d7]/60 text-sm leading-relaxed">{s.desc}</p>
               </motion.div>
             ))}
           </div>
@@ -881,51 +908,59 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
       </section>
 
       {/* ── Privacy Promise — 2x2 grid ── */}
-      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32 border-t border-white/[0.04]">
+      <section className="w-full py-20 px-6 sm:px-12 lg:px-20 xl:px-32 border-t border-white/[0.04]">
         <div className="max-w-[1600px] mx-auto">
-          <div className="text-center mb-16 pt-24">
-            <p className="text-indigo-400 text-xs font-semibold tracking-[0.15em] uppercase mb-3">Privacy First</p>
-            <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em]">Built for your privacy.</h2>
+          <div className="text-center mb-16">
+            <p className="section-label mb-3">Privacy First</p>
+            <h2 className="heading-display text-3xl sm:text-4xl text-[#e0e2ef]">Built for your privacy.</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             {[
               {
                 icon: Lock,
                 color: 'text-indigo-400',
-                bg: 'bg-indigo-500/10',
+                bg: 'bg-indigo-500/[0.12]',
+                border: 'border-indigo-500/15',
                 heading: 'We never read your browsing history',
                 desc: 'We only analyze text you explicitly submit by clicking Scan.',
               },
               {
                 icon: Eye,
                 color: 'text-sky-400',
-                bg: 'bg-sky-500/10',
+                bg: 'bg-sky-500/[0.12]',
+                border: 'border-sky-500/15',
                 heading: 'Results are cached anonymously',
                 desc: 'No personal data is attached to cached results. User A\'s scan of Spotify is stored without any identifying information.',
               },
               {
                 icon: Trash2,
                 color: 'text-rose-400',
-                bg: 'bg-rose-500/10',
+                bg: 'bg-rose-500/[0.12]',
+                border: 'border-rose-500/15',
                 heading: 'Delete your data anytime',
                 desc: 'Every scan you run is stored under your account and can be deleted in one click from the History page.',
               },
               {
                 icon: Zap,
                 color: 'text-amber-400',
-                bg: 'bg-amber-500/10',
+                bg: 'bg-amber-500/[0.12]',
+                border: 'border-amber-500/15',
                 heading: 'Open source pipeline',
                 desc: 'The scoring logic is documented and the eval dataset is public. No black boxes.',
               },
             ].map((item, i) => (
-              <motion.div key={item.heading} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.07 * i }}
-                className="flex items-start gap-4 p-6 rounded-2xl bg-white/[0.02] border border-white/[0.05] hover:border-white/[0.09] transition-all">
-                <div className={`w-10 h-10 rounded-xl ${item.bg} flex items-center justify-center shrink-0`}>
+              <motion.div key={item.heading}
+                initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-60px' }} transition={{ duration: 0.5, delay: 0.07 * i }}
+                className="flex items-start gap-4 p-6 rounded-xl bg-[#181b25] border border-[rgba(70,69,84,0.2)] hover:border-[rgba(70,69,84,0.35)] transition-all duration-300 overflow-hidden relative group"
+                style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}>
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
+                <div className={`w-10 h-10 rounded-xl ${item.bg} border ${item.border} flex items-center justify-center shrink-0`}>
                   <item.icon className={`w-5 h-5 ${item.color}`} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-[14px] mb-1">{item.heading}</h3>
-                  <p className="text-slate-500 text-[13px] leading-relaxed">{item.desc}</p>
+                  <h3 className="heading-display font-bold text-[#e0e2ef] text-[14px] mb-1">{item.heading}</h3>
+                  <p className="text-[#c7c4d7]/55 text-[13px] leading-relaxed">{item.desc}</p>
                 </div>
               </motion.div>
             ))}
@@ -934,17 +969,21 @@ function LandingPage({ onSignIn, user, onNav }: { onSignIn: () => void; user: Us
       </section>
 
       {/* ── CTA Banner — full-width with contained card ── */}
-      <section className="w-full pb-28 px-6 sm:px-12 lg:px-20 xl:px-32">
+      <section className="w-full py-20 px-6 sm:px-12 lg:px-20 xl:px-32">
         <div className="max-w-[1600px] mx-auto">
-          <div className="relative rounded-3xl overflow-hidden border border-indigo-500/15 bg-gradient-to-br from-indigo-600/[0.13] via-violet-600/[0.08] to-purple-600/[0.05] p-12 sm:p-16 text-center">
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.14),transparent_65%)]" />
-            {/* decorative corner accents */}
-            <div className="absolute top-0 left-0 w-32 h-32 bg-gradient-to-br from-indigo-500/10 to-transparent rounded-br-full" />
-            <div className="absolute bottom-0 right-0 w-32 h-32 bg-gradient-to-tl from-violet-500/10 to-transparent rounded-tl-full" />
+          <div className="relative rounded-2xl overflow-hidden border border-[rgba(99,102,241,0.2)] bg-[#10131c] p-12 sm:p-16 text-center"
+            style={{ boxShadow: '0 0 80px rgba(99,102,241,0.08), 0 32px 64px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_0%,rgba(99,102,241,0.12),transparent)]" />
+            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
+            {/* ambient orbs */}
+            <div className="absolute -top-20 left-1/4 w-64 h-64 bg-indigo-600/[0.07] rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-20 right-1/4 w-64 h-64 bg-violet-600/[0.07] rounded-full blur-3xl pointer-events-none" />
             <div className="relative max-w-xl mx-auto">
-              <ShieldCheck className="w-12 h-12 text-indigo-400 mx-auto mb-6" />
-              <h2 className="text-3xl sm:text-4xl font-black tracking-[-0.03em] mb-4">Know what you're agreeing to.</h2>
-              <p className="text-slate-400 text-[14px] mb-10 leading-relaxed">400 free credits every month. A Quick Scan costs 10 credits, a Deep Scan costs 20. Your data belongs to you — view or delete it at any time.</p>
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 mb-6">
+                <ShieldCheck className="w-7 h-7 text-indigo-400" />
+              </div>
+              <h2 className="heading-display text-3xl sm:text-4xl text-[#e0e2ef] mb-4">Know what you're agreeing to.</h2>
+              <p className="text-[#c7c4d7]/60 text-[14px] mb-10 leading-relaxed">400 free credits every month. A Quick Scan costs 10 credits, a Deep Scan costs 20. Your data belongs to you — view or delete it at any time.</p>
 {CHROME_STORE_URL ? (
                 <a href={CHROME_STORE_URL} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-3 px-9 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-[15px] transition-all shadow-2xl shadow-indigo-500/25 hover:-translate-y-0.5 hover:shadow-indigo-500/40">
@@ -1016,7 +1055,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
   const [watches, setWatches] = useState<WatchRecord[]>([]);
   const [watchingId, setWatchingId] = useState<string | null>(null); // scan.id being watched
   const [unwatchingId, setUnwatchingId] = useState<string | null>(null); // watchId being removed
-  const apiUrl = (import.meta as any).env?.VITE_API_URL ?? 'https://tldr-shield-292798741977.us-central1.run.app';
+  const apiUrl = (import.meta as any).env?.VITE_API_URL ?? '';
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -1301,53 +1340,85 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
                         <span className="text-slate-700 text-[11px]">·</span>
                         <span className="text-slate-600 text-[11px]">{scan.createdAt ? timeAgo(scan.createdAt) : ''}</span>
                       </div>
-                      <p className="text-white text-[13px] font-semibold truncate mb-0.5">
-                        {scan.url || 'Unknown page'}
-                      </p>
+                      <div className="flex items-center gap-1 mb-0.5 min-w-0">
+                        <p className="text-white text-[13px] font-semibold truncate">
+                          {scan.url || 'Unknown page'}
+                        </p>
+                        {scan.url && (
+                          <a href={scan.url} target="_blank" rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="shrink-0 text-slate-700 hover:text-indigo-400 transition-colors"
+                            title="Open original page">
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
                       {scan.tldr && (
                         <p className="text-slate-500 text-[12px] leading-relaxed line-clamp-1">{scan.tldr}</p>
                       )}
 
-                        {/* Benchmark — Coming Soon */}
+                        {/* Benchmark */}
                       <button
                         onClick={e => {
                           e.stopPropagation();
-                          alert('Industry Benchmarking is coming soon to TLDR Shield!');
+                          const data = getBenchmarkData(scan.url);
+                          setBenchmarkScan(scan);
+                          setBenchmarkData(data);
+                          setBenchmarkError(data ? '' : 'No benchmark data for this site category.');
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-white/10 hover:text-indigo-400/50 transition-colors cursor-help"
-                        title="Industry Comparison (Coming Soon)"
+                        className="opacity-30 group-hover:opacity-100 p-1.5 rounded-lg text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all"
+                        title="Industry Comparison"
                       >
                         <BarChart2 size={14} />
                       </button>
 
-                      {/* GDPR — Coming Soon */}
+                      {/* GDPR */}
                       <button
                         onClick={e => {
                           e.stopPropagation();
-                          alert('GDPR Article 17 Generator is coming soon!');
+                          setGdprScan(scan);
+                          setGdprEmail('');
+                          setGdprResult(null);
+                          setGdprError('');
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-white/10 hover:text-indigo-400/50 transition-colors cursor-help"
-                        title="Generate GDPR Email (Coming Soon)"
+                        className="opacity-30 group-hover:opacity-100 p-1.5 rounded-lg text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 transition-all"
+                        title="Generate GDPR Erasure Email"
                       >
                         <Mail size={14} />
                       </button>
 
-                      {/* Watch — Coming Soon */}
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          alert('Policy Change Watcher is coming soon!');
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-white/10 hover:text-indigo-400/50 transition-colors cursor-help"
-                        title="Watch for Changes (Coming Soon)"
-                      >
-                        <Bell size={14} />
-                      </button>
+                      {/* Watch */}
+                      {(() => {
+                        const existingWatch = watches.find(w => w.url === scan.url);
+                        const isWatched = !!existingWatch;
+                        const isBusy = watchingId === scan.id || unwatchingId === existingWatch?.watchId;
+                        return (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation();
+                              if (isBusy) return;
+                              if (isWatched && existingWatch) handleUnwatch(existingWatch.watchId);
+                              else handleWatch(scan);
+                            }}
+                            disabled={isBusy}
+                            className={`opacity-30 group-hover:opacity-100 p-1.5 rounded-lg transition-all disabled:opacity-40 ${
+                              isWatched
+                                ? '!opacity-100 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10'
+                                : 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'
+                            }`}
+                            title={isWatched ? 'Stop watching' : 'Watch for policy changes'}
+                          >
+                            {isBusy
+                              ? <div className="w-3.5 h-3.5 border border-amber-400 border-t-transparent rounded-full animate-spin" />
+                              : <Bell size={14} />}
+                          </button>
+                        );
+                      })()}
                       <button
                         onClick={e => { e.stopPropagation(); handleDelete(scan.id); }}
                         disabled={deleting === scan.id}
                         aria-label="Delete scan"
-                        className="opacity-0 group-hover:opacity-100 w-8 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
+                        className="opacity-30 group-hover:opacity-100 w-8 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-all">
                         {deleting === scan.id
                           ? <div className="w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
                           : <Trash2 className="w-3.5 h-3.5" />}
@@ -1498,6 +1569,40 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
               </button>
             </div>
           </div>
+
+          {/* Watch List */}
+          {watches.length > 0 && (
+            <div className="bg-white/[0.03] border border-white/[0.08] rounded-3xl p-6">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.1em] flex items-center gap-2 mb-4">
+                <Bell className="w-3.5 h-3.5 text-amber-400" />
+                Watched Policies
+                <span className="ml-auto text-[10px] normal-case font-semibold text-slate-600">Checked weekly</span>
+              </h3>
+              <div className="space-y-1">
+                {watches.map(w => {
+                  const host = (() => { try { return new URL(w.url).hostname.replace(/^www\./, ''); } catch { return w.url; } })();
+                  return (
+                    <div key={w.watchId} className="flex items-center gap-2 py-2 border-b border-white/[0.04] last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-slate-300 text-[12px] font-semibold truncate">{host}</p>
+                        <p className="text-slate-600 text-[10px]">Last score: {w.lastScore}/100</p>
+                      </div>
+                      <button
+                        onClick={() => handleUnwatch(w.watchId)}
+                        disabled={unwatchingId === w.watchId}
+                        className="shrink-0 p-1.5 rounded-lg text-slate-700 hover:text-rose-400 hover:bg-rose-500/10 transition-all disabled:opacity-40"
+                        title="Stop watching"
+                      >
+                        {unwatchingId === w.watchId
+                          ? <div className="w-3 h-3 border border-rose-400 border-t-transparent rounded-full animate-spin" />
+                          : <X className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1542,7 +1647,7 @@ function HistoryPage({ user, onSignIn }: { user: User | null; onSignIn: () => vo
                       if (!token) { setGdprError('Please sign in first.'); setGdprLoading(false); return; }
                       const violations = Object.entries(gdprScan.pillars ?? {}).filter(([, v]) => v?.violation).map(([k]) => k);
                       const companyName = new URL(gdprScan.url).hostname.replace(/^www\./, '');
-                      const apiUrl = (import.meta as any).env?.VITE_API_URL ?? 'https://tldr-shield-292798741977.us-central1.run.app';
+                      const apiUrl = (import.meta as any).env?.VITE_API_URL ?? '';
                       const resp = await fetch(`${apiUrl}/api/gdpr-email`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -1693,23 +1798,26 @@ async function syncTokenToExtension(user: User | null) {
 
 // ── Admin Console ─────────────────────────────────────────────────────────────
 
-function AdminConsole({ isOpen, onClose, onToast }: { isOpen: boolean; onClose: () => void; onToast: (m: string, t: 'success' | 'error') => void }) {
-  const [internalKey, setInternalKey] = useState(localStorage.getItem('tldr_admin_key') || '');
+function AdminConsole({ isOpen, onClose, onToast, onAdminClaimed, user }: { isOpen: boolean; onClose: () => void; onToast: (m: string, t: 'success' | 'error') => void; onAdminClaimed?: () => void; user?: any }) {
+  const [internalKey, setInternalKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ active: boolean; model: string } | null>(null);
+  const [status, setStatus] = useState<{ active: boolean } | null>(null);
 
-  const API_BASE = (import.meta as any).env?.VITE_API_URL ?? 'https://tldr-shield-292798741977.us-central1.run.app';
+  const API_BASE = (import.meta as any).env?.VITE_API_URL ?? '';
 
   const fetchStatus = async (key: string) => {
+    if (!key) return;
     try {
-      const res = await fetch(`${API_BASE}/health`);
-      const data = await res.json();
-      if (data.gemini?.proMode) {
-        setStatus(data.gemini.proMode);
+      const res = await fetch(`${API_BASE}/api/admin/config`, {
+        headers: { 'x-internal-key': key.trim() }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const proMode = data.config?.GEMINI_PRO_MODE;
+        if (proMode !== undefined) setStatus({ active: proMode });
       }
-    } catch (e) {
-      console.error('Failed to fetch health status', e);
-    }
+    } catch { /* silent */ }
   };
 
   useEffect(() => {
@@ -1717,30 +1825,48 @@ function AdminConsole({ isOpen, onClose, onToast }: { isOpen: boolean; onClose: 
   }, [isOpen]);
 
   const toggleProMode = async (enabled: boolean) => {
-    if (!internalKey) {
-      onToast('Internal Key required', 'error');
-      return;
-    }
+    if (!internalKey) { onToast('Internal Key required', 'error'); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/pro-mode`, {
+      const res = await fetch(`${API_BASE}/api/admin/config`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Internal-Key': internalKey.trim()
-        },
-        body: JSON.stringify({ enabled })
+        headers: { 'Content-Type': 'application/json', 'x-internal-key': internalKey.trim() },
+        body: JSON.stringify({ GEMINI_PRO_MODE: enabled })
       });
       const data = await res.json();
       if (res.ok) {
-        localStorage.setItem('tldr_admin_key', internalKey.trim());
-        setStatus({ active: data.proModeActive, model: data.model });
-        onToast(`Pro Mode ${data.proModeActive ? 'Enabled' : 'Disabled'}`, 'success');
+        // key intentionally not saved — must be entered manually each session
+        setStatus({ active: data.config?.GEMINI_PRO_MODE ?? enabled });
+        onToast(`Pro Mode ${enabled ? 'Enabled' : 'Disabled'}`, 'success');
       } else {
         onToast(data.error || 'Failed to toggle', 'error');
       }
-    } catch (e) {
+    } catch {
       onToast('Connection error', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const claimAdminRole = async () => {
+    if (!internalKey) { onToast('Internal Key required', 'error'); return; }
+    if (!user) { onToast('Please sign in first', 'error'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: user.uid, email: user.email, key: internalKey.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) { onToast(data.error || 'Verification failed', 'error'); return; }
+
+      // Server stored role in Redis — update local state immediately
+      localStorage.setItem('tldr_admin_key', internalKey.trim());
+      onAdminClaimed?.();
+      onToast(data.message || 'Admin role granted!', 'success');
+    } catch (e: any) {
+      onToast('Failed: ' + (e?.message ?? 'Unknown error'), 'error');
     } finally {
       setLoading(false);
     }
@@ -1770,14 +1896,21 @@ function AdminConsole({ isOpen, onClose, onToast }: { isOpen: boolean; onClose: 
           <div>
             <label className="block text-slate-400 text-[11px] font-bold uppercase tracking-widest mb-2 px-1">Internal API Key</label>
             <div className="relative">
-              <input 
-                type="password"
+              <input
+                type={showKey ? 'text' : 'password'}
                 value={internalKey}
                 onChange={e => setInternalKey(e.target.value)}
                 placeholder="ts-admin-..."
-                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 text-sm text-indigo-200 placeholder-slate-700 outline-none focus:border-indigo-500/50 focus:bg-indigo-500/[0.02] transition-all"
+                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-2xl px-4 py-3 pr-11 text-sm text-indigo-200 placeholder-slate-700 outline-none focus:border-indigo-500/50 focus:bg-indigo-500/[0.02] transition-all"
               />
-              <Eye className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-700" />
+              <button
+                type="button"
+                onClick={() => setShowKey(s => !s)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-600 hover:text-slate-300 transition-colors"
+                title={showKey ? 'Hide key' : 'Show key'}
+              >
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 
@@ -1821,6 +1954,17 @@ function AdminConsole({ isOpen, onClose, onToast }: { isOpen: boolean; onClose: 
             Disable after recording to save quota.
           </p>
 
+          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+            <p className="text-white text-sm font-bold mb-1">Admin Role</p>
+            <p className="text-slate-500 text-[11px] mb-3">Sets your Firestore account to ADMIN — unlocks ∞ credits.</p>
+            <button
+              onClick={claimAdminRole}
+              disabled={loading || !user}
+              className="w-full py-2.5 rounded-xl text-[12px] font-bold bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/20 transition-all">
+              {loading ? 'Working…' : 'Claim Admin Role'}
+            </button>
+          </div>
+
           <button onClick={onClose} className="w-full py-3 text-slate-500 hover:text-white text-[13px] font-bold transition-colors">
             Close Console
           </button>
@@ -1852,19 +1996,26 @@ export default function App() {
   const [markingRead, setMarkingRead] = useState(false);
   const [adminPanelOpen, setAdminPanelOpen] = useState(false);
 
-  // Hidden Admin Console shortcut: Shift + A
+  // Hidden Admin Console — Shift+A keyboard shortcut + browser console escape hatch
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.shiftKey && e.key === 'A' && !['INPUT', 'TEXTAREA'].includes((e.target as any).tagName)) {
+      const tag = (e.target as HTMLElement).tagName;
+      if ((e.shiftKey && (e.key === 'A' || e.key === 'a')) && !['INPUT', 'TEXTAREA'].includes(tag)) {
         setAdminPanelOpen(prev => !prev);
       }
     };
     window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    // Escape hatch: open from browser console with __admin()
+    (window as any).__admin = () => setAdminPanelOpen(true);
+    return () => {
+      window.removeEventListener('keydown', handler);
+      delete (window as any).__admin;
+    };
   }, []);
 
   // Auth state + token sync to extension
   useEffect(() => {
+    localStorage.removeItem('tldr_admin_key'); // purge any old saved key
     return onAuthStateChanged(auth, u => {
       setUser(u);
       syncTokenToExtension(u);
@@ -2076,11 +2227,11 @@ export default function App() {
 
       {/* Admin Control UI */}
       <AnimatePresence>
-        {adminPanelOpen && <AdminConsole isOpen={adminPanelOpen} onClose={() => setAdminPanelOpen(false)} onToast={showToast} />}
+        {adminPanelOpen && <AdminConsole isOpen={adminPanelOpen} onClose={() => setAdminPanelOpen(false)} onToast={showToast} user={user} onAdminClaimed={() => { setIsAdmin(true); setCredits(-1); }} />}
       </AnimatePresence>
 
-      {/* Hidden Admin Indicator (only if key exists in local storage) */}
-      {localStorage.getItem('tldr_admin_key') && (
+      {/* Hidden Admin Indicator (only visible when signed in as admin) */}
+      {isAdmin && (
         <div className="fixed bottom-6 right-6 z-[40]">
            <button onClick={() => setAdminPanelOpen(true)} className="opacity-40 hover:opacity-100 transition-opacity">
               <AdminBadge active={false} />
