@@ -3,6 +3,7 @@
 **Date:** 2026-04-30  
 **Benchmark:** 10 real-world services against tosdr.org grades as ground truth  
 **Models:** `gemini-2.5-flash` (basic) | `gemini-2.5-flash` + `gemini-2.5-flash-lite` ensemble (deep)  
+**Eval script:** [`eval/scan_test.py`](./eval/scan_test.py)  
 **Raw output:** [`eval_output.txt`](./eval_output.txt)
 
 ---
