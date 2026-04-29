@@ -19,9 +19,9 @@
 | [eval_output.txt](./eval_output.txt) | Raw model output for all 10 services — unedited, verifiable |
 | [eval/scan_test.py](./eval/scan_test.py) | Evaluation script — reproduces all results with a paid Gemini API key |
 | [server/postprocess.ts](./server/postprocess.ts) | Post-processing validation rules (D1–D5) |
-| [server/prompts.ts](./server/prompts.ts) | Prompt engineering — ensemble prompts + PP co-scan prompt |
+| [server/prompts.ts](./server/prompts.ts) | Prompt engineering — ensemble prompts + Privacy Policy scan prompt |
 
-> Results are fully reproducible. Run `python -X utf8 scratch/scan_test.py` with a Gemini API key to verify.
+> Results are fully reproducible. Run `python -X utf8 eval/scan_test.py` with a Gemini API key to verify.
 
 ---
 
@@ -55,7 +55,7 @@ Corroborator (Flash-Lite) ┘         ↑                      ↑
 
 - **Ensemble:** Flash + Flash-Lite must agree at HIGH confidence for a violation to be flagged
 - **Post-processing rules (D1–D5):** Deterministic code overrides model decisions for known failure modes
-- **PP co-scan:** Privacy Policy fetched separately for `data_selling` — this information lives in PP, not ToS
+- **Privacy Policy scan:** Privacy Policy fetched separately for `data_selling` — this information lives in the Privacy Policy, not the Terms of Service
 
 ---
 
@@ -106,11 +106,11 @@ A structured error analysis pass identified the root cause of every false positi
 
 | Rule | Type | Problem | Fix |
 |------|------|---------|-----|
-| D1 | FP killer | `ai_training` cited without "train"/"fine-tune" in text | Require train-word in citation |
-| D2 | FP killer | Ban clauses flagged as violations ("you may not use automated means") | Blocklist of prohibition prefixes |
-| D3 | FP killer | `transparency` violation on scoped policy sections | Detect section-scoping language |
-| D4 | FP killer | Feedback/submission clauses misclassified as `content_ownership` | Two-path incoming-submission detection |
-| D5 | FP killer | PP co-scan fires on service-provider-only PPs (GitHub) | Pre-filter: block if zero commercial-sharing language |
+| D1 | False positive fix | `ai_training` flagged without "train"/"fine-tune" in the cited text | Require a training-related word in the citation |
+| D2 | False positive fix | Ban clauses flagged as violations ("you may not use automated means") | Blocklist of prohibition prefixes |
+| D3 | False positive fix | `transparency` flagged on scoped policy sections | Detect section-scoping language |
+| D4 | False positive fix | Feedback/submission clauses misclassified as `content_ownership` | Detect whether clause describes incoming user feedback vs. published content |
+| D5 | False positive fix | Privacy Policy scan fires on service-provider-only policies (GitHub) | Skip model call if Privacy Policy has zero commercial-sharing language |
 
 **Before D1–D5:** Deep precision ~65%, multiple false positives per service.  
 **After D1–D5:** Deep precision 84%, false positives isolated to structural data_selling ambiguity.
@@ -131,9 +131,9 @@ Three systematic failure modes required non-model solutions:
 >
 > The model flags this as `content_ownership`. D4 detects "feedback/comments" without published-content markers and clears it.
 
-**3. Data selling language lives in Privacy Policy, not ToS**
+**3. Data selling language lives in the Privacy Policy, not the Terms of Service**
 >
-> ToS rarely mentions data brokers. The PP co-scan fetches the Privacy Policy separately and uses a dedicated `PP_DATA_SELLING_SYSTEM` prompt tuned for commercial sharing language — catching indirect phrasing like "marketing partners", "advertising ecosystem".
+> Terms of Service rarely mention data brokers. A separate Privacy Policy scan fetches and analyzes the Privacy Policy using a dedicated prompt tuned for commercial sharing language — catching indirect phrasing like "marketing partners", "advertising ecosystem".
 
 ---
 
@@ -261,7 +261,7 @@ npm run lint    # TypeScript type-check
 
 ## Limitations & Next Iterations
 
-- **data_selling precision gap (84%):** The PP co-scan flags "marketing partners" language that may be service-provider-scoped. A fine-grained classifier trained on ToS-specific labeled examples could reduce this.
+- **data_selling precision gap (84%):** The Privacy Policy scan flags "marketing partners" language that may refer to service providers rather than third-party data buyers. A fine-grained classifier trained on labeled examples could reduce this.
 - **35K char window:** Documents > 35K chars are truncated. Multi-chunk deep scan with semantic ranking would improve coverage on very long policies.
 - **Ground truth scope:** Benchmarked on 10 services. Expanding to 50+ services would give more robust precision/recall estimates.
 
