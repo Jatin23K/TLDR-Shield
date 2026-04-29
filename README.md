@@ -17,7 +17,7 @@
 | [README.md](./README.md) | Problem framing, approach, eval results, architecture |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | Full benchmark report — per-service precision/recall, error analysis, post-processing rules |
 | [eval_output.txt](./eval_output.txt) | Raw model output for all 10 services — unedited, verifiable |
-| [scratch/scan_test.py](./scratch/scan_test.py) | Evaluation script — reproduces all results with a paid Gemini API key |
+| [eval/scan_test.py](./eval/scan_test.py) | Evaluation script — reproduces all results with a paid Gemini API key |
 | [server/postprocess.ts](./server/postprocess.ts) | Post-processing validation rules (D1–D5) |
 | [server/prompts.ts](./server/prompts.ts) | Prompt engineering — ensemble prompts + PP co-scan prompt |
 
