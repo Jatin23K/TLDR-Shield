@@ -12,3 +12,7 @@ dist-server/
 *.zip
 *.csv
 scripts/
+TLDR_Admin.txt
+tldr-shield-firefox.zip
+*.zip
+scratch/
