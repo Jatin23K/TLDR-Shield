@@ -60,7 +60,7 @@
 | Pillar | Missed (Basic) | Missed (Deep) | Root Cause |
 |--------|---------------|---------------|------------|
 | ai_training | 3x | 0x | D1 rule: citation lacked "train"/"fine-tune" keyword — cleared correctly |
-| data_selling | 2x | 1x | Discord PP explicitly states "We don't sell" — structural ambiguity |
+| data_selling | 2x | 1x | Discord Privacy Policy explicitly states "We don't sell" — structural ambiguity |
 | content_ownership | 2x | 0x | Fixed by deep ensemble catching broader context |
 | dark_patterns | 1x | 0x | Fixed by ensemble corroboration |
 
@@ -68,7 +68,7 @@
 
 | Pillar | Over-flagged (Basic) | Over-flagged (Deep) | Root Cause |
 |--------|---------------------|---------------------|------------|
-| data_selling | 1x | 4x | PP co-scan flags "marketing partners" language — some are service-provider scoped |
+| data_selling | 1x | 4x | Privacy Policy scan flags "marketing partners" language — some refer to service providers, not third-party data buyers |
 | content_ownership | 0x | 2x | Feedback/incoming submission clauses — D4 partially mitigates |
 | dark_patterns | 1x | 0x | Fixed by ensemble requiring HIGH confidence |
 
@@ -84,7 +84,7 @@ These deterministic overrides were applied on top of model output to fix known f
 | D2 | Citation matches ban-clause prefix pattern | Clear violation | Google, Netflix (deep) |
 | D3 | `transparency` citation is scoped to a subsection | Clear violation | — |
 | D4 | `content_ownership` citation is feedback/incoming-submission | Clear violation | Netflix (partial) |
-| D5 | PP has zero commercial-sharing language | Skip PP model call | GitHub |
+| D5 | Privacy Policy has zero commercial-sharing language | Skip Privacy Policy model call | GitHub |
 
 ---
 
@@ -92,9 +92,9 @@ These deterministic overrides were applied on top of model output to fix known f
 
 1. **Rating accuracy is perfect (10/10)** — every service correctly classified as RISKY/OKAY at both tiers
 2. **Ensemble delivers +21% recall** over single model with only -3% precision cost — the corroborator pays for itself
-3. **data_selling is the hardest pillar** — lives in Privacy Policy (not ToS), requires a separate co-scan with a dedicated prompt; still has FP noise from service-provider ambiguity
-4. **Post-processing rules are essential** — without D1-D5, deep precision drops to ~65%
-5. **Discord data_selling is a known gap** — their PP explicitly states "we don't sell your personal information" but tosdr.org grades it D; the violation likely refers to behavioral advertising which requires more nuanced detection
+3. **data_selling is the hardest category** — this information lives in the Privacy Policy, not the Terms of Service, so it requires a separate scan with a dedicated prompt; still has false positive noise from service-provider language ambiguity
+4. **Post-processing rules are essential** — without rules D1 through D5, deep scan precision drops to ~65%
+5. **Discord data_selling is a known gap** — their Privacy Policy explicitly states "we don't sell your personal information" but tosdr.org grades them D; the violation likely refers to behavioral advertising which requires more nuanced detection
 
 ---
 
@@ -103,4 +103,4 @@ These deterministic overrides were applied on top of model output to fix known f
 - Benchmark is 10 services — precision/recall estimates have high variance at this sample size
 - All 10 services are Grade C–F (RISKY) — no SAFE/OKAY services tested; recall on true negatives is untested
 - 35K character window truncates very long documents (PayPal ToS: 120K chars)
-- `data_selling` FP rate (40% in deep) is the primary quality gap for next iteration
+- `data_selling` false positive rate (40% in deep scan) is the primary quality gap for the next iteration
