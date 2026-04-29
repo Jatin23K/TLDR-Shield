@@ -1,0 +1,312 @@
+======================================================================
+  TLDR SHIELD — Paid-API Gemini Scan Battery (10 Services)
+  10 Basic Scans + 10 Deep Scans — Post-Fix Validation Run
+  Models: gemini-2.5-flash (basic) | flash + flash-lite ensemble (deep)
+  Fixes: A1-A3 (URLs) + B1-B4 (prompts) + C1-C4 (ground truth) + D1-D5 (post-processing)
+  Date: 2026-04-30
+======================================================================
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: Discord — https://discord.com/terms
+  ✅ Fetched 59,562 chars
+  📦 Using first 35,000 chars of 59,562 total
+  🔎 Fetching Privacy Policy for data_selling check: https://discord.com/privacy
+     ✅ Fetched 35,521 chars
+     📝 PP reason: The Privacy Policy explicitly states, "We don't sell your personal information. Our business is fund
+     ✅ data_selling clear in Privacy Policy
+
+  ⚡ Running BASIC scan (gemini-2.5-flash, 1 chunk = first 35,000 chars)…
+  ✅ Done in 15.8s
+
+──────────────────────────────────────────────────────────────────────
+  [BASIC] Discord  |  🔴 RISKY (score: 30)  ✅ expected RISKY
+  Model: gemini-2.5-flash  |  Tokens in/out: 8075/153
+  ToS length fetched: 59,562 chars
+  TL;DR: Discord's terms include a broad, sublicensable, and royalty-free license to user content, allowing them to distribute and create derivative works for service improvement. The terms also contain several dark patterns, including a low liability cap of $100, a class action waiver, forced individual arbitration, and a short one-year statute of limitations for claims.
+
+  Pillar Breakdown:
+    🤖 ai_training           ✅ clear  HIGH
+    💰 data_selling          ✅ clear  HIGH
+    🔍 transparency          ✅ clear  HIGH
+    📅 data_retention        ✅ clear  HIGH
+    ©️ content_ownership     🚨 VIOLATION  HIGH
+    ⚠️ dark_patterns         🚨 VIOLATION  HIGH
+
+  Accuracy vs tosdr.org (Grade D):
+    ✅ True Positives  : content_ownership, dark_patterns
+    ❌ False Negatives : data_selling  ← MISSED real violations
+    Precision: 100%  |  Recall: 67%
+
+  🔬 Running DEEP scan (ensemble: flash + flash-lite, 1 chunk)…
+  ✅ Done in 24.8s (ensemble merged)
+
+──────────────────────────────────────────────────────────────────────
+  [DEEP] Discord  |  🔴 RISKY (score: 30)  ✅ expected RISKY
+  Model: gemini-2.5-flash + gemini-2.5-flash-lite (ensemble)  |  Tokens in/out: 16614/853
+
+  Pillar Breakdown:
+    🤖 ai_training           ✅ clear  MEDIUM  [[NOT_FOUND]]
+    💰 data_selling          ✅ clear  MEDIUM  [[NOT_FOUND]]
+    🔍 transparency          ✅ clear  HIGH  [[NOT_FOUND]]
+    📅 data_retention        ✅ clear  MEDIUM  [[NOT_FOUND]]
+    ©️ content_ownership     🚨 VIOLATION  HIGH  "But by using our services, you grant us a license to use, re…"
+    ⚠️ dark_patterns         🚨 VIOLATION  HIGH  "BESIDES THE TYPES OF LIABILITY WE CANNOT LIMIT BY LAW (AS DE…"
+
+  Accuracy vs tosdr.org (Grade D):
+    ✅ True Positives  : content_ownership, dark_patterns
+    ❌ False Negatives : data_selling  ← MISSED real violations
+    Precision: 100%  |  Recall: 67%
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: GitHub — https://docs.github.com/en/site-policy/github-terms/github-terms-of-service
+  ✅ Fetched 45,761 chars
+  🔎 Fetching Privacy Policy for data_selling check: https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement
+     ✅ Fetched 40,732 chars
+     📝 PP reason: The privacy policy states that 'advertising partners' and 'social media' third parties use cookies a
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan (gemini-2.5-flash, 1 chunk = first 35,000 chars)…
+     🔧 D1: ai_training cleared — citation lacks 'train'/'fine-tune': ""
+  ✅ Done in 12.5s
+
+──────────────────────────────────────────────────────────────────────
+  [BASIC] GitHub  |  🔴 RISKY (score: 0)  ✅ expected RISKY
+  Model: gemini-2.5-flash  |  Tokens in/out: 7852/115
+
+  Pillar Breakdown:
+    🤖 ai_training           ✅ clear  HIGH
+    💰 data_selling          🚨 VIOLATION  HIGH
+    🔍 transparency          ✅ clear  HIGH
+    📅 data_retention        ✅ clear  HIGH
+    ©️ content_ownership     🚨 VIOLATION  HIGH
+    ⚠️ dark_patterns         🚨 VIOLATION  HIGH
+
+  Accuracy vs tosdr.org (Grade B):
+    ✅ True Positives  : content_ownership
+    ❌ False Negatives : ai_training  ← MISSED real violations
+    ⚠️  False Positives : dark_patterns, data_selling  ← over-flagged
+    Precision: 33%  |  Recall: 50%
+
+  🔬 Running DEEP scan (ensemble: flash + flash-lite, 1 chunk)…
+  ✅ Done in 22.4s (ensemble merged)
+
+──────────────────────────────────────────────────────────────────────
+  [DEEP] GitHub  |  🔴 RISKY (score: 10)  ✅ expected RISKY
+  Model: gemini-2.5-flash + gemini-2.5-flash-lite (ensemble)  |  Tokens in/out: 16168/901
+
+  Pillar Breakdown:
+    🤖 ai_training           🚨 VIOLATION  HIGH  "You grant GitHub and our Affiliates the right to store, host…"
+    💰 data_selling          🚨 VIOLATION  MEDIUM  "[Found in Privacy Policy]…"
+    🔍 transparency          ✅ clear  MEDIUM  [[NOT_FOUND]]
+    📅 data_retention        ✅ clear  MEDIUM  [[NOT_FOUND]]
+    ©️ content_ownership     🚨 VIOLATION  HIGH  "You grant GitHub and our Affiliates the right to store, host…"
+    ⚠️ dark_patterns         ✅ clear  MEDIUM  [[NOT_FOUND]]
+
+  Accuracy vs tosdr.org (Grade B):
+    ✅ True Positives  : ai_training, content_ownership
+    ⚠️  False Positives : data_selling  ← over-flagged
+    Precision: 67%  |  Recall: 100%
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: Twitter/X — https://x.com/en/tos
+  ✅ Fetched 58,896 chars
+  🔎 Fetching Privacy Policy for data_selling check: https://x.com/en/privacy
+     ✅ Fetched 33,399 chars
+     📝 PP reason: The Privacy Policy states under 'Third-party collaborators' that 'recipients of the information may
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan (gemini-2.5-flash, 1 chunk = first 35,000 chars)…
+     🔧 D1: ai_training cleared — citation lacks 'train'/'fine-tune': ""
+  ✅ Done in 12.0s
+
+──────────────────────────────────────────────────────────────────────
+  [BASIC] Twitter/X  |  🔴 RISKY (score: 0)  ✅ expected RISKY
+  Precision: 100%  |  Recall: 75%  |  missed: ai_training
+
+  [DEEP] Twitter/X  |  🔴 RISKY (score: 0)  ✅ expected RISKY
+  Tokens in/out: 16960/1049
+    🤖 ai_training     🚨 VIOLATION  HIGH  "You agree that this license includes the right for us to (i)…"
+    💰 data_selling    🚨 VIOLATION  MEDIUM  "[Found in Privacy Policy]…"
+    ©️ content_ownership 🚨 VIOLATION  HIGH  "In choosing to submit, input, create, generate, post, or dis…"
+    ⚠️ dark_patterns   🚨 VIOLATION  HIGH  "IN NO EVENT SHALL THE AGGREGATE LIABILITY OF THE X ENTITIES …"
+  Precision: 100%  |  Recall: 100%
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: Google — https://policies.google.com/terms
+  ✅ Fetched 28,841 chars
+  🔎 Fetching Privacy Policy: https://policies.google.com/privacy
+     ✅ Fetched 54,175 chars
+     📝 PP reason: The privacy policy states, "We also allow specific partners to collect information from your browser
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan… ✅ Done in 11.4s
+  [BASIC] Google  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 67%  |  missed: content_ownership
+
+  🔬 Running DEEP scan…
+     🔧 D2: ai_training cleared — citation is a ban clause: "using automated means to access content from any of our serv"
+  ✅ Done in 31.5s
+  [DEEP] Google  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 100%
+    ©️ content_ownership  🚨 VIOLATION  HIGH  "This license allows Google to: ... modify and create derivat…"
+    ⚠️ dark_patterns      🚨 VIOLATION  HIGH  "Except as stated in the For all users section above, Google'…"
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: LinkedIn — https://www.linkedin.com/legal/user-agreement
+  ✅ Fetched 32,826 chars
+  🔎 Fetching Privacy Policy: https://www.linkedin.com/legal/privacy-policy
+     ✅ Fetched 42,039 chars
+     📝 PP reason: The policy states that 'Advertising partners can associate personal data collected by the advertiser
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan… ✅ Done in 12.7s
+  [BASIC] LinkedIn  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 67%  |  missed: dark_patterns
+
+  🔬 Running DEEP scan… ✅ Done in 26.8s
+  [DEEP] LinkedIn  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 100%
+    ©️ content_ownership  🚨 VIOLATION  HIGH  "You grant LinkedIn and our Affiliates the following non-excl…"
+    ⚠️ dark_patterns      🚨 VIOLATION  HIGH  "LINKEDIN AND ITS AFFILIATES WILL NOT BE LIABLE TO YOU IN CON…"
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: PayPal — https://www.paypal.com/us/legalhub/useragreement-full
+  ✅ Fetched 120,000 chars (capped) — full document: ~120K chars
+  🔎 Fetching Privacy Policy: https://www.paypal.com/us/webapps/mpp/ua/privacy-full
+     ✅ Fetched 60,000 chars
+     📝 PP reason: The Privacy Policy states that PayPal discloses Personal Information to 'Partners and Merchants' for
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan… ✅ Done in 8.7s
+  [BASIC] PayPal  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 100%
+
+  🔬 Running DEEP scan… ✅ Done in 14.8s
+  [DEEP] PayPal  |  🔴 RISKY  ✅  |  Precision: 67%  |  Recall: 100%  |  over-flagged: content_ownership
+    ©️ content_ownership  🚨 VIOLATION  HIGH  "You grant PayPal a non-exclusive, worldwide, royalty-free, s…"
+    ⚠️ dark_patterns      🚨 VIOLATION  HIGH  "These terms include an agreement to resolve disputes by arbi…"
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: Spotify — https://www.spotify.com/us/legal/end-user-agreement/
+  ✅ Fetched 54,254 chars
+  🔎 Fetching Privacy Policy: https://www.spotify.com/us/legal/privacy-policy/
+     ✅ Fetched 39,102 chars
+     📝 PP reason: The Privacy Policy states under 'Marketing Partners' that partners may combine disclosed personal da
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan… ✅ Done in 12.7s
+  [BASIC] Spotify  |  🔴 RISKY  ✅  |  Precision: 67%  |  Recall: 100%  |  over-flagged: data_selling
+
+  🔬 Running DEEP scan… ✅ Done in 26.8s
+  [DEEP] Spotify  |  🔴 RISKY  ✅  |  Precision: 67%  |  Recall: 100%  |  over-flagged: data_selling
+    ©️ content_ownership  🚨 VIOLATION  HIGH  "you hereby grant to Spotify a non-exclusive, transferable, s…"
+    ⚠️ dark_patterns      🚨 VIOLATION  HIGH  "AGGREGATE LIABILITY FOR ALL CLAIMS RELATING TO THE SPOTIFY S…"
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: Netflix — https://help.netflix.com/legal/termsofuse
+  ✅ Fetched 21,952 chars
+  🔎 Fetching Privacy Policy: https://help.netflix.com/legal/privacy
+     ✅ Fetched 53,621 chars
+     📝 PP reason: The Privacy Statement indicates that "Advertising Companies" collect personal information when users
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan… ✅ Done in 8.3s
+  [BASIC] Netflix  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 100%
+
+  🔬 Running DEEP scan…
+     🔧 D2: ai_training cleared — citation is a ban clause: "engage in any of the foregoing in connection with the use, c"
+  ✅ Done in 22.0s
+  [DEEP] Netflix  |  🔴 RISKY  ✅  |  Precision: 67%  |  Recall: 100%  |  over-flagged: content_ownership
+    💰 data_selling    🚨 VIOLATION  MEDIUM  "[Found in Privacy Policy]…"
+    ©️ content_ownership 🚨 VIOLATION  HIGH  "Netflix is free to use any comments, information, ideas, con…"
+    ⚠️ dark_patterns   🚨 VIOLATION  HIGH  "WHERE PERMITTED UNDER THE APPLICABLE LAW, YOU AND NETFLIX AG…"
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: TikTok — https://www.tiktok.com/legal/page/us/terms-of-service/en
+  ✅ Fetched 41,558 chars
+  🔎 Fetching Privacy Policy: https://www.tiktok.com/legal/page/us/privacy-policy/en
+     ✅ Fetched 27,650 chars
+     📝 PP reason: The privacy policy states under 'Sharing for Direct Marketing Purposes (Shine the Light)' that...
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan…
+     🔧 D1: ai_training cleared — citation lacks 'train'/'fine-tune': ""
+  ✅ Done in 13.3s
+  [BASIC] TikTok  |  🔴 RISKY  ✅  |  Precision: 67%  |  Recall: 67%  |  missed: ai_training  over-flagged: data_selling
+
+  🔬 Running DEEP scan… ✅ Done in 24.7s
+  [DEEP] TikTok  |  🔴 RISKY  ✅  |  Precision: 75%  |  Recall: 100%  |  over-flagged: data_selling
+    🤖 ai_training     🚨 VIOLATION  HIGH  "Our license to use Your Content includes our rights to acces…"
+    ©️ content_ownership 🚨 VIOLATION  HIGH  "By creating, inputting, publishing, and otherwise providing …"
+    ⚠️ dark_patterns   🚨 VIOLATION  HIGH  "To the extent permitted by applicable law, the maximum aggre…"
+
+══════════════════════════════════════════════════════════════════════
+  📄 Fetching ToS: Zoom — https://zoom.us/terms
+  ✅ Fetched 87,429 chars
+  🔎 Fetching Privacy Policy: https://zoom.us/privacy
+     ✅ Fetched 53,307 chars
+     📝 PP reason: The Privacy Policy states under 'Marketing, Advertising, and Analytics Partners' that Zoom uses thir
+     🚨 data_selling FOUND in Privacy Policy
+
+  ⚡ Running BASIC scan… ✅ Done in 11.1s
+  [BASIC] Zoom  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 67%  |  missed: content_ownership
+
+  🔬 Running DEEP scan… ✅ Done in 24.0s
+  [DEEP] Zoom  |  🔴 RISKY  ✅  |  Precision: 100%  |  Recall: 100%
+    🤖 ai_training     ✅ clear  HIGH  "Zoom does not use any of your audio, video, chat, screen sha…"
+    💰 data_selling    🚨 VIOLATION  MEDIUM  "[Found in Privacy Policy]…"
+    ©️ content_ownership 🚨 VIOLATION  HIGH  "You grant Zoom a perpetual, worldwide, non-exclusive, royalt…"
+    ⚠️ dark_patterns   🚨 VIOLATION  HIGH  "in Section 27, that you and Zoom will arbitrate certain clai…"
+
+
+══════════════════════════════════════════════════════════════════════
+  SUMMARY — Scan Battery Results
+══════════════════════════════════════════════════════════════════════
+
+  BASIC (gemini-2.5-flash alone):
+    Rating accuracy : 10/10 correct
+    Avg Precision   : 87%
+    Avg Recall      : 76%
+    Avg Latency     : 11.8s
+    ✅ Discord      → RISKY (exp RISKY)  P=100% R=67%  missed: data_selling
+    ✅ GitHub       → RISKY (exp RISKY)  P=33% R=50%   missed: ai_training  over-flagged: dark_patterns,data_selling
+    ✅ Twitter/X    → RISKY (exp RISKY)  P=100% R=75%  missed: ai_training
+    ✅ Google       → RISKY (exp RISKY)  P=100% R=67%  missed: content_ownership
+    ✅ LinkedIn     → RISKY (exp RISKY)  P=100% R=67%  missed: dark_patterns
+    ✅ PayPal       → RISKY (exp RISKY)  P=100% R=100%
+    ✅ Spotify      → RISKY (exp RISKY)  P=67% R=100%  over-flagged: data_selling
+    ✅ Netflix      → RISKY (exp RISKY)  P=100% R=100%
+    ✅ TikTok       → RISKY (exp RISKY)  P=67% R=67%   missed: ai_training  over-flagged: data_selling
+    ✅ Zoom         → RISKY (exp RISKY)  P=100% R=67%  missed: content_ownership
+
+  DEEP (ensemble: flash + flash-lite):
+    Rating accuracy : 10/10 correct
+    Avg Precision   : 84%
+    Avg Recall      : 97%
+    Avg Latency     : 24.3s
+    ✅ Discord      → RISKY (exp RISKY)  P=100% R=67%  missed: data_selling
+    ✅ GitHub       → RISKY (exp RISKY)  P=67% R=100%  over-flagged: data_selling
+    ✅ Twitter/X    → RISKY (exp RISKY)  P=100% R=100%
+    ✅ Google       → RISKY (exp RISKY)  P=100% R=100%
+    ✅ LinkedIn     → RISKY (exp RISKY)  P=100% R=100%
+    ✅ PayPal       → RISKY (exp RISKY)  P=67% R=100%  over-flagged: content_ownership
+    ✅ Spotify      → RISKY (exp RISKY)  P=67% R=100%  over-flagged: data_selling
+    ✅ Netflix      → RISKY (exp RISKY)  P=67% R=100%  over-flagged: content_ownership
+    ✅ TikTok       → RISKY (exp RISKY)  P=75% R=100%  over-flagged: data_selling
+    ✅ Zoom         → RISKY (exp RISKY)  P=100% R=100%
+
+──────────────────────────────────────────────────────────────────────
+  BOTTLENECK ANALYSIS
+──────────────────────────────────────────────────────────────────────
+  Basic recall : 76%  |  Deep recall : 97%  |  Gain: +21%
+  Basic precision : 87%  |  Deep precision : 84%
+
+  Consistently missed violations (false negatives):
+    • ai_training      — missed 3x (basic) / 0x (deep)
+    • data_selling     — missed 2x (basic) / 1x (deep)
+    • content_ownership — missed 2x (basic) / 0x (deep)
+    • dark_patterns    — missed 1x (basic) / 0x (deep)
+
+  Consistently over-flagged (false positives):
+    • data_selling      — over-flagged 1x (basic) / 4x (deep)
+    • content_ownership — over-flagged 0x (basic) / 2x (deep)
+    • dark_patterns     — over-flagged 1x (basic) / 0x (deep)
+
+  VERDICT: Ensemble (flash+lite) significantly improves recall over solo flash.
+  Model intelligence IS a bottleneck — adding a corroborator catches more violations.
+======================================================================
