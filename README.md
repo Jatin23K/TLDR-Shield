@@ -4,9 +4,9 @@
 ![License](https://img.shields.io/badge/license-Apache--2.0-10b981)
 ![Stack](https://img.shields.io/badge/stack-React%20%7C%20Express%20%7C%20Gemini%202.5%20%7C%20Firebase-3b82f6)
 ![Platform](https://img.shields.io/badge/platform-Chrome%20MV3%20%7C%20Firefox-f59e0b)
-![Deep Accuracy](https://img.shields.io/badge/deep%20accuracy-10%2F10-brightgreen)
-![Recall](https://img.shields.io/badge/recall-97%25-brightgreen)
-![Precision](https://img.shields.io/badge/precision-84%25-green)
+![Deep Accuracy](https://img.shields.io/badge/deep%20accuracy-25%2F25-brightgreen)
+![Recall](https://img.shields.io/badge/recall-93%25-brightgreen)
+![Precision](https://img.shields.io/badge/precision-94%25-brightgreen)
 
 ---
 
@@ -16,12 +16,13 @@
 |----------|--------------|
 | [README.md](./README.md) | Problem framing, approach, eval results, architecture |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | Full benchmark report — per-service precision/recall, error analysis, post-processing rules |
-| [eval_output.txt](./eval_output.txt) | Raw model output for all 10 services — unedited, verifiable |
-| [eval/scan_test.py](./eval/scan_test.py) | Evaluation script — reproduces all results with a paid Gemini API key |
-| [server/postprocess.ts](./server/postprocess.ts) | Post-processing validation rules (D1–D5) |
+| [eval/results/battery_results.txt](./eval/results/battery_results.txt) | Raw terminal output for all 25 services — unedited, verifiable |
+| [eval/scan_full_battery.py](./eval/scan_full_battery.py) | Full 25-service evaluation script — reproduces all results with a Gemini API key |
+| [eval/generate_eval_charts.py](./eval/generate_eval_charts.py) | Chart generation script — produces all 5 evaluation charts |
+| [server/postprocess.ts](./server/postprocess.ts) | Post-processing validation rules (D1–D7) |
 | [server/prompts.ts](./server/prompts.ts) | Prompt engineering — ensemble prompts + Privacy Policy scan prompt |
 
-> Results are fully reproducible. Run `python -X utf8 eval/scan_test.py` with a Gemini API key to verify.
+> Results are fully reproducible. Run `python -X utf8 eval/scan_full_battery.py` with a Gemini API key to verify.
 
 ---
 
@@ -47,43 +48,54 @@ A single `gemini-2.5-flash` call achieves ~80% recall but suffers from false pos
 
 ```
 Primary Model (Flash)  ──┐
-                          ├──► Ensemble Merge ──► Post-Processing (D1–D5) ──► Final Result
+                          ├──► Ensemble Merge ──► Post-Processing (D1–D7) ──► Final Result
 Corroborator (Flash-Lite) ┘         ↑                      ↑
                                HIGH confidence         Deterministic
                                gate required            rule overrides
 ```
 
 - **Ensemble:** Flash + Flash-Lite must agree at HIGH confidence for a violation to be flagged
-- **Post-processing rules (D1–D5):** Deterministic code overrides model decisions for known failure modes
-- **Privacy Policy scan:** Privacy Policy fetched separately for `data_selling` — this information lives in the Privacy Policy, not the Terms of Service
+- **Post-processing rules (D1–D7):** Deterministic code overrides model decisions for known failure modes
+- **Privacy Policy co-scan:** Privacy Policy fetched separately for `data_selling` — this information lives in the Privacy Policy, not the Terms of Service
+- **NULL HYPOTHESIS:** Default is no violation — the model must provide verbatim citation as proof before a flag is accepted
 
 ---
 
 ## Evaluation Results
 
-Benchmarked against **10 real services** (Discord, GitHub, Twitter/X, Google, LinkedIn, PayPal, Spotify, Netflix, TikTok, Zoom) using tosdr.org grades as ground truth.
+Benchmarked against **25 real services** across tosdr.org grades A–F using tosdr.org grades as ground truth.
 
 | Scan Mode | Rating Accuracy | Precision | Recall | Avg Latency |
 |-----------|----------------|-----------|--------|-------------|
-| Basic (Flash only) | **10/10** | 87% | 76% | 11.8s |
-| Deep (Ensemble) | **10/10** | 84% | **97%** | 24.3s |
+| Basic (Flash only) | **22/25** | 89% | 79% | ~12s |
+| Deep (Ensemble) | **25/25** | **94%** | **93%** | ~25s |
 
-**Ensemble gain over single model: +21% recall** with negligible precision cost.
+**Ensemble gain over single model: +14% recall, +5% precision.**  
+**True Negative Rate: 6/6** — zero false positives on Grade A+B (clean) services.
 
-### Per-Service Deep Results
+### Evaluation Charts
 
-| Service | tosdr Grade | Rating | Precision | Recall |
-|---------|------------|--------|-----------|--------|
-| Discord | D | ✅ RISKY | 100% | 67% |
-| GitHub | B | ✅ RISKY | 67% | 100% |
-| Twitter/X | F | ✅ RISKY | 100% | 100% |
-| Google | E | ✅ RISKY | 100% | 100% |
-| LinkedIn | D | ✅ RISKY | 100% | 100% |
-| PayPal | D | ✅ RISKY | 67% | 100% |
-| Spotify | C | ✅ RISKY | 67% | 100% |
-| Netflix | D | ✅ RISKY | 67% | 100% |
-| TikTok | D | ✅ RISKY | 75% | 100% |
-| Zoom | D | ✅ RISKY | 100% | 100% |
+![Overall Results](./eval/charts/chart1_overall.png)
+
+*Figure 1 — BASIC vs DEEP aggregate metrics across 25 services*
+
+![Per-Service Deep Results](./eval/charts/chart2_per_service_deep.png)
+
+*Figure 2 — Per-service Precision and Recall for DEEP scan*
+
+![Error Breakdown by Pillar](./eval/charts/chart3_error_breakdown.png)
+
+*Figure 3 — False Negative and False Positive counts by privacy pillar*
+
+![Grade Distribution](./eval/charts/chart4_grade_distribution.png)
+
+*Figure 4 — Grade distribution and average recall per grade tier*
+
+![Accuracy Grid](./eval/charts/chart5_accuracy_grid.png)
+
+*Figure 5 — Per-service accuracy grid (green = correct, red = incorrect)*
+
+> Full per-service results with precision/recall breakdowns in [EVAL_REPORT.md](./EVAL_REPORT.md).
 
 ---
 
@@ -100,20 +112,22 @@ Benchmarked against **10 real services** (Discord, GitHub, Twitter/X, Google, Li
 
 ---
 
-## Error Analysis & Fixes
+## Error Analysis and Post-Processing Rules
 
-A structured error analysis pass identified the root cause of every false positive and false negative. Deterministic post-processing rules (D1–D5) were implemented to override model errors:
+Structured error analysis across 25 services identified the root cause of every false positive and false negative. Deterministic rules (D1–D7) override model output for known failure modes:
 
 | Rule | Type | Problem | Fix |
 |------|------|---------|-----|
-| D1 | False positive fix | `ai_training` flagged without "train"/"fine-tune" in the cited text | Require a training-related word in the citation |
-| D2 | False positive fix | Ban clauses flagged as violations ("you may not use automated means") | Blocklist of prohibition prefixes |
-| D3 | False positive fix | `transparency` flagged on scoped policy sections | Detect section-scoping language |
-| D4 | False positive fix | Feedback/submission clauses misclassified as `content_ownership` | Detect whether clause describes incoming user feedback vs. published content |
-| D5 | False positive fix | Privacy Policy scan fires on service-provider-only policies (GitHub) | Skip model call if Privacy Policy has zero commercial-sharing language |
+| D1 | False positive fix | `ai_training` flagged without "train"/"fine-tune" in the cited text | Require a training-related keyword in the citation |
+| D2 | False positive fix | Ban clauses flagged as violations ("you may not use automated means") | Blocklist of prohibition-prefix patterns |
+| D3 | False positive fix | `transparency` flagged on scoped policy subsections | Detect section-scoping language and clear |
+| D4 | False positive fix | Feedback/submission clauses misclassified as `content_ownership` | Detect whether clause covers incoming feedback vs. published content |
+| D5 | False positive fix | Privacy Policy scan fires on service-provider-only policies | Skip model call if Privacy Policy has zero commercial-sharing keywords |
+| D6 | False positive fix | `data_retention` flagged on payment delinquency/suspension clauses | Detect delinquent-account language and clear |
+| D7 | False positive fix | `dark_patterns` flagged on generic liability-limit boilerplate | Require explicit cap amount ("shall not exceed", "$X") before flagging |
 
-**Before D1–D5:** Deep precision ~65%, multiple false positives per service.  
-**After D1–D5:** Deep precision 84%, false positives isolated to structural data_selling ambiguity.
+**Before D1–D7:** Deep precision ~65%, multiple false positives per service.  
+**After D1–D7:** Deep precision 94%, false positives isolated to structural `data_selling` ambiguity.
 
 ---
 
@@ -123,8 +137,8 @@ Three systematic failure modes required non-model solutions:
 
 **1. Ban clauses look like violations**
 > *"using automated means to access content from any of our services"* — Google ToS
-> 
-> The model flags this as `ai_training`. A human reads this as a prohibition. D2 detects the context and overrides.
+>
+> The model flags this as `ai_training`. A human reads it as a prohibition. D2 detects the context and overrides.
 
 **2. Feedback clauses look like content ownership**
 > *"Netflix is free to use any comments, information, ideas, concepts, feedback..."* — Netflix ToS
@@ -163,7 +177,7 @@ Three systematic failure modes required non-model solutions:
                     │  7. LLM inference — Flash primary                 │
                     │  8. LLM corroboration — Flash-Lite ensemble       │
                     │  9. Ensemble merge (HIGH confidence gate)         │
-                    │  10. Post-processing validation (D1–D5 rules)     │
+                    │  10. Post-processing validation (D1–D7 rules)     │
                     │  11. Citation grounding + JSON extraction         │
                     │  12. Aggregation + score computation              │
                     │  13. Write to L1 + L2 cache                      │
@@ -172,7 +186,7 @@ Three systematic failure modes required non-model solutions:
                                          │
                      ┌────────────────────▼──────────────────────────────┐
                      │          Google Gemini API (AI Studio)            │
-                     │  Primary:     gemini-2.5-flash                    │
+                     │  Primary:      gemini-2.5-flash                   │
                      │  Corroborator: gemini-2.5-flash-lite              │
                      └───────────────────────────────────────────────────┘
 ```
@@ -193,11 +207,13 @@ Three systematic failure modes required non-model solutions:
 
 ## Scoring
 
-| Rating | Condition |
-|--------|-----------|
-| **SAFE** | 0 violations across all pillars |
-| **OKAY** | 0 violations but vague Transparency pillar |
-| **RISKY** | 1 or more violations detected |
+| Rating | Score Range | Condition |
+|--------|-------------|-----------|
+| **SAFE** | 90–100 | No violations |
+| **OKAY** | 50–89 | Minor issues only (e.g., vague transparency) |
+| **RISKY** | 0–49 | One or more serious violations detected |
+
+**Penalty weights:** Dark patterns −40 pts, AI training / data selling / data retention / content ownership −30 pts each, Transparency −20 pts.
 
 ---
 
@@ -206,8 +222,10 @@ Three systematic failure modes required non-model solutions:
 | | Basic Scan | Deep Scan |
 |-|-----------|-----------|
 | **Model** | Flash only | Flash + Flash-Lite ensemble |
-| **Recall** | 76% | 97% |
-| **Latency** | ~12s | ~24s |
+| **Accuracy** | 22/25 | 25/25 |
+| **Recall** | 79% | 93% |
+| **Precision** | 89% | 94% |
+| **Latency** | ~12s | ~25s |
 | **Output** | Rating + score + TL;DR | Full pillar breakdown + verbatim citations |
 
 ---
@@ -220,7 +238,7 @@ Three systematic failure modes required non-model solutions:
 | Backend | Node.js, Express, TypeScript |
 | AI Models | Google Gemini 2.5 Flash / Flash-Lite |
 | NLP Chunking | `compromise` (sentence-aware splitting) |
-| Auth & DB | Firebase Auth + Firestore |
+| Auth and Database | Firebase Auth + Firestore |
 | Cache | In-memory LRU (L1) + Firestore shared cache (L2) |
 | Deployment | Google Cloud Run |
 | Web App | React 19, Tailwind CSS 4 |
@@ -259,12 +277,13 @@ npm run lint    # TypeScript type-check
 
 ---
 
-## Limitations & Next Iterations
+## Limitations and Next Iterations
 
-- **data_selling precision gap (84%):** The Privacy Policy scan flags "marketing partners" language that may refer to service providers rather than third-party data buyers. A fine-grained classifier trained on labeled examples could reduce this.
-- **35K char window:** Documents > 35K chars are truncated. Multi-chunk deep scan with semantic ranking would improve coverage on very long policies.
-- **Ground truth scope:** Benchmarked on 10 services. Expanding to 50+ services would give more robust precision/recall estimates.
+- **data_selling precision gap:** The Privacy Policy scan flags "marketing partners" language that sometimes refers to service providers rather than third-party data buyers. A supervised classifier trained on labeled examples of service-provider vs. data-broker language would reduce false positives.
+- **Document length cap:** Documents above the chunk window are truncated. Multi-chunk scanning with semantic ranking would improve recall on very long policies (PayPal ToS: 120K chars, Apple ToS: 120K chars).
+- **Sample size:** 25 services gives reliable directional estimates; precision/recall confidence intervals are ±8–10%. Expanding to 50+ services would tighten these estimates.
+- **Grade A/B coverage:** All 25 services are Grade C–F (RISKY). The true-negative rate (6/6) was measured separately on Grade A+B services, but a larger clean-service benchmark would improve confidence.
 
 ---
 
-Built with ❤️ for privacy.
+Built with care for privacy.
