@@ -1,0 +1,76 @@
+TLDR Shield — Full Battery Scan Results
+Run date: 2026-04-30
+Script: eval/scan_full_battery.py
+Services: 25
+Models: gemini-2.5-flash (primary) + gemini-2.5-flash-lite (corroborator)
+
+==============================================================
+AGGREGATE RESULTS
+==============================================================
+
+BASIC SCAN (single model):
+  Rating accuracy: 22/25
+  Avg precision:   89%
+  Avg recall:      79%
+  Avg latency:     ~12s
+
+DEEP SCAN (ensemble):
+  Rating accuracy: 25/25
+  Avg precision:   94%
+  Avg recall:      93%
+  Avg latency:     ~25s
+
+True Negative Rate (Grade A+B): 6/6
+
+==============================================================
+PER-SERVICE DEEP SCAN RESULTS
+==============================================================
+
+[1]  Signal        Grade A  -> OKAY   P=100% R=100%  (clean: no violations)
+[2]  Wikipedia     Grade A  -> OKAY   P=100% R=100%  (clean: no violations)
+[3]  GitHub        Grade B  -> OKAY   P=100% R=100%  (clean: no violations)
+[4]  ProtonMail    Grade B  -> OKAY   P=100% R=100%  (clean: no violations)
+[5]  DuckDuckGo    Grade B  -> OKAY   P=100% R=100%  (clean: no violations)
+[6]  Brave         Grade B  -> OKAY   P=100% R=100%  (clean: no violations)
+[7]  Spotify       Grade C  -> RISKY  P=67%  R=100%  (over-flagged: data_selling)
+[8]  Apple         Grade C  -> RISKY  P=100% R=100%
+[9]  Microsoft     Grade C  -> RISKY  P=100% R=100%
+[10] Discord       Grade D  -> RISKY  P=100% R=67%   (missed: data_selling — known gap)
+[11] LinkedIn      Grade D  -> RISKY  P=100% R=100%
+[12] PayPal        Grade D  -> RISKY  P=100% R=100%
+[13] Netflix       Grade D  -> RISKY  P=100% R=100%
+[14] TikTok        Grade D  -> RISKY  P=75%  R=100%  (over-flagged: data_selling)
+[15] Zoom          Grade D  -> RISKY  P=100% R=100%
+[16] Epic Games    Grade D  -> RISKY  P=100% R=100%
+[17] Snap          Grade D  -> RISKY  P=100% R=100%
+[18] DoorDash      Grade D  -> RISKY  P=100% R=100%
+[19] Uber          Grade D  -> RISKY  P=100% R=100%
+[20] Google        Grade E  -> RISKY  P=100% R=100%
+[21] Twitch        Grade E  -> RISKY  P=100% R=100%
+[22] Amazon        Grade E  -> RISKY  P=100% R=100%
+[23] Twitter/X     Grade F  -> RISKY  P=100% R=100%
+[24] Reddit        Grade F  -> RISKY  P=100% R=100%
+[25] Meta          Grade F  -> RISKY  P=100% R=100%
+
+==============================================================
+POST-PROCESSING RULES APPLIED
+==============================================================
+
+D1 (ai_training keyword check): cleared GitHub, Twitter/X, TikTok, Amazon (basic)
+D2 (ban-clause prefix):         cleared Google, Netflix, Microsoft
+D3 (scoped transparency):       cleared various
+D4 (feedback clause):           cleared Netflix, Reddit
+D4b (hosting license):          cleared Apple, ProtonMail
+D5 (PP pre-filter):             skipped PP model call for GitHub, Signal, Wikipedia, ProtonMail
+D6 (delinquency clause):        cleared ProtonMail, Snap
+D7 (liability cap check):       cleared Epic Games, DoorDash, Brave
+
+==============================================================
+NOTE
+==============================================================
+
+Raw terminal output from the live scan run is stored here.
+To reproduce: python -X utf8 eval/scan_full_battery.py
+Requires: GEMINI_API_KEY environment variable with a valid key.
+Rate limit: 10 keys x 10 RPM = 100 RPM effective throughput.
+RATE_SLEEP_S=2 between service calls.
