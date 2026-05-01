@@ -167,7 +167,7 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     const scanLane: string[] = [];
     const utilLane: string[] = [];
     
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 10; i++) {
         const sk = (process.env[`GEMINI_SCAN_KEY_${i}`] ?? '').trim();
         const uk = (process.env[`GEMINI_UTIL_KEY_${i}`] ?? '').trim();
         if (sk) scanLane.push(sk);
@@ -327,7 +327,7 @@ app.post('/api/utility/summarize', authMiddleware, async (req, res) => {
     // 1. Build Hybrid Pool with UTILITY Priority
     const scanLane: string[] = [];
     const utilLane: string[] = [];
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 10; i++) {
         const sk = (process.env[`GEMINI_SCAN_KEY_${i}`] ?? '').trim();
         const uk = (process.env[`GEMINI_UTIL_KEY_${i}`] ?? '').trim();
         if (sk) scanLane.push(sk);
@@ -506,13 +506,13 @@ Pillars: ${JSON.stringify(scanDoc.pillars || {}, null, 2).slice(0, 1000)}`;
     try {
         const utilPool = (() => {
             const keys: string[] = [];
-            for (let i = 1; i <= 3; i++) {
+            for (let i = 1; i <= 10; i++) {
                 const k = (process.env[`GEMINI_UTIL_KEY_${i}`] ?? '').trim();
                 if (k) keys.push(k);
             }
             return keys.length > 0 ? keys : (() => {
                 const scanKeys: string[] = [];
-                for (let i = 1; i <= 3; i++) {
+                for (let i = 1; i <= 10; i++) {
                     const k = (process.env[`GEMINI_SCAN_KEY_${i}`] ?? '').trim();
                     if (k) scanKeys.push(k);
                 }
@@ -560,12 +560,12 @@ Return a JSON object with exactly two fields: "subject" (email subject line) and
 
     try {
         const utilPool: string[] = [];
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= 10; i++) {
             const k = (process.env[`GEMINI_UTIL_KEY_${i}`] ?? '').trim();
             if (k) utilPool.push(k);
         }
         if (utilPool.length === 0) {
-            for (let i = 1; i <= 3; i++) {
+            for (let i = 1; i <= 10; i++) {
                 const k = (process.env[`GEMINI_SCAN_KEY_${i}`] ?? '').trim();
                 if (k) utilPool.push(k);
             }
