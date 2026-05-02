@@ -1088,6 +1088,22 @@
   border-color: rgba(244,63,94,0.38);
 }
 
+.tldr-webapp-link {
+  display: block;
+  text-align: center;
+  margin-top: 2px;
+  color: #818cf8;
+  font-size: 11px;
+  font-family: var(--tldr-font-body);
+  text-decoration: none;
+  opacity: 0.75;
+  transition: opacity 0.15s;
+}
+.tldr-webapp-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
 /* ─── Out-of-credits state ───────────────────────────────────────────────── */
 .tldr-oc-body {
   padding: 18px 16px 14px;
