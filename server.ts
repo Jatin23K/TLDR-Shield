@@ -155,24 +155,38 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     const redisKey = `cache:${urlHash || crypto.createHash('sha256').update(text.slice(0, 500)).digest('hex')}`;
     const currentContentHash = crypto.createHash('sha256').update(text.slice(0, 10000)).digest('hex');
 
+    // Quality check for cached results: skip if pillars are empty or TLDR is the old placeholder.
+    // This auto-heals stale caches from before the readability extraction fix (e.g. Discord
+    // was cached as SAFE/100 with 0 pillars because readability grabbed the wrong page section).
+    const isCacheHealthy = (result: any): boolean => {
+        if (!result) return false;
+        const pillars = result.pillars;
+        if (!pillars || Object.keys(pillars).length === 0) return false;
+        if (result.tldr === 'Analysis complete.') return false;
+        return true;
+    };
+
     // FIX: forceRefresh=true skips both cache layers and runs a fresh LLM scan.
-    // Used when a cached result is stale/wrong (e.g. extracted from wrong page section).
     const cachedData = forceRefresh ? null : await getCache(redisKey);
 
-    if (cachedData) {
-        if (cachedData.contentHash === currentContentHash) {
-            console.log('[TLDR Shield] L1 Redis Hit (Credits Consumed)');
+    if (cachedData && cachedData.contentHash === currentContentHash) {
+        if (isCacheHealthy(cachedData.result)) {
+            console.log('[TLDR Shield] L1 Redis Hit');
             return sendAsSSE({ ...cachedData.result, cached: true });
         }
+        console.log('[TLDR Shield] L1 Redis Hit REJECTED (stale/empty pillars) — running fresh scan');
     }
 
     // 4. Shared Cache Check (L2)
     if (!forceRefresh && urlHash) {
         const l2Cache = await getSharedCache(firestoreDb, urlHash);
         if (l2Cache && l2Cache.contentHash === currentContentHash) {
-            console.log('[TLDR Shield] L2 Firestore Hit (Credits Consumed)');
-            setCache(redisKey, l2Cache, 3600).catch(() => {}); // Backfill Redis (non-blocking)
-            return sendAsSSE({ ...l2Cache.result, cached: true });
+            if (isCacheHealthy(l2Cache.result)) {
+                console.log('[TLDR Shield] L2 Firestore Hit');
+                setCache(redisKey, l2Cache, 3600).catch(() => {}); // Backfill Redis (non-blocking)
+                return sendAsSSE({ ...l2Cache.result, cached: true });
+            }
+            console.log('[TLDR Shield] L2 Firestore Hit REJECTED (stale/empty pillars) — running fresh scan');
         }
     }
 
