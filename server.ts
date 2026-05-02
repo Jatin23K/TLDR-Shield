@@ -329,20 +329,27 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
 
         sanitizeCitations(final.pillars);
 
-        // Save and Cache with Content Hash validation
+        // FIX: Send result to client FIRST — before any DB/cache writes.
+        // Previously, a Firestore or Redis failure inside Promise.all would throw,
+        // jump to the catch block, and the result was never sent — leaving the extension
+        // hanging with "No result returned". DB saves are best-effort and must NOT
+        // block the user's response.
+        res.write(`data: ${JSON.stringify(final)}\n\n`);
+        res.end();
+
+        // Save and cache after responding (non-blocking — failures are logged but ignored)
         const cacheObject = { contentHash: currentContentHash, result: final };
-        await Promise.all([
+        Promise.all([
             setCache(redisKey, cacheObject, 3600 * 24),
             setSharedCache(firestoreDb, urlHash || '', cacheObject, tier),
             saveScanRecord(firestoreDb, uid, final, { url, tier, cached: false })
-        ]);
+        ]).catch(saveErr => {
+            console.warn('[TLDR Shield] Non-fatal: cache/DB save failed:', saveErr);
+        });
 
-        res.write(`data: ${JSON.stringify(final)}\n\n`);
-        res.end();
     } catch (err: any) {
         console.error('[TLDR Shield] Pipeline Error:', err.message);
-        // FIX: Wrap refundCredits so a DB failure doesn't prevent the error SSE event from being sent,
-        // which would leave the client hanging and trigger "No result returned" in the extension.
+        // Wrap refundCredits so a DB failure doesn't prevent the error SSE event from being sent.
         try { await refundCredits(firestoreDb, uid, cost); } catch (refundErr) {
             console.warn('[TLDR Shield] Credit refund failed (non-fatal):', refundErr);
         }
