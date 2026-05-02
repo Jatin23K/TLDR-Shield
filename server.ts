@@ -115,7 +115,7 @@ app.post('/api/report', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/analyze', authMiddleware, async (req, res) => {
-    const { text, tier = 'quick', url } = req.body;
+    const { text, tier = 'quick', url, forceRefresh = false } = req.body;
     const uid = (req as any).uid;
 
     if (!text || text.length < 100) {
@@ -155,7 +155,9 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     const redisKey = `cache:${urlHash || crypto.createHash('sha256').update(text.slice(0, 500)).digest('hex')}`;
     const currentContentHash = crypto.createHash('sha256').update(text.slice(0, 10000)).digest('hex');
 
-    const cachedData = await getCache(redisKey);
+    // FIX: forceRefresh=true skips both cache layers and runs a fresh LLM scan.
+    // Used when a cached result is stale/wrong (e.g. extracted from wrong page section).
+    const cachedData = forceRefresh ? null : await getCache(redisKey);
 
     if (cachedData) {
         if (cachedData.contentHash === currentContentHash) {
@@ -165,7 +167,7 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     }
 
     // 4. Shared Cache Check (L2)
-    if (urlHash) {
+    if (!forceRefresh && urlHash) {
         const l2Cache = await getSharedCache(firestoreDb, urlHash);
         if (l2Cache && l2Cache.contentHash === currentContentHash) {
             console.log('[TLDR Shield] L2 Firestore Hit (Credits Consumed)');
