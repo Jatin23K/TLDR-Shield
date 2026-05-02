@@ -800,7 +800,8 @@ function showErrorPanel(errorMsg, pageUrl) {
         return;
       }
       const text = await extractPageText();
-      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: pageUrl || location.href });
+      // forceRefresh: true — bypass server cache so retry always gets a fresh LLM scan
+      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: pageUrl || location.href, forceRefresh: true });
     } catch (err) {
       showErrorPanel('Failed to extract page text. Please refresh the page and try again.', pageUrl);
     }
