@@ -328,6 +328,16 @@ function createTriggerButton() {
           if (expanded && expanded.length > text.length) text = expanded;
         }
       } catch (_) { /* non-fatal */ }
+      // FIX: Guard against empty extraction — catch it early with a friendly message
+      // rather than sending blank text to the server which would return HTTP 400.
+      if (!text || text.length < 100) {
+        setTriggerIdle(btn);
+        showErrorPanel(
+          'Could not extract enough text from this page. Try scrolling to load all content, then scan again. For complex pages, copy-paste the text into the TLDR Shield web app.',
+          location.href
+        );
+        return;
+      }
       lastScanText = text;
       lastScanUrl  = location.href;
       // keepalive port ensures the service worker stays alive for the full scan
@@ -796,9 +806,18 @@ function showErrorPanel(errorMsg, pageUrl) {
     }
   });
 
+  // FIX: Add "Try web app" fallback link so users can paste text manually when extraction fails
+  const webAppLink = document.createElement('a');
+  webAppLink.className = 'tldr-webapp-link';
+  webAppLink.textContent = 'Try the web app \u2192';
+  webAppLink.target = '_blank';
+  webAppLink.rel = 'noopener noreferrer';
+  try { webAppLink.href = TLDR_APP_HOST || 'https://tldr-shield-292798741977.us-central1.run.app'; } catch (_) {}
+
   body.appendChild(iconEl);
   body.appendChild(msgEl);
   body.appendChild(retryBtn);
+  body.appendChild(webAppLink);
 
   const footer = document.createElement('div');
   footer.className = 'tldr-panel-footer';

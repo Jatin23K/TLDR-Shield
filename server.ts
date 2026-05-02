@@ -266,8 +266,27 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
             }
         }));
 
+        // FIX: Normalize quick-scan flat results (no 'pillars') → pillar format.
+        // Quick scan prompt returns {"tldr":"...","ai_training":bool,...} without pillars.
+        // Deep scan returns {"tldr":"...","pillars":{...}}. Both must produce validResults.
+        const PILLAR_KEYS_NORM = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership'];
+        const normalizedResults = results.map(r => {
+            if (!r) return null;
+            if (r.pillars) return r; // deep scan — already structured
+            // Quick scan: flat booleans → convert to pillar format
+            const hasAnyBool = PILLAR_KEYS_NORM.some(k => typeof r[k] === 'boolean');
+            if (!hasAnyBool) return null;
+            const pillars: Record<string, any> = {};
+            for (const key of PILLAR_KEYS_NORM) {
+                if (typeof r[key] === 'boolean') {
+                    pillars[key] = { violation: r[key], citation: r[key] ? 'Flagged by quick analysis' : '[NOT_FOUND]', confidence: 'MEDIUM' };
+                }
+            }
+            return { ...r, pillars };
+        });
+
         // Robust Aggregation (Fix #2)
-        const validResults = results.filter(r => r && r.pillars);
+        const validResults = normalizedResults.filter(r => r && r.pillars);
         if (validResults.length === 0) throw new Error('All analysis blocks failed.');
 
         const aggregatedPillars: any = {};
@@ -285,16 +304,28 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
 
         const { score, rating, deductions } = calculateScoreAndRating(aggregatedPillars, tier, text.length);
         const requestId = crypto.randomUUID();
+
+        // FIX: Build best TLDR — prefer first non-trivial LLM summary, else synthesize from violations.
+        const bestTldr = validResults
+            .map(r => r?.tldr)
+            .find((t: any) => t && t.length > 20 && t !== 'Analysis complete.');
+        const synthesizedTldr = (() => {
+            const violations = Object.entries(aggregatedPillars)
+                .filter(([, p]: any) => p.violation)
+                .map(([k]) => k.replace(/_/g, ' '));
+            if (violations.length === 0) return `This policy scored ${score}/100. No major privacy violations were detected.`;
+            return `This ${rating} policy scored ${score}/100. Privacy concerns found in: ${violations.slice(0, 3).join(', ')}.`;
+        })();
+
         const final = {
             score,
             rating,
             deductions,
             pillars: aggregatedPillars,
-            tldr: validResults[0]?.tldr || 'Analysis complete.',
+            tldr: bestTldr || synthesizedTldr,
             requestId,
             tier
         };
-
 
         sanitizeCitations(final.pillars);
 
@@ -310,9 +341,15 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         res.end();
     } catch (err: any) {
         console.error('[TLDR Shield] Pipeline Error:', err.message);
-        await refundCredits(firestoreDb, uid, cost);
-        res.write(`data: ${JSON.stringify({ error: 'Analysis failed. Credits refunded.' })}\n\n`);
-        res.end();
+        // FIX: Wrap refundCredits so a DB failure doesn't prevent the error SSE event from being sent,
+        // which would leave the client hanging and trigger "No result returned" in the extension.
+        try { await refundCredits(firestoreDb, uid, cost); } catch (refundErr) {
+            console.warn('[TLDR Shield] Credit refund failed (non-fatal):', refundErr);
+        }
+        if (!res.writableEnded) {
+            res.write(`data: ${JSON.stringify({ error: 'Analysis failed. Please try again.' })}\n\n`);
+            res.end();
+        }
     }
 });
 
