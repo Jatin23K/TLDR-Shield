@@ -133,22 +133,34 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         if (!credit.ok) return res.status(402).json(credit);
     }
 
+    // Helper: send a cached/demo result as SSE so background.js can parse it.
+    // Previously these returned res.json() (plain JSON) which the extension could NOT
+    // parse as SSE → stream ended without data.rating → "No result returned".
+    // ALL success responses from /api/analyze must be SSE-format for consistency.
+    const sendAsSSE = (payload: Record<string, any>) => {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+        res.end();
+    };
+
     // 2. Demo Mode Check
     if (url && (demoResults as any)[url]) {
         console.log(`[TLDR Shield] Demo Mode Hit: ${url}`);
-        return res.json({ ...(demoResults as any)[url], cached: true });
+        return sendAsSSE({ ...(demoResults as any)[url], cached: true });
     }
 
     // 3. Persistent Cache Check (L1)
     const redisKey = `cache:${urlHash || crypto.createHash('sha256').update(text.slice(0, 500)).digest('hex')}`;
     const currentContentHash = crypto.createHash('sha256').update(text.slice(0, 10000)).digest('hex');
-    
+
     const cachedData = await getCache(redisKey);
-    
+
     if (cachedData) {
         if (cachedData.contentHash === currentContentHash) {
             console.log('[TLDR Shield] L1 Redis Hit (Credits Consumed)');
-            return res.json({ ...cachedData.result, cached: true });
+            return sendAsSSE({ ...cachedData.result, cached: true });
         }
     }
 
@@ -157,8 +169,8 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         const l2Cache = await getSharedCache(firestoreDb, urlHash);
         if (l2Cache && l2Cache.contentHash === currentContentHash) {
             console.log('[TLDR Shield] L2 Firestore Hit (Credits Consumed)');
-            await setCache(redisKey, l2Cache, 3600); // Backfill Redis
-            return res.json({ ...l2Cache.result, cached: true });
+            setCache(redisKey, l2Cache, 3600).catch(() => {}); // Backfill Redis (non-blocking)
+            return sendAsSSE({ ...l2Cache.result, cached: true });
         }
     }
 
