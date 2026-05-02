@@ -252,7 +252,13 @@ function extractWithReadability() {
     }).parse();
     if (!article?.textContent) return null;
     const text = article.textContent.trim();
-    return text.length >= 800 ? text : null;
+    if (text.length < 800) return null;
+    // Guard: if readability grabbed a tiny slice of a large page,
+    // it likely picked the wrong section (e.g. Apple App Store clause
+    // at the bottom of Discord ToS). Fall back so body.innerText is used.
+    const bodyLen = document.body.innerText?.length ?? 0;
+    if (bodyLen > 8000 && text.length < bodyLen * 0.25) return null;
+    return text;
   } catch (_) {
     return null;
   }
