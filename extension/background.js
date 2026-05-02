@@ -308,8 +308,10 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
       // Also broadcast to side panel (may not be open — ignore errors)
       _browser.runtime.sendMessage({ type: 'ANALYSIS_RESULT', data: result }).catch(() => {});
     } else {
-      _browser.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: 'No result returned' }).catch(() => {});
-      _browser.runtime.sendMessage({ type: 'ANALYSIS_RESULT', error: 'No result returned' }).catch(() => {});
+      // FIX: Descriptive error message instead of bare "No result returned"
+      const noResultMsg = 'The scan completed but returned no data. The page text may be too short or the server is temporarily unavailable. Please refresh the page and try again.';
+      _browser.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: noResultMsg }).catch(() => {});
+      _browser.runtime.sendMessage({ type: 'ANALYSIS_RESULT', error: noResultMsg }).catch(() => {});
     }
 
   } catch (error) {
