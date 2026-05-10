@@ -1,4 +1,4 @@
-name: Auto-Deploy to Cloud Run
+name: Auto-Deploy to Render
 
 on:
   push:
@@ -17,7 +17,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Cloud Run
+    name: Deploy to Render
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -40,40 +40,14 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
-
-      - name: Build Docker image
+      - name: Trigger Render Deploy
         run: |
-          docker build -t us-central1-docker.pkg.dev/gen-lang-client-0199678316/cloud-run-source-deploy/tldr-shield:${{ github.sha }} .
-
-      - name: Push Docker image
-        run: |
-          docker push us-central1-docker.pkg.dev/gen-lang-client-0199678316/cloud-run-source-deploy/tldr-shield:${{ github.sha }}
-
-      - name: Deploy to Cloud Run
-        uses: google-github-actions/deploy-cloudrun@v2
-        with:
-          service: tldr-shield
-          region: us-central1
-          image: us-central1-docker.pkg.dev/gen-lang-client-0199678316/cloud-run-source-deploy/tldr-shield:${{ github.sha }}
-          project_id: gen-lang-client-0199678316
-          # --timeout=120: Cloud Run default is 60s which is less than the server's
-          # 75s deep-scan global timeout — Cloud Run would kill the request first.
-          flags: '--allow-unauthenticated --timeout=120'
-          env_vars: |
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-            GEMINI_API_KEY_2=${{ secrets.GEMINI_API_KEY_2 }}
+          curl -X POST "https://api.render.com/deploy/srv-${{ secrets.RENDER_SERVICE_ID }}?key=${{ secrets.RENDER_DEPLOY_KEY }}"
 
       - name: Verify deployment
         run: |
-          sleep 15
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://tldr-shield-292798741977.us-central1.run.app/health)
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://tldr-shield.onrender.com/health)
           if [ "$STATUS" != "200" ]; then
             echo "❌ Health check failed — status $STATUS"
             exit 1
