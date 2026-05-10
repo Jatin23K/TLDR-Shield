@@ -1,14 +1,12 @@
 # Deployment Configs
 
-## Active deployment: Google Cloud Run
+## Active deployment: Render
 
-```bash
-npm run deploy
-# Runs: gcloud run deploy tldr-shield --source . --region us-central1 --project tldr-493003 --allow-unauthenticated
-```
+Service: `tldr-shield`
+URL: `https://tldr-shield.onrender.com`
 
-The `predeploy` script runs lint → build → golden tests → quick eval before deploying.
-Cloud Run uses Application Default Credentials — no service account file needed.
+Render auto-deploys on every push to `master` via Docker.
+All environment variables are set in the Render dashboard.
 
 ---
 
