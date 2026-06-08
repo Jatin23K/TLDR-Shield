@@ -181,7 +181,7 @@ VIOLATIONS TO DETECT:
 - transparency: Deliberately self-contradictory language — policy says minimal data use then immediately permits unlimited use. Vague-but-not-contradictory = no violation. NOT a contradiction: opt-out rights with limited scope, clauses that apply only in specific jurisdictions, or cross-references to other documents. Requires two statements that directly oppose each other.
 - data_retention: An EXPLICIT retention period over 1 year (12 months) post-account-deletion, regardless of stated reason. Silence on retention timelines is NOT a violation — only flag when an explicit duration over 12 months appears verbatim in the text.
 - content_ownership: Worldwide sublicensable license "for any purpose" beyond displaying content on the platform (look for: sublicense, royalty-free, for any purpose, modify/adapt/distribute). NOT a violation: "license to host/display on our platform" — platform-scoped licenses are required to operate the service. NOT a violation: licensing of feedback, suggestions, ideas, or comments voluntarily submitted. Only flag when the license applies to user-generated content published on the platform (posts, photos, videos, files, messages).
-- dark_patterns: Liability cap <$1000, class action waiver, forced individual arbitration, statute of limitations <2 years.
+- dark_patterns: REQUIRES at least one of: (1) forced MANDATORY individual arbitration clause binding ALL disputes, (2) explicit class action lawsuit waiver, (3) statute of limitations under 2 years. A LIABILITY CAP ALONE (e.g. $100, $500, $1000) WITHOUT arbitration or class action waiver is NOT a dark pattern — many free services include standard liability limitations. Do NOT flag a service purely because of a low liability cap.
 
 Output ONLY valid JSON — no markdown, no extra text:
 {"tldr":"2-sentence plain-English verdict. Name the biggest risk if any.","ai_training":boolean,"data_selling":boolean,"transparency":boolean,"data_retention":boolean,"content_ownership":boolean,"dark_patterns":boolean}"""
@@ -195,7 +195,7 @@ Analyze the legal text against these privacy pillars:
 3. transparency     — Language that is SELF-CONTRADICTORY within the same policy. NOT a contradiction: opt-out rights with limited scope, clauses that apply only in specific jurisdictions, or cross-references to other documents. Requires two statements in the same paragraph that directly oppose each other.
 4. data_retention   — An EXPLICIT retention period over 1 year (12 months) post-account-deletion. Silence on retention is NOT a violation.
 5. content_ownership — Broad IP rights beyond what is needed to show your content on the platform. NOT a violation: licensing of feedback, suggestions, ideas, or comments voluntarily submitted. Only flag when the license applies to user-generated content published on the platform (posts, photos, videos, files, messages).
-6. dark_patterns    — Liability cap <$1000, class action waiver, forced individual arbitration, statute of limitations <2 years.
+6. dark_patterns    — REQUIRES at least one of: (1) forced MANDATORY individual arbitration binding ALL disputes, (2) explicit class action waiver, (3) statute of limitations under 2 years. A LIABILITY CAP ALONE without arbitration or class action waiver is NOT a violation. Do NOT flag a service purely because of a low liability cap — many free services cap liability at a nominal amount as standard legal practice.
 
 CITATION RULE — VERBATIM COPY-PASTE ONLY:
 The 'citation' field must be a verbatim copy-paste of 15-60 consecutive words taken directly from the text.
@@ -261,8 +261,9 @@ def fetch_tos_text(url: str, max_chars: int = 120000) -> str:
         ),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://www.google.com/",
     }
-    r = requests.get(url, headers=headers, timeout=20)
+    r = requests.get(url, headers=headers, timeout=25)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
     for tag in soup(["script", "style", "nav", "header", "footer", "noscript"]):
@@ -403,7 +404,7 @@ def post_process_pillars(pillars: dict) -> dict:
         incoming_markers = ["you send", "send us", "send to us", "communicate to us",
                             "you submit", "submit to us", "provided to us", "sent to us",
                             "communication you", "you communicate"]
-        published_words  = ["post", "photo", "video", "image", "file", "upload", "creat"]
+        published_words  = ["post", "photo", "video", "image", "file", "upload", "creat", "stream", "broadcast"]
 
         has_feedback  = any(w in citation for w in feedback_words)
         has_incoming  = any(w in citation for w in incoming_markers)
@@ -411,11 +412,39 @@ def post_process_pillars(pillars: dict) -> dict:
             any(w in citation for w in published_words) or
             bool(re.search(r'\bcontents?\b', citation))
         )
+        # D4b: perpetual + irrevocable + non-exclusive without any UGC markers
+        # → utility/feedback license on a service with no UGC model (e.g. VPNs, tools)
+        is_utility_license = (
+            "perpetual" in citation and
+            "non-exclusive" in citation and
+            "irrevocable" in citation and
+            not has_published
+        )
 
         if (has_feedback or has_incoming) and not has_published:
             reason = "feedback" if has_feedback else "incoming-submission"
             print(f"     🔧 D4: content_ownership cleared — {reason} clause: \"{citation[:60]}\"")
             processed["content_ownership"] = {**co, "violation": False, "confidence": "MEDIUM"}
+        elif is_utility_license:
+            print(f"     🔧 D4b: content_ownership cleared — utility perpetual license (no UGC markers): \"{citation[:60]}\"")
+            processed["content_ownership"] = {**co, "violation": False, "confidence": "MEDIUM"}
+
+    # D6: dark_patterns — scoped/conditional arbitration is NOT general mandatory arbitration.
+    # Arbitration limited to a specific violation type (e.g. undisclosed paid editing) ≠ dark pattern.
+    dp = processed.get("dark_patterns", {})
+    if dp.get("violation"):
+        citation = (dp.get("citation") or "").lower()
+        scoped_arbitration = [
+            "for violations of this section",
+            "related to undisclosed paid",
+            "solely for disputes arising from",
+            "only in connection with",
+            "limited to claims arising from",
+            "solely in connection with",
+        ]
+        if any(w in citation for w in scoped_arbitration):
+            print(f"     🔧 D6: dark_patterns cleared — arbitration scoped to specific violations: \"{citation[:60]}\"")
+            processed["dark_patterns"] = {**dp, "violation": False, "confidence": "MEDIUM"}
 
     return processed
 

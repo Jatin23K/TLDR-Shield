@@ -10,6 +10,12 @@
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
+// ── Circuit Breaker State ──
+// Stores the timestamp (ms) when a key will become available again after a 429 rate limit.
+const circuitBreakers: Record<string, number> = {};
+// Stores the round-robin index for each distinct key pool (derived by joining the keys).
+const poolIndices: Record<string, number> = {};
+
 export async function callGemini(
     systemPrompt: string,
     userText: string,
@@ -36,16 +42,32 @@ export async function callGemini(
         ],
     };
 
-    let lastError: any = null;
+    const poolKey = keyPool.join(',');
+    if (typeof poolIndices[poolKey] !== 'number') {
+        poolIndices[poolKey] = 0;
+    }
 
-    // PRIORITY-BASED FAILOVER:
-    // We iterate through the pool in the exact order provided.
-    // The caller passes [Lane1_Keys, Lane2_Keys] for scans, 
-    // or [Lane2_Keys, Lane1_Keys] for utilities.
+    let lastError: any = null;
+    const now = Date.now();
+
+    // ROUND-ROBIN CIRCUIT BREAKER:
+    // We attempt to find a healthy key up to N times (where N is the pool size).
     for (let attempt = 0; attempt < keyPool.length; attempt++) {
-        const apiKey = keyPool[attempt];
-        const url = `${GEMINI_BASE}/models/${modelId}:generateContent?key=${apiKey}`;
+        // 1. Get current index and select the key
+        const currentIndex = poolIndices[poolKey];
+        const apiKey = keyPool[currentIndex];
         
+        // 2. Advance the round-robin index for the next request
+        poolIndices[poolKey] = (currentIndex + 1) % keyPool.length;
+
+        // 3. Check circuit breaker status
+        const openUntil = circuitBreakers[apiKey] || 0;
+        if (now < openUntil) {
+            lastError = new Error(`All keys rate limited (circuit open)`);
+            continue; // Skip this key, the circuit is open (in time-out)
+        }
+
+        const url = `${GEMINI_BASE}/models/${modelId}:generateContent?key=${apiKey}`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -59,8 +81,11 @@ export async function callGemini(
             clearTimeout(timeout);
 
             if (res.status === 429 || res.status >= 500) {
-                lastError = new Error(`Gemini key ${attempt} returned ${res.status}`);
-                continue;
+                // Trip the circuit for 60 seconds
+                circuitBreakers[apiKey] = Date.now() + 60000;
+                lastError = new Error(`Gemini key returned ${res.status}. Circuit tripped for 60s.`);
+                console.warn(`[CircuitBreaker] Key tripped (${res.status}). Timeout applied.`);
+                continue; // Move to the next key in the pool
             }
 
             if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
@@ -81,7 +106,8 @@ export async function callGemini(
             continue;
         }
     }
-    throw lastError;
+    
+    throw lastError || new Error('All keys failed or are currently rate limited.');
 }
 
 export async function callGeminiEnsemble(

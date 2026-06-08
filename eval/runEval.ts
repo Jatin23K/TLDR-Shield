@@ -43,11 +43,9 @@ const GEMINI_KEYS: string[] = (process.env.GEMINI_API_KEYS ?? '')
   .split(',').map(s => s.trim()).filter(Boolean).length > 0
     ? (process.env.GEMINI_API_KEYS ?? '').split(',').map(s => s.trim()).filter(Boolean)
     : ([
-        process.env.GEMINI_API_KEY,
-        process.env.GEMINI_API_KEY_2,
-        process.env.GEMINI_API_KEY_3,
-        process.env.GEMINI_API_KEY_4,
-        process.env.GEMINI_API_KEY_5,
+        process.env.GEMINI_SCAN_KEY_1,
+        process.env.GEMINI_SCAN_KEY_2,
+        process.env.GEMINI_SCAN_KEY_3
       ].filter((k): k is string => Boolean(k?.trim())).map(k => k.trim()));
 
 const NIM_KEYS = [
@@ -71,6 +69,10 @@ console.log(`[eval] LLM backend: ${USE_GEMINI ? describeGeminiConfig() : 'NIM (f
 process.stderr.write(`[eval] backend=${USE_GEMINI ? 'GEMINI' : 'NIM'} | gemini_keys=${GEMINI_KEYS.length} | nim_keys=${NIM_KEYS.length}\n`);
 
 // ─── Gemini call (native fetch) ───────────────────────────────────────────────
+// ── Eval Circuit Breaker State ──
+const evalCircuitBreakers: Record<string, number> = {};
+let evalRoundRobinIndex = 0;
+
 async function callGeminiEval(
   systemPrompt: string,
   userText: string,
@@ -93,12 +95,39 @@ async function callGeminiEval(
     ],
   };
 
-  let lastError: Error = new Error('No Gemini keys configured');
-  for (let keyIdx = 0; keyIdx < GEMINI_KEYS.length; keyIdx++) {
-    const apiKey = GEMINI_KEYS[keyIdx];
-    const url = `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  if (GEMINI_KEYS.length === 0) throw new Error('No Gemini keys configured');
+
+  // Infinite retry loop with backoff for 429s
+  while (true) {
+    const now = Date.now();
+    let availableKey = null;
+    let currentIndex = -1;
+
+    // 1. Find next available key
+    for (let i = 0; i < GEMINI_KEYS.length; i++) {
+      currentIndex = evalRoundRobinIndex;
+      evalRoundRobinIndex = (currentIndex + 1) % GEMINI_KEYS.length;
+      const apiKey = GEMINI_KEYS[currentIndex];
+      
+      if (now >= (evalCircuitBreakers[apiKey] || 0)) {
+        availableKey = apiKey;
+        break;
+      }
+    }
+
+    // 2. If all keys tripped, wait for the soonest one to unlock
+    if (!availableKey) {
+      const soonestUnlock = Math.min(...Object.values(evalCircuitBreakers));
+      const waitTime = Math.max(1000, soonestUnlock - Date.now());
+      process.stderr.write(`\n[eval] All keys tripped (429). Sleeping ${Math.ceil(waitTime / 1000)}s...`);
+      await new Promise(r => setTimeout(r, waitTime));
+      continue;
+    }
+
+    const url = `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent?key=${availableKey}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -107,27 +136,30 @@ async function callGeminiEval(
         signal: controller.signal,
       });
       clearTimeout(timeout);
+
+      // 3. Trip circuit on rate limit
       if (res.status === 429 || res.status === 503) {
-        lastError = new Error(`Gemini key ${keyIdx + 1} HTTP ${res.status}`);
-        console.warn(`[eval] Gemini key ${keyIdx + 1}/${GEMINI_KEYS.length} returned ${res.status} — waiting 2s then trying next key`);
-        await new Promise(r => setTimeout(r, 2000));
-        continue;
+        evalCircuitBreakers[availableKey] = Date.now() + 60000; // 60s timeout
+        process.stderr.write(`\n[eval] Key ${currentIndex + 1}/${GEMINI_KEYS.length} tripped (${res.status}). `);
+        continue; // Immediately try the next key in the pool
       }
+
       if (!res.ok) {
         const preview = await res.text().catch(() => '');
         throw new Error(`Gemini HTTP ${res.status}: ${preview.slice(0, 200)}`);
       }
+
       const json: any = await res.json();
       const parts: any[] = json?.candidates?.[0]?.content?.parts ?? [];
       const text: string = parts.filter((p: any) => !p.thought).pop()?.text ?? '{}';
       return text;
+
     } catch (err: any) {
       clearTimeout(timeout);
       if (err?.name === 'AbortError') throw new Error('Gemini request timed out');
       throw err;
     }
   }
-  throw lastError;
 }
 
 // ─── NIM fallback call ────────────────────────────────────────────────────────
@@ -362,9 +394,8 @@ async function runTier(tier: Tier, rows: DatasetRow[], darkPatterns: boolean) {
   const perCase: Array<any> = [];
 
   // Inter-case delay: prevents 429 bursts when running 30 cases back-to-back.
-  // Gemini free tier: 30 RPM = 1 req/2s → use 2100ms to be safe.
-  // NIM fallback: Deep needs 2s, Quick needs 500ms.
-  const INTER_CASE_DELAY_MS = USE_GEMINI ? 2100 : (tier === 'deep' ? 2000 : 500);
+  // Gemini free tier limits are strict on new keys.
+  const INTER_CASE_DELAY_MS = USE_GEMINI ? 4500 : (tier === 'deep' ? 2000 : 500);
 
   for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
     if (rowIdx > 0) await new Promise(r => setTimeout(r, INTER_CASE_DELAY_MS));
@@ -476,7 +507,7 @@ async function main() {
   const datasetArg = process.argv.find((a) => a.startsWith("--dataset="))?.split("=")[1];
   const datasetPath = datasetArg
     ? path.resolve(process.cwd(), datasetArg)
-    : path.join(process.cwd(), "eval", "dataset.jsonl");
+    : path.join(process.cwd(), "eval", "dataset_train.jsonl");
   console.log(`[eval] Dataset path: ${datasetPath}`);
   const lines = fs.readFileSync(datasetPath, "utf8").split(/\r?\n/).filter(Boolean);
   const rows: DatasetRow[] = lines.map((l) => JSON.parse(l));
