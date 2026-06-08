@@ -1010,6 +1010,11 @@
   color: var(--tldr-text-sub);
 }
 
+.tldr-expand-toggle--static {
+  cursor: default;
+  pointer-events: none;
+}
+
 .tldr-expand-chevron {
   display: inline-block;
   width: 14px;
