@@ -28,7 +28,7 @@ window.addEventListener('message', (e) => {
     
     const allowedOrigins = new Set([
       trustedOrigin,
-      'https://tldr-shield-292798741977.us-central1.run.app'
+      'https://tldr-shield.onrender.com'
     ]);
     
     if (!allowedOrigins.has(e.origin)) return;

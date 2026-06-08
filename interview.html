@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TLDR Shield: Interview Masterclass</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #09090b; /* Zinc 950 */
+            color: #f4f4f5; /* Zinc 100 */
+            line-height: 1.6;
+        }
+        h1, h2, h3, h4 {
+            font-family: 'Inter', sans-serif;
+            letter-spacing: -0.02em;
+        }
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .gradient-text {
+            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .card {
+            background-color: #18181b; /* Zinc 900 */
+            border: 1px solid #27272a; /* Zinc 800 */
+            border-radius: 0.75rem;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            border-color: #3f3f46;
+        }
+        .tag-red { background-color: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); }
+        .tag-green { background-color: rgba(34, 197, 94, 0.1); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.2); }
+        .tag-blue { background-color: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.2); }
+    </style>
+</head>
+<body class="p-8 md:p-16 max-w-6xl mx-auto">
+
+    <!-- Header -->
+    <header class="mb-16 border-b border-zinc-800 pb-8">
+        <div class="flex items-center space-x-4 mb-4">
+            <span class="px-3 py-1 text-xs font-bold uppercase tracking-widest tag-blue rounded-full">Confidential / Interview Prep</span>
+        </div>
+        <h1 class="text-5xl md:text-6xl font-extrabold mb-4">TLDR Shield <span class="gradient-text">Masterclass</span></h1>
+        <p class="text-xl text-zinc-400 max-w-3xl">This document contains the exact phrasing and technical reasoning required to dominate a Data Science / MLE interview. Do not memorize it. Understand the engineering logic behind every decision.</p>
+    </header>
+
+    <!-- Section 1: The Elevator Pitch -->
+    <section class="mb-16">
+        <h2 class="text-3xl font-bold mb-6 text-zinc-100 flex items-center">
+            <span class="text-blue-500 mr-3">01.</span> The 30-Second Elevator Pitch
+        </h2>
+        <div class="card p-8">
+            <p class="text-lg text-zinc-300 italic mb-4">"If an interviewer asks: 'Tell me about TLDR Shield', say this verbatim:"</p>
+            <blockquote class="border-l-4 border-blue-500 pl-6 text-zinc-200 font-medium">
+                "TLDR Shield is an automated consumer protection pipeline that extracts and classifies legal privacy violations. I built an <strong class="text-blue-400">Ensemble LLM architecture</strong> using Gemini Flash and Flash-Lite to analyze complex legal jargon. To prove it worked, I built an automated Evaluation Suite that mathematically proved <strong class="text-green-400">94% Precision</strong> and <strong class="text-green-400">93% Recall</strong> against a 25-document Golden Dataset.<br><br>
+                Because API rate limits would crash the system in production, I engineered a backend <strong class="text-blue-400">Round-Robin Circuit Breaker</strong> to distribute load and gracefully handle timeouts, coupled with an L2 Redis caching layer to guarantee sub-second latency for end users."
+            </blockquote>
+        </div>
+    </section>
+
+    <!-- Section 2: Data Science / Modeling -->
+    <section class="mb-16">
+        <h2 class="text-3xl font-bold mb-6 text-zinc-100 flex items-center">
+            <span class="text-purple-500 mr-3">02.</span> The Science (Model & Evaluation)
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <div class="card p-6">
+                <h3 class="text-xl font-bold mb-3">The Ensemble AND-Gate (Precision Focus)</h3>
+                <p class="text-zinc-400 mb-4">LLMs hallucinate (misinterpret) legal text constantly. If you rely on one model, you get a massive amount of False Positives.</p>
+                <ul class="space-y-3 text-sm text-zinc-300">
+                    <li><strong class="text-zinc-100">The Logic:</strong> Run a Primary model and Corroborator model simultaneously.</li>
+                    <li><strong class="text-zinc-100">The Null Hypothesis:</strong> The company is innocent.</li>
+                    <li><strong class="text-zinc-100">The VETO:</strong> If Model A says "UNSAFE" but Model B says "SAFE", Model B vetoes. The system defaults to SAFE.</li>
+                    <li><strong class="text-zinc-100">The "Why":</strong> We intentionally sacrifice a tiny bit of Recall to guarantee 94% Precision. We must never falsely accuse an innocent company.</li>
+                </ul>
+            </div>
+
+            <div class="card p-6">
+                <h3 class="text-xl font-bold mb-3">The Confusion Matrix</h3>
+                <p class="text-zinc-400 mb-4">How the system deals with real-world predictions vs reality.</p>
+                <ul class="space-y-3 text-sm text-zinc-300">
+                    <li><span class="tag-green px-2 py-0.5 rounded text-xs mr-2">True Positive</span> Catching a company explicitly saying "We sell your data".</li>
+                    <li><span class="tag-red px-2 py-0.5 rounded text-xs mr-2">False Positive</span> <em>(The Hallucination)</em> Accusing an innocent company. Crushed by the Ensemble AND-Gate.</li>
+                    <li><span class="tag-green px-2 py-0.5 rounded text-xs mr-2">True Negative</span> Accurately validating an innocent company's policy.</li>
+                    <li><span class="tag-red px-2 py-0.5 rounded text-xs mr-2">False Negative</span> <em>(The Missed Threat)</em> Missing a complex violation. Fixed via NLP Chunking and Targeted Co-Scanning.</li>
+                </ul>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Section 3: Data Engineering -->
+    <section class="mb-16">
+        <h2 class="text-3xl font-bold mb-6 text-zinc-100 flex items-center">
+            <span class="text-green-500 mr-3">03.</span> The Engineering (Fault Tolerance)
+        </h2>
+        <div class="space-y-6">
+            
+            <div class="card p-6 border-l-4 border-green-500">
+                <h3 class="text-xl font-bold mb-2">High-Concurrency Fault Tolerance (The Circuit Breaker)</h3>
+                <p class="text-zinc-400 mb-4">Free tier APIs have a 15 RPM limit per IP. A naive "waterfall" loop hammers the first key, fails, and gives every user a massive hidden latency penalty.</p>
+                <div class="bg-zinc-950 p-4 rounded-lg code-font text-sm text-zinc-300">
+                    <span class="text-green-400">1. Load Balancing:</span> Requests distribute evenly (Key 1 → Key 2 → Key 3). Keys stay cool.<br>
+                    <span class="text-yellow-400">2. Instant Tripwire:</span> If Key 2 hits a 429 Rate Limit, it is marked DEAD and put in a 60-second time-out.<br>
+                    <span class="text-blue-400">3. Latency Protection:</span> The next user skips Key 2 entirely. Zero failover delay.<br>
+                    <span class="text-red-400">4. Fail Fast:</span> If all keys trip, throw a 503 error instantly instead of hanging the user's browser.
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold mb-2">Semantic Chunking ("Lost in the Middle")</h3>
+                    <p class="text-zinc-400 text-sm">Even with massive 1M+ token context windows, LLMs suffer from "Lost in the Middle" syndrome on huge documents. We use the <code>compromise</code> NLP library to chunk 25,000-word policies into sentence-aware blocks, forcing the LLM to give 100% attention to every paragraph.</p>
+                </div>
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold mb-2">L2 Caching (Bypassing the LLM)</h3>
+                    <p class="text-zinc-400 text-sm">If User A scans Netflix today, the JSON result is saved in Firestore. If User B scans Netflix tomorrow, the backend returns the cached result in 50ms. We completely bypass the LLM, the API limits, and the UI extraction chaos.</p>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Section 4: Frontend / DOM Extraction -->
+    <section class="mb-16">
+        <h2 class="text-3xl font-bold mb-6 text-zinc-100 flex items-center">
+            <span class="text-orange-500 mr-3">04.</span> Frontend Data Extraction (The Wild West)
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <div class="card p-6">
+                <h3 class="text-xl font-bold mb-3 text-orange-400">DOM Settlement (The SPA Problem)</h3>
+                <p class="text-zinc-400 text-sm mb-4">Modern React/Next.js apps use "Skeleton Loaders" while fetching data. If you scrape on page load, you extract zero words. <strong>Solution:</strong> The extension forces a "DOM Settlement" period, waiting for the skeleton window to disappear and the actual text to render before extracting.</p>
+            </div>
+
+            <div class="card p-6">
+                <h3 class="text-xl font-bold mb-3 text-orange-400">Mozilla Readability Filter</h3>
+                <p class="text-zinc-400 text-sm mb-4">Scraping raw `document.body` results in extracting 3,000 words of garbage (cookie banners, sidebars, nav menus). <strong>Solution:</strong> We use the <code>@mozilla/readability</code> algorithm to mathematically analyze the DOM tree and strip away structural noise, leaving only pristine article text.</p>
+            </div>
+
+            <div class="card p-6 md:col-span-2 border-t-4 border-orange-500">
+                <h3 class="text-xl font-bold mb-3">The "Co-Scan" (Fixing False Negatives)</h3>
+                <p class="text-zinc-400 text-sm mb-3">Companies do not put "Data Selling" clauses in their Terms of Service (ToS); they hide them in the Privacy Policy. If we only scan the ToS, we get massive False Negatives.</p>
+                <p class="text-zinc-300 text-sm font-medium bg-zinc-800 p-3 rounded">
+                    <strong>Solution:</strong> When scanning a ToS, the extension silently scans the DOM for a hyperlink to the Privacy Policy. It automatically fetches the HTML of the Privacy Policy in the background, stitches the two documents together, and sends a single combined payload to the backend. The Ensemble Model evaluates BOTH documents simultaneously.
+                </p>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="text-center text-zinc-500 text-sm mt-16 pb-8 border-t border-zinc-800 pt-8">
+        <p>Built for the C.O.R.E. Applied Data Science Portfolio.</p>
+        <p class="mt-2">Be brutal. Be logical. Defend your metrics.</p>
+    </footer>
+
+</body>
+</html>
