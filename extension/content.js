@@ -10,14 +10,9 @@
 // They export all shared functions/constants via window.TLDRShield namespace.
 
 // â”€â”€ Re-import from namespace (set by detection.js + extraction.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const {
-  SIGNALS, CONFIDENCE_THRESHOLD, TLDR_DEFAULT_API_BASE,
-  getReportUrl, LEGAL_URL_PATTERNS, LEGAL_KEYWORDS, BLOCKED_HOSTS,
-  COOKIE_BANNER_SELECTORS, TLDR_APP_HOST,
-  isBlockedHost, hasLegalKeyword, computeConfidence,
-  SEMANTIC_SELECTORS, cleanText, sleep,
-  extractPageText, extractPolicySuite, discoverLegalSuite,
-} = window.TLDRShield;
+// All constants/functions from detection.js and extraction.js are already in scope
+// (shared content script scope). Only destructure items NOT declared at top-level there.
+const { extractPageText, extractPolicySuite } = window.TLDRShield;
 
 
 // â”€â”€ SHADOW DOM UI ISOLATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1221,44 +1216,16 @@ function showResultPanel(data) {
 
   // â”€â”€ Pillars (Deep scan only) â”€â”€
   if (data.pillars && Object.keys(data.pillars).length > 0) {
-    // Expandable toggle row
-    let deepExpanded = false;
+    // Privacy Pillars — static header, always visible, no collapse
+    const pillarsHeader = document.createElement('div');
+    pillarsHeader.className = 'tldr-expand-toggle tldr-expand-toggle--static';
+    const pillarsHeaderLabel = document.createElement('span');
+    pillarsHeaderLabel.textContent = 'Privacy Pillars';
+    pillarsHeader.appendChild(pillarsHeaderLabel);
+    panel.appendChild(pillarsHeader);
 
-    const expandToggle = document.createElement('div');
-    expandToggle.className = 'tldr-expand-toggle';
-    const expandLabel = document.createElement('span');
-    expandLabel.textContent = 'Privacy Pillars';
-    const chevron = document.createElement('span');
-    chevron.className = 'tldr-expand-chevron';
-    chevron.setAttribute('aria-hidden', 'true');
-    // Chevron SVG (down arrow)
-    const chevSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    chevSvg.setAttribute('width', '14');
-    chevSvg.setAttribute('height', '14');
-    chevSvg.setAttribute('viewBox', '0 0 14 14');
-    chevSvg.setAttribute('fill', 'none');
-    const chevPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    chevPath.setAttribute('d', 'M3 5l4 4 4-4');
-    chevPath.setAttribute('stroke', 'currentColor');
-    chevPath.setAttribute('stroke-width', '1.5');
-    chevPath.setAttribute('stroke-linecap', 'round');
-    chevPath.setAttribute('stroke-linejoin', 'round');
-    chevSvg.appendChild(chevPath);
-    chevron.appendChild(chevSvg);
-    expandToggle.appendChild(expandLabel);
-    expandToggle.appendChild(chevron);
-
-    // Expandable wrapper
     const expandWrapper = document.createElement('div');
-    expandWrapper.className = 'tldr-expandable-content';
-
-    expandToggle.addEventListener('click', () => {
-      deepExpanded = !deepExpanded;
-      expandWrapper.classList.toggle('expanded', deepExpanded);
-      chevron.classList.toggle('expanded', deepExpanded);
-    });
-
-    panel.appendChild(expandToggle);
+    expandWrapper.className = 'tldr-expandable-content expanded';
     panel.appendChild(expandWrapper);
 
     const pillarsEl = document.createElement('div');

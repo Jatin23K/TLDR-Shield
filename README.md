@@ -153,7 +153,7 @@ Three systematic failure modes required non-model solutions:
 
 ## System Architecture
 
-```
+```text
 ┌────────────────────────── Browser (Chrome / Firefox) ──────────────────────────┐
 │                                                                                  │
 │  content.js            background.js (SW)         popup.html / popup.js         │
@@ -166,30 +166,32 @@ Three systematic failure modes required non-model solutions:
 └────────────────────────────────┬──┬──────────────────────────────────────────────┘
                                  │  │ SSE
                     ┌────────────▼──┴──────────────────────────────────┐
-                    │        Express Backend  (Google Cloud Run)        │
-                    │                                                    │
-                    │  1. Firebase Auth token verify                    │
-                    │  2. Credit deduction (Firestore transaction)      │
-                    │  3. L1 in-memory LRU cache lookup                 │
-                    │  4. L2 Firestore shared_cache lookup              │
-                    │  5. Sentence-aware chunking (compromise NLP)      │
-                    │  6. Privacy Policy co-scan (data_selling)         │
-                    │  7. LLM inference — Flash primary                 │
-                    │  8. LLM corroboration — Flash-Lite ensemble       │
-                    │  9. Ensemble merge (HIGH confidence gate)         │
-                    │  10. Post-processing validation (D1–D7 rules)     │
-                    │  11. Citation grounding + JSON extraction         │
-                    │  12. Aggregation + score computation              │
-                    │  13. Write to L1 + L2 cache                      │
-                    │  14. SSE stream result to extension               │
-                    └───────────────────────────────────────────────────┘
+                    │            Express Backend  (Render)             │
+                    │                                                  │
+                    │  1. Firebase Auth token verify                   │
+                    │  2. Credit deduction (Firestore)                 │
+                    │  3. L1 in-memory + L2 Firestore Cache            │
+                    │  4. Sentence-aware chunking (compromise)         │
+                    │  5. ROUND-ROBIN CIRCUIT BREAKER (API Router)     │ ◀── Fault Tolerance
+                    │  6. LLM inference — Flash primary                │
+                    │  7. LLM corroboration — Flash-Lite ensemble      │
+                    │  8. Ensemble merge (HIGH confidence gate)        │
+                    │  9. Post-processing validation (D1–D7)           │
+                    │ 10. Aggregation + SSE stream result              │
+                    └──────────────────────────────────────────────────┘
                                          │
-                     ┌────────────────────▼──────────────────────────────┐
+                     ┌───────────────────▼───────────────────────────────┐
                      │          Google Gemini API (AI Studio)            │
                      │  Primary:      gemini-2.5-flash                   │
                      │  Corroborator: gemini-2.5-flash-lite              │
                      └───────────────────────────────────────────────────┘
 ```
+
+## High-Concurrency Fault Tolerance (The Circuit Breaker)
+Free-tier LLM APIs impose strict IP-level rate limits (e.g., 15 RPM). A naive waterfall failover penalizes users with hidden latency timeouts. TLDR Shield implements a production-grade **Stateful Round-Robin Circuit Breaker**:
+1. **Load Balancing**: Requests are distributed evenly across a pool of API keys (Key 1 -> Key 2 -> Key 3), keeping keys cool.
+2. **Instant Tripwire**: If a key throws an `HTTP 429 Too Many Requests`, the Circuit Breaker instantly puts that key in a 60-second time-out. Subsequent requests bypass the burnt key entirely, guaranteeing zero latency penalty.
+3. **Fail-Fast**: If all keys are tripped under massive load, the system instantly throws a `503 System Overloaded` error instead of hanging the user's browser.
 
 ---
 
@@ -240,7 +242,7 @@ Three systematic failure modes required non-model solutions:
 | NLP Chunking | `compromise` (sentence-aware splitting) |
 | Auth and Database | Firebase Auth + Firestore |
 | Cache | In-memory LRU (L1) + Firestore shared cache (L2) |
-| Deployment | Google Cloud Run |
+| Deployment | Render Web Services |
 | Web App | React 19, Tailwind CSS 4 |
 | Content Extraction | `@mozilla/readability` |
 
