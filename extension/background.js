@@ -11,7 +11,7 @@ const _browser = (typeof browser !== 'undefined' && browser.runtime) ? browser :
 // opening a messaging port to the content script; as long as the port is open, 
 // Chrome's "idle timer" is suspended.
 
-const DEFAULT_API_URL = 'https://tldr-shield-292798741977.us-central1.run.app/api/analyze';
+const DEFAULT_API_URL = 'https://tldr-shield.onrender.com/api/analyze';
 
 // Last scan result — cached so the side panel can retrieve it when opened
 let lastResult = { tabId: null, timestamp: 0, data: null };

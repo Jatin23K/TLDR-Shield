@@ -25,7 +25,7 @@ const SIGNALS = {
 
 const CONFIDENCE_THRESHOLD = 30;
 
-const TLDR_DEFAULT_API_BASE = 'https://tldr-shield-292798741977.us-central1.run.app';
+const TLDR_DEFAULT_API_BASE = 'https://tldr-shield.onrender.com';
 
 function getReportUrl(cb) {
   if (typeof chrome !== 'undefined' && chrome.storage) {

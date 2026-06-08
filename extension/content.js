@@ -1,4 +1,4 @@
-﻿// â”€â”€ TLDR Shield â€“ Content Script (UI + Bootstrap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ TLDR Shield â€“ Content Script (UI + Bootstrap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Multi-agent pipeline (browser side):
 //   Agent 1 â†’ detect T&C presence          (detection.js)
 //   Agent 2 â†’ extract + clean text          (extraction.js)
@@ -11,8 +11,9 @@
 
 // â”€â”€ Re-import from namespace (set by detection.js + extraction.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // All constants/functions from detection.js and extraction.js are already in scope
-// (shared content script scope). Only destructure items NOT declared at top-level there.
-const { extractPageText, extractPolicySuite } = window.TLDRShield;
+// Constants/functions from detection.js and extraction.js are already in scope
+// (shared content script scope). We do not need to destructure them.
+// const { extractPageText, extractPolicySuite } = window.TLDRShield;
 
 
 // â”€â”€ SHADOW DOM UI ISOLATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -118,7 +119,7 @@ function setTriggerScanning(btn) {
   btn.classList.remove('tldr-idle');
   btn.classList.add('tldr-scanning');
   btn.innerHTML = '<div class="tldr-spinner"></div>';
-  btn.title = 'Analyzingâ€¦';
+  btn.title = 'Analyzing...';
 }
 
 function removeContextMenu() {
@@ -345,7 +346,7 @@ function createTriggerButton() {
       if (err?.message?.includes('Extension context invalidated') ||
           err?.message?.includes('context invalidated')) {
         setTriggerIdle(btn);
-        btn.title = 'Extension updated â€” please refresh this page (F5)';
+        btn.title = 'Extension updated - please refresh this page (F5)';
         btn.style.outline = '2px solid #f59e0b';
         // Show a small toast on the page
         const toast = document.createElement('div');
@@ -356,7 +357,7 @@ function createTriggerButton() {
           font-weight:600; padding:10px 16px; border-radius:12px;
           box-shadow:0 4px 20px rgba(0,0,0,0.5); pointer-events:none;
         `;
-        toast.textContent = 'âŸ³ Extension updated â€” refresh this page to scan';
+        toast.textContent = '\u27F3 Extension updated - refresh this page to scan';
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 5000);
         return;
@@ -444,7 +445,7 @@ function showSkeletonPanel() {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tldr-panel-close';
   closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.textContent = 'âœ•';
+  closeBtn.textContent = '\u2715';
   header.appendChild(brand);
   header.appendChild(closeBtn);
 
@@ -808,7 +809,7 @@ function showErrorPanel(errorMsg, pageUrl) {
   webAppLink.textContent = 'Try the web app \u2192';
   webAppLink.target = '_blank';
   webAppLink.rel = 'noopener noreferrer';
-  try { webAppLink.href = TLDR_APP_HOST || 'https://tldr-shield-292798741977.us-central1.run.app'; } catch (_) {}
+  try { webAppLink.href = TLDR_APP_HOST || 'https://tldr-shield.onrender.com'; } catch (_) {}
 
   body.appendChild(iconEl);
   body.appendChild(msgEl);
@@ -942,11 +943,11 @@ function showDegradedPanel() {
   header.className = 'tldr-result-header';
   const brand = document.createElement('span');
   brand.className = 'tldr-brand';
-  brand.textContent = 'âš  TLDR SHIELD';
+  brand.textContent = '\u26A0 TLDR SHIELD';
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tldr-close-btn';
   closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.textContent = 'âœ•';
+  closeBtn.textContent = '\u2715';
   closeBtn.addEventListener('click', () => panel.remove());
   header.appendChild(brand);
   header.appendChild(closeBtn);
@@ -1021,7 +1022,7 @@ function showResultPanel(data) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tldr-panel-close';
   closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.textContent = 'âœ•';
+  closeBtn.textContent = '\u2715';
 
   header.appendChild(brand);
   header.appendChild(closeBtn);
