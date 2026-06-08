@@ -370,6 +370,43 @@ async function extractPolicySuite(primaryText) {
   return parts.join('\n');
 }
 
+// ── Form 5: Shadow DOM Piercer (For Modern SPAs like Reddit) ───────────────
+function extractShadowDOMText(root) {
+  let text = '';
+  
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    const tag = root.tagName.toLowerCase();
+    if (['script', 'style', 'noscript', 'svg', 'img', 'video', 'audio', 'canvas'].includes(tag)) {
+      return '';
+    }
+  }
+
+  if (root.nodeType === Node.TEXT_NODE) {
+    const val = root.textContent.trim();
+    if (val) return val + ' ';
+    return '';
+  }
+
+  if (root.shadowRoot) {
+    text += extractShadowDOMText(root.shadowRoot);
+  }
+
+  if (root.childNodes) {
+    for (const child of root.childNodes) {
+      text += extractShadowDOMText(child);
+    }
+  }
+
+  if (root.nodeType === Node.ELEMENT_NODE) {
+    const tag = root.tagName.toLowerCase();
+    if (['p', 'div', 'section', 'article', 'li', 'h1', 'h2', 'h3', 'br', 'header', 'footer'].includes(tag)) {
+      text += '\n';
+    }
+  }
+
+  return text;
+}
+
 // ── MAIN ENTRY POINT ─────────────────────────────────────────────────────────
 async function extractPageText() {
   const modalText = await extractModalScrollContent();
@@ -398,6 +435,16 @@ async function extractPageText() {
   }
 
   const fallback = bodyText || (document.body.innerText ? document.body.innerText.trim() : '');
+  
+  // Brutal Fallback: If text is impossibly short, it's heavily Web Component/Shadow DOM based (e.g. Reddit)
+  if (fallback.length < 1500) {
+    console.debug('[TLDR Shield] Standard extraction failed/short. Firing Shadow DOM Piercer...');
+    const shadowText = extractShadowDOMText(document.body);
+    if (shadowText && shadowText.length > fallback.length) {
+      return cleanText(shadowText);
+    }
+  }
+
   return cleanText(fallback);
 }
 

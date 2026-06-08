@@ -373,7 +373,7 @@ retryBtn.addEventListener('click', () => {
 
 // ── Sign-in button ───────────────────────────────────────────────────────────
 signinBtn.addEventListener('click', () => {
-  _browser.storage.local.get({ apiUrl: 'https://tldr-shield-292798741977.us-central1.run.app/api/analyze' }, ({ apiUrl }) => {
+  _browser.storage.local.get({ apiUrl: 'https://tldr-shield.onrender.com/api/analyze' }, ({ apiUrl }) => {
     const dashUrl = (apiUrl || '').replace(/\/api\/analyze$/, '');
     if (dashUrl) _browser.tabs.create({ url: dashUrl });
   });
@@ -400,7 +400,7 @@ if (gdprGenerateBtn) {
     gdprGenerateBtn.disabled = true;
 
     _browser.storage.session.get(['authToken', 'authTokenExpiry'], async ({ authToken, authTokenExpiry }) => {
-      const apiUrl = await new Promise(r => _browser.storage.local.get({ apiUrl: 'https://tldr-shield-292798741977.us-central1.run.app/api/analyze' }, d => r(d.apiUrl)));
+      const apiUrl = await new Promise(r => _browser.storage.local.get({ apiUrl: 'https://tldr-shield.onrender.com/api/analyze' }, d => r(d.apiUrl)));
       const validToken = authToken && authTokenExpiry > Date.now() ? authToken : null;
       if (!validToken) {
         if (gdprError) { gdprError.textContent = 'Sign in to generate emails.'; gdprError.style.display = 'block'; }
@@ -409,7 +409,7 @@ if (gdprGenerateBtn) {
         return;
       }
 
-      const base = (apiUrl || 'https://tldr-shield-292798741977.us-central1.run.app').replace(/\/api\/analyze$/, '');
+      const base = (apiUrl || 'https://tldr-shield.onrender.com').replace(/\/api\/analyze$/, '');
       const violations = Object.entries(lastResult?.pillars ?? {})
         .filter(([, v]) => v?.violation)
         .map(([k]) => k);

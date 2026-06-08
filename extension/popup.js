@@ -83,7 +83,7 @@ document.addEventListener('keydown',   () => startAutoClose(15000), { passive: t
 
 // Set the production backend URL here before shipping.
 // Intentionally empty so misconfigured builds fail loudly rather than routing to a dev server.
-const DEFAULT_API_URL = 'https://tldr-shield-292798741977.us-central1.run.app/api/analyze';
+const DEFAULT_API_URL = 'https://tldr-shield.onrender.com/api/analyze';
 
 // ── DOM references ──────────────────────────────────────────────────────────
 const scanBtn          = document.getElementById('scan-btn');

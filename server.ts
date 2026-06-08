@@ -228,7 +228,10 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     // 2. Either requester is an Admin OR user-access is explicitly enabled
     const useProForThisRequest = isProMasterOn && (isAdmin || allowUsersPro);
 
-    const chunks = chunkText(text, 12000, 2000, 8);
+    // INCREASE CHUNK SIZE: 150,000 characters per chunk (Gemini 2.5 has 1M token context window)
+    // This allows large documents (like Discord's ToS) to be processed in 1 or 2 chunks
+    // instead of being truncated after 96,000 characters.
+    const chunks = chunkText(text, 150000, 5000, 3);
     let keyPool = hybridPool;
     const modelStack = [primaryModel, fallbackModel];
 
@@ -246,14 +249,18 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership', 'dark_patterns'];
         const useParallelPillars = tier === 'deep' && process.env.PARALLEL_PILLARS === 'true';
 
-        // Execute all chunks in parallel with downshifting
-        const results = await Promise.all(chunks.map(async (chunk, i) => {
-            res.write(`data: ${JSON.stringify({ status: `Analyzing block ${i + 1}/${chunks.length}...` })}\n\n`);
+        // Execute chunks sequentially to avoid triggering the 15 RPM API rate limits.
+        const results = [];
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const progressPct = chunks.length > 1 ? ` (${Math.round(((i + 1) / chunks.length) * 100)}%)` : '';
+            res.write(`data: ${JSON.stringify({ status: `Analyzing block ${i + 1}/${chunks.length}${progressPct}...` })}\n\n`);
             try {
                 const corroborator = (tier === 'deep') ? (process.env.GEMINI_MODEL_SCAN_CORROBORATOR || 'gemini-1.5-flash') : null;
 
                 if (useParallelPillars) {
                     // A1: Fan-out 6 parallel pillar-specific calls for deep scans.
+                    // This is safe per-chunk (6 concurrent calls is under the 15 RPM limit).
                     const pillarSettled = await Promise.allSettled(
                         PILLAR_KEYS.map(async (pillar) => {
                             const pPrompt = buildPillarPrompt(pillar, false);
@@ -272,27 +279,27 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
                             }
                         }
                     }
-                    return { pillars };
-                }
-
-                // Default path: single combined call (ensemble)
-                const response = await callGeminiEnsemble(sysPrompt, chunk, 1024, 35000, modelStack[0], corroborator as string, keyPool);
-                const parsed = extractJSON(response.content);
-                // Pass 1: verbatim citation grounding — replace LLM paraphrases with exact source text
-                if (parsed?.pillars) {
-                    for (const key of Object.keys(parsed.pillars)) {
-                        const p = parsed.pillars[key];
-                        if (p?.violation && p?.citation) {
-                            p.citation = findVerbatimInChunk(p.citation, chunk);
+                    results.push({ pillars });
+                } else {
+                    // Default path: single combined call (ensemble)
+                    const response = await callGeminiEnsemble(sysPrompt, chunk, 1024, 35000, modelStack[0], corroborator as string, keyPool);
+                    const parsed = extractJSON(response.content);
+                    // Pass 1: verbatim citation grounding — replace LLM paraphrases with exact source text
+                    if (parsed?.pillars) {
+                        for (const key of Object.keys(parsed.pillars)) {
+                            const p = parsed.pillars[key];
+                            if (p?.violation && p?.citation) {
+                                p.citation = findVerbatimInChunk(p.citation, chunk);
+                            }
                         }
                     }
+                    results.push(parsed);
                 }
-                return parsed;
             } catch (err) {
                 console.warn(`[TLDR Shield] Block ${i + 1} failed:`, err);
-                return null;
+                results.push(null);
             }
-        }));
+        }
 
         // FIX: Normalize quick-scan flat results (no 'pillars') → pillar format.
         // Quick scan prompt returns {"tldr":"...","ai_training":bool,...} without pillars.
