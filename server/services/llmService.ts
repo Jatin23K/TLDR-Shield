@@ -172,6 +172,10 @@ export async function callGeminiEnsemble(
 
 function extractJSON(text: string): any {
     try {
+        const mdMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (mdMatch) {
+            return JSON.parse(mdMatch[1]);
+        }
         const match = text.match(/\{[\s\S]*\}/);
         return match ? JSON.parse(match[0]) : null;
     } catch {
