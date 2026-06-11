@@ -45,7 +45,11 @@ const GEMINI_KEYS: string[] = (process.env.GEMINI_API_KEYS ?? '')
     : ([
         process.env.GEMINI_SCAN_KEY_1,
         process.env.GEMINI_SCAN_KEY_2,
-        process.env.GEMINI_SCAN_KEY_3
+        process.env.GEMINI_SCAN_KEY_3,
+        // In eval, UTIL keys are also scan-capable — merge all 6 to halve 429 pressure
+        process.env.GEMINI_UTIL_KEY_1,
+        process.env.GEMINI_UTIL_KEY_2,
+        process.env.GEMINI_UTIL_KEY_3,
       ].filter((k): k is string => Boolean(k?.trim())).map(k => k.trim()));
 
 const NIM_KEYS = [
