@@ -79,19 +79,22 @@ let SCAN_KEYS: string[];
 let UTILITY_KEYS: string[];
 
 if (_scanPoolDirect.length > 0 || _utilPoolDirect.length > 0) {
-    // New pool-based config — use dedicated env vars
-    SCAN_KEYS = _scanPoolDirect;
-    UTILITY_KEYS = _utilPoolDirect;
+    // In eval/CI: merge SCAN + UTIL into one big scan pool so all 6 keys
+    // are used for scanning. This halves the 429 rate-limit pressure.
+    // The UTIL/SCAN separation only matters on the live server where
+    // utility tasks (grounding, GDPR emails) need their own key budget.
+    const allKeys = [..._scanPoolDirect, ..._utilPoolDirect];
+    SCAN_KEYS = allKeys;
+    UTILITY_KEYS = allKeys; // utility tasks can use any key in eval
 } else {
-    // Legacy: split all keys 50/50 into scan and utility pools
+    // Legacy: use all keys for both pools
     const all = readLegacyKeys();
-    const mid = Math.ceil(all.length / 2);
-    SCAN_KEYS = all.slice(0, mid);
-    UTILITY_KEYS = all.slice(mid);
+    SCAN_KEYS = all;
+    UTILITY_KEYS = all;
 }
 
 // Backward compat: GEMINI_KEYS = all keys combined
-export const GEMINI_KEYS = [...SCAN_KEYS, ...UTILITY_KEYS];
+export const GEMINI_KEYS = [...new Set([...SCAN_KEYS, ...UTILITY_KEYS])];
 
 export { SCAN_KEYS, UTILITY_KEYS };
 
