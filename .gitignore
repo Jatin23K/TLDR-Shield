@@ -17,3 +17,11 @@ tldr-shield-firefox.zip
 *.zip
 scratch/
 INTERVIEW.md
+
+# Debug / test scripts
+test_*.ts
+test_*.js
+list_models.ts
+models.json
+log.txt
+log2.txt
