@@ -250,6 +250,7 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         const useParallelPillars = tier === 'deep' && process.env.PARALLEL_PILLARS === 'true';
 
         // Execute chunks sequentially to avoid triggering the 15 RPM API rate limits.
+        console.error(`[TLDR Shield] 🔍 DIAG: text=${text?.length ?? 0} chars | chunks=${chunks.length} | keyPool=${keyPool.length} | model=${modelStack[0]} | tier=${tier}`);
         const results = [];
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
