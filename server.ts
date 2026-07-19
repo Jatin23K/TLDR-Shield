@@ -125,7 +125,46 @@ function logRecentError(type: string, message: string, details?: any) {
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
 
-app.get('/api/diag', (req, res) => {
+app.get('/api/diag', async (req, res) => {
+    const keyStatuses: Record<string, string> = {};
+    const keyNames = [
+        'GEMINI_SCAN_KEY_1', 'GEMINI_SCAN_KEY_2', 'GEMINI_SCAN_KEY_3',
+        'GEMINI_UTIL_KEY_1', 'GEMINI_UTIL_KEY_2', 'GEMINI_UTIL_KEY_3'
+    ];
+
+    for (const name of keyNames) {
+        const key = (process.env[name] ?? '').trim();
+        if (!key) {
+            keyStatuses[name] = 'Not configured';
+            continue;
+        }
+
+        const masked = key.slice(0, 6) + '...' + key.slice(-4);
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${key}`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ parts: [{ text: "hi" }] }] }),
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+
+            if (response.ok) {
+                keyStatuses[name] = `OK (${masked})`;
+            } else {
+                const errData: any = await response.json().catch(() => ({}));
+                const errMsg = errData?.error?.message || `HTTP ${response.status}`;
+                keyStatuses[name] = `FAIL: ${errMsg} (${masked})`;
+            }
+        } catch (err: any) {
+            keyStatuses[name] = `ERROR: ${err.message} (${masked})`;
+        }
+    }
+
     res.json({
         firestoreConnected: firestoreDb !== null,
         initError: firestoreInitError,
@@ -135,6 +174,7 @@ app.get('/api/diag', (req, res) => {
             scanKeys: [1,2,3].map(i => !!process.env[`GEMINI_SCAN_KEY_${i}`]),
             utilKeys: [1,2,3].map(i => !!process.env[`GEMINI_UTIL_KEY_${i}`]),
         },
+        keyStatuses,
         recentErrors
     });
 });
