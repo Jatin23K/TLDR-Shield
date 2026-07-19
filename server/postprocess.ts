@@ -50,15 +50,26 @@ export function applyConsistencyCrossCheck(pillars: Record<string, any>, sourceT
         // Already confirmed by HIGH_CONFIDENCE — skip standard check for this pillar
         const highHits = (HIGH_CONFIDENCE[key] ?? []).filter(kw => textLower.includes(kw));
         if (highHits.length > 0) {
-            if (!pillars[key]?.violation) pillars[key] = { ...pillars[key], violation: true, confidence: 'HIGH' };
+            // Highly specific phrase found — we can force a violation because it's unambiguous
+            if (!pillars[key]?.violation) {
+                pillars[key] = { 
+                    ...pillars[key], 
+                    violation: true, 
+                    confidence: 'HIGH',
+                    citation: highHits[0] // Set matched phrase as citation so it is grounded
+                };
+            }
             confirmed.add(key);
             continue;
         }
         // Standard: require 2+ hits (tightened from loose single-word matches)
         const stdHits = (STANDARD[key] ?? []).filter(kw => textLower.includes(kw)).length;
         if (stdHits >= 2) {
-            if (!pillars[key]?.violation) pillars[key] = { ...pillars[key], violation: true, confidence: 'MEDIUM' };
-            confirmed.add(key);
+            // Fix A: Do NOT force a violation from false to true on standard keywords.
+            // Only confirm if the LLM already identified it as a violation.
+            if (pillars[key]?.violation) {
+                confirmed.add(key);
+            }
         }
     }
     return confirmed;
@@ -106,6 +117,13 @@ export function updatePillarConfidence(
     for (const key of Object.keys(pillars)) {
         const p = pillars[key];
         if (!p) continue;
+
+        // Fix B: If a pillar is marked as a violation, but has no citation or citation is [NOT_FOUND],
+        // demote it to violation: false immediately. No citation = no violation.
+        if (p.violation && (!p.citation || p.citation === '[NOT_FOUND]' || p.citation === 'Not addressed in document.')) {
+            p.violation = false;
+        }
+
         if (!p.violation) {
             // Non-violated pillars always show MEDIUM — absence of violation needs no citation proof.
             // Overriding any prior value (e.g. LOW set by deterministic fallback) prevents misleading dots.
