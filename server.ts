@@ -66,6 +66,7 @@ if (isDev) {
 
 // --- Firebase Init ---
 let firestoreDb: any = null;
+let firestoreInitError: string | null = null;
 (async () => {
     try {
         const { initializeApp, cert } = await import('firebase-admin/app');
@@ -74,7 +75,12 @@ let firestoreDb: any = null;
         const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
         let credential: any;
         if (saJson) {
-            credential = cert(JSON.parse(saJson));
+            try {
+                credential = cert(JSON.parse(saJson));
+            } catch (jsonErr: any) {
+                console.error('[TLDR Shield] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', jsonErr);
+                firestoreInitError = 'JSON Parse Error: ' + jsonErr.message;
+            }
         } else if (saPath) {
             credential = cert(JSON.parse(readFileSync(saPath, 'utf8')));
         }
@@ -83,10 +89,14 @@ let firestoreDb: any = null;
             firestoreDb = getFirestore();
             console.log('[TLDR Shield] Firestore Connected');
         } else {
-            console.warn('[TLDR Shield] No Firebase credentials found — Firestore disabled.');
+            if (!firestoreInitError) {
+                console.warn('[TLDR Shield] No Firebase credentials found — Firestore disabled.');
+                firestoreInitError = 'No credentials configured';
+            }
         }
-    } catch (err) {
+    } catch (err: any) {
         console.warn('[TLDR Shield] Firestore disabled:', err);
+        firestoreInitError = err?.message || String(err);
     }
 })();
 
@@ -101,6 +111,19 @@ const chatLimiter = rateLimit({
 // --- Routes ---
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
+
+app.get('/api/diag', (req, res) => {
+    res.json({
+        firestoreConnected: firestoreDb !== null,
+        initError: firestoreInitError,
+        hasSaJson: !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+        saJsonLength: process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.length || 0,
+        keysConfigured: {
+            scanKeys: [1,2,3].map(i => !!process.env[`GEMINI_SCAN_KEY_${i}`]),
+            utilKeys: [1,2,3].map(i => !!process.env[`GEMINI_UTIL_KEY_${i}`]),
+        }
+    });
+});
 
 app.get('/api/credits', authMiddleware, async (req, res) => {
     const uid = (req as any).uid;
@@ -250,7 +273,6 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         const useParallelPillars = tier === 'deep' && process.env.PARALLEL_PILLARS === 'true';
 
         // Execute chunks sequentially to avoid triggering the 15 RPM API rate limits.
-        console.error(`[TLDR Shield] 🔍 DIAG: text=${text?.length ?? 0} chars | chunks=${chunks.length} | keyPool=${keyPool.length} | model=${modelStack[0]} | tier=${tier}`);
         const results = [];
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
