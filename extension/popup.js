@@ -447,7 +447,7 @@ _browser.storage.local.get(
     authCredits: null,
     apiUrl: DEFAULT_API_URL,
     eli5Mode: false,
-    darkPatterns: false,
+    darkPatterns: true,
     tier: 'quick',
   },
   (data) => {
