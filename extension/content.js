@@ -1291,7 +1291,7 @@ function showResultPanel(data) {
                 if (!quoteBox.querySelector('.tldr-citation-miss')) {
                   const missNote = document.createElement('div');
                   missNote.className = 'tldr-citation-miss';
-                  missNote.textContent = 'âš  Exact text not found on page â€” may be paraphrased or on another section.';
+                  missNote.textContent = '\u26A0\uFE0F Exact text not found on page \u2014 may be paraphrased or on another section.';
                   missNote.style.cssText = [
                     'font-size:10px',
                     'color:rgba(255,200,100,0.85)',

@@ -240,7 +240,7 @@ async function processBatchScan(urls, tier, sender) {
           text: pageText,
           tier: tier,
           eli5: storage.eli5Mode ?? false,
-          darkPatterns: storage.darkPatterns ?? false,
+          darkPatterns: storage.darkPatterns ?? true,
           url: url,
         }),
         signal: AbortSignal.timeout(60000),
