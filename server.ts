@@ -335,6 +335,12 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
             } catch (err: any) {
                 console.error(`[TLDR Shield] ❌ Block ${i + 1} FAILED — ${err?.message || err} | status=${err?.status || err?.statusCode || 'N/A'}`);
                 console.error(`[TLDR Shield] Block ${i + 1} full error:`, JSON.stringify(err, Object.getOwnPropertyNames(err)));
+                logRecentError(`BlockError-${i + 1}`, err?.message || String(err), { 
+                    status: err?.status || err?.statusCode || 'N/A',
+                    stack: err?.stack,
+                    keysCount: keyPool.length,
+                    model: modelStack[0]
+                });
                 results.push(null);
             }
         }
