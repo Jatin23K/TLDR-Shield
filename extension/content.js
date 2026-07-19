@@ -1242,7 +1242,8 @@ function showResultPanel(data) {
         // Inline citation quote box (hidden by default, toggled on click)
         const quoteBox = document.createElement('div');
         quoteBox.className = 'tldr-citation-box';
-        quoteBox.textContent = `"${val.citation}"`;
+        const isSilenceVal = val.citation === '[NOT_FOUND]' || val.citation === 'Not addressed in document.';
+        quoteBox.textContent = isSilenceVal ? '' : `"${val.citation}"`;
 
         row.addEventListener('click', async (e) => {
           e.stopPropagation();
