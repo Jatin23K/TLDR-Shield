@@ -108,6 +108,19 @@ const chatLimiter = rateLimit({
     message: { error: 'Too many chat requests. Please wait a minute.' },
 });
 
+const recentErrors: any[] = [];
+function logRecentError(type: string, message: string, details?: any) {
+    recentErrors.unshift({
+        timestamp: new Date().toISOString(),
+        type,
+        message,
+        details
+    });
+    if (recentErrors.length > 20) {
+        recentErrors.pop();
+    }
+}
+
 // --- Routes ---
 
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: Date.now() }));
@@ -121,7 +134,8 @@ app.get('/api/diag', (req, res) => {
         keysConfigured: {
             scanKeys: [1,2,3].map(i => !!process.env[`GEMINI_SCAN_KEY_${i}`]),
             utilKeys: [1,2,3].map(i => !!process.env[`GEMINI_UTIL_KEY_${i}`]),
-        }
+        },
+        recentErrors
     });
 });
 
@@ -408,6 +422,7 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
 
     } catch (err: any) {
         console.error('[TLDR Shield] Pipeline Error:', err.message);
+        logRecentError('PipelineError', err.message, { stack: err.stack, tier, url });
         // Wrap refundCredits so a DB failure doesn't prevent the error SSE event from being sent.
         try { await refundCredits(firestoreDb, uid, cost); } catch (refundErr) {
             console.warn('[TLDR Shield] Credit refund failed (non-fatal):', refundErr);
