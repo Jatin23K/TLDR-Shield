@@ -321,6 +321,21 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
                     // Default path: single combined call (ensemble)
                     const response = await callGeminiEnsemble(sysPrompt, chunk, 1024, 35000, modelStack[0], corroborator as string, keyPool);
                     const parsed = extractJSON(response.content);
+                    
+                    if (!parsed) {
+                        logRecentError('ParseError', 'Failed to extract JSON from response content', {
+                            rawContent: response?.content,
+                            model: modelStack[0],
+                            corroborator
+                        });
+                    } else if (tier === 'deep' && !parsed.pillars) {
+                        logRecentError('SchemaError', 'Deep scan response missing pillars object', {
+                            parsedKeys: Object.keys(parsed),
+                            rawContent: response?.content,
+                            model: modelStack[0]
+                        });
+                    }
+
                     // Pass 1: verbatim citation grounding — replace LLM paraphrases with exact source text
                     if (parsed?.pillars) {
                         for (const key of Object.keys(parsed.pillars)) {
@@ -349,12 +364,19 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         // Quick scan prompt returns {"tldr":"...","ai_training":bool,...} without pillars.
         // Deep scan returns {"tldr":"...","pillars":{...}}. Both must produce validResults.
         const PILLAR_KEYS_NORM = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership'];
-        const normalizedResults = results.map(r => {
+        const normalizedResults = results.map((r, idx) => {
             if (!r) return null;
             if (r.pillars) return r; // deep scan — already structured
             // Quick scan: flat booleans → convert to pillar format
             const hasAnyBool = PILLAR_KEYS_NORM.some(k => typeof r[k] === 'boolean');
-            if (!hasAnyBool) return null;
+            if (!hasAnyBool) {
+                logRecentError('NormalizeError', 'Quick scan response missing pillar booleans', {
+                    blockIndex: idx,
+                    responseKeys: Object.keys(r),
+                    responseContent: JSON.stringify(r)
+                });
+                return null;
+            }
             const pillars: Record<string, any> = {};
             for (const key of PILLAR_KEYS_NORM) {
                 if (typeof r[key] === 'boolean') {
