@@ -85,9 +85,17 @@ let firestoreInitError: string | null = null;
             credential = cert(JSON.parse(readFileSync(saPath, 'utf8')));
         }
         if (credential) {
+            let dbId: string | undefined;
+            try {
+                const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+                const appletConfig = JSON.parse(readFileSync(configPath, 'utf8'));
+                dbId = appletConfig.firestoreDatabaseId;
+            } catch (configErr) {
+                console.warn('[TLDR Shield] Could not read firebase-applet-config.json database ID, using (default):', configErr);
+            }
             initializeApp({ credential });
-            firestoreDb = getFirestore();
-            console.log('[TLDR Shield] Firestore Connected');
+            firestoreDb = dbId ? getFirestore(dbId) : getFirestore();
+            console.log(`[TLDR Shield] Firestore Connected to database: ${dbId || '(default)'}`);
         } else {
             if (!firestoreInitError) {
                 console.warn('[TLDR Shield] No Firebase credentials found — Firestore disabled.');
