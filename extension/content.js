@@ -1390,7 +1390,9 @@ function showResultPanel(data) {
             content_ownership: 'No clause detected that claims broad rights or sublicensable licences over your content.',
             dark_patterns:     'No hidden opt-outs, forced arbitration, or manipulative clauses detected.',
           };
-          safeNote.textContent = SAFE_REASONS[key] || 'No relevant clause detected in this document.';
+          const baseNote = SAFE_REASONS[key] || 'No relevant clause detected in this document.';
+          // Append actionable guidance clarifying the scope limit of the Terms page
+          safeNote.textContent = baseNote + ' (Not found in this document — check their Privacy Policy for details.)';
           wrapper.appendChild(safeNote);
           pillarsEl.appendChild(wrapper);
         } else {
