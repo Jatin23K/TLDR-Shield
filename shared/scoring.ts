@@ -25,12 +25,12 @@ export type PillarKey = (typeof PILLAR_KEYS)[number];
 //   full = HIGH/MEDIUM confidence deduction
 //   low  = LOW confidence deduction (half rate — penalises hallucination less)
 export const PILLAR_PENALTY: Record<string, { full: number; low: number }> = {
-    ai_training:       { full: 30, low: 15 },
-    data_selling:      { full: 30, low: 15 },
-    data_retention:    { full: 30, low: 15 },
-    content_ownership: { full: 30, low: 15 },
-    dark_patterns:     { full: 40, low: 20 }, // elevated: removes legal rights
-    transparency:      { full: 20, low:  5 }, // self-contradictory only
+    ai_training:       { full: 15, low:  8 },
+    data_selling:      { full: 15, low:  8 },
+    data_retention:    { full: 15, low:  8 },
+    content_ownership: { full: 15, low:  8 },
+    dark_patterns:     { full: 20, low: 10 }, // elevated: removes legal rights
+    transparency:      { full: 10, low:  5 }, // self-contradictory only
 };
 
 // ─── Score Calculation ────────────────────────────────────────────────────────

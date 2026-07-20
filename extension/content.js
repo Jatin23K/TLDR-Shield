@@ -1369,7 +1369,33 @@ function showResultPanel(data) {
         wrapper.appendChild(_quoteBoxMap.get(row));
         pillarsEl.appendChild(wrapper);
       } else {
-        pillarsEl.appendChild(row);
+        // For SAFE pillars (no quoteBox because citation is [NOT_FOUND]),
+        // show a permanent subtle note so users know WHY it's safe.
+        if (!isRisky && !isSoftFlag && !isNA) {
+          const wrapper = document.createElement('div');
+          wrapper.appendChild(row);
+          const safeNote = document.createElement('div');
+          safeNote.style.cssText = [
+            'font-size:10px',
+            'color:rgba(255,255,255,0.35)',
+            'font-style:italic',
+            'padding:4px 12px 8px 12px',
+            'line-height:1.4',
+          ].join(';');
+          const SAFE_REASONS = {
+            ai_training:       'No clause detected that authorises AI or ML training on your data.',
+            data_selling:      'No clause detected that authorises selling or sharing your data with third parties for profit.',
+            transparency:      'Policy language appears clear and accessible — no self-contradictory clauses detected.',
+            data_retention:    'No clause detected that specifies excessive data retention after account deletion.',
+            content_ownership: 'No clause detected that claims broad rights or sublicensable licences over your content.',
+            dark_patterns:     'No hidden opt-outs, forced arbitration, or manipulative clauses detected.',
+          };
+          safeNote.textContent = SAFE_REASONS[key] || 'No relevant clause detected in this document.';
+          wrapper.appendChild(safeNote);
+          pillarsEl.appendChild(wrapper);
+        } else {
+          pillarsEl.appendChild(row);
+        }
       }
     }
 
