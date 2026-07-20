@@ -374,7 +374,7 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
                     results.push({ pillars });
                 } else {
                     // Default path: single combined call (ensemble)
-                    const response = await callGeminiEnsemble(sysPrompt, chunk, 4096, 35000, modelStack[0], corroborator as string, keyPool);
+                    const response = await callGeminiEnsemble(sysPrompt, chunk, 8192, 35000, modelStack[0], corroborator as string, keyPool);
                     const parsed = extractJSON(response.content);
                     
                     if (!parsed) {
