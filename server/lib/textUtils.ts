@@ -385,8 +385,13 @@ export function detectHardViolations(fullText: string, pillars: Record<string, a
         .filter(s => s.length >= 20 && s.length <= 1000);
 
     for (const [pillarKey, pillar] of Object.entries(pillars)) {
-        // Only run on pillars the LLM marked as SAFE or MEDIUM — never downgrade
-        if (!pillar || pillar.violation === true) continue;
+        // Skip pillars already confirmed at HIGH or MEDIUM confidence — LLM got them right.
+        // BUT process LOW-confidence violations: the LLM found something but hedged.
+        // If a hard pattern confirms it, upgrade confidence to HIGH so scoring applies a penalty.
+        // Without this, LOW-confidence violations get -0 penalty → 100/100 despite real violations.
+        if (!pillar) continue;
+        const alreadyConfirmed = pillar.violation === true && pillar.confidence !== 'LOW';
+        if (alreadyConfirmed) continue;
 
         const patterns = HARD_VIOLATION_PATTERNS[pillarKey];
         if (!patterns || patterns.length === 0) continue;
