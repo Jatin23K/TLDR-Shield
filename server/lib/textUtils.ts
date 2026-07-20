@@ -116,3 +116,107 @@ export function extractJSON(text: string): any {
         return null;
     }
 }
+
+// ─── Per-pillar keyword patterns for citation backfill ───────────────────────
+// When the LLM returns [NOT_FOUND] for a SAFE pillar, we search the full raw
+// document text for the most relevant sentence using these weighted keywords.
+// Sentences are scored by keyword hits; the highest-scoring sentence is used
+// as the citation verbatim — no LLM call, no hallucination risk.
+const PILLAR_KEYWORDS: Record<string, { high: string[]; low: string[] }> = {
+    ai_training: {
+        high: ['train', 'machine learning', 'artificial intelligence', 'llm', 'fine-tune', 'training data', 'ai model', 'ml model'],
+        low:  ['data', 'improve', 'algorithm', 'model', 'personaliz', 'recommend'],
+    },
+    data_selling: {
+        high: ['sell', 'sold', 'third.?party', 'third parties', 'broker', 'advertis', 'marketing partner', 'disclose.*personal', 'share.*personal'],
+        low:  ['partner', 'affiliate', 'share', 'disclose', 'transfer', 'commercial'],
+    },
+    transparency: {
+        high: ['privacy policy', 'clear', 'simple', 'accessible', 'transparent', 'plain language', 'easy to understand'],
+        low:  ['policy', 'explain', 'inform', 'notice', 'disclose', 'communicate'],
+    },
+    data_retention: {
+        high: ['retain', 'retention', 'delete', 'deletion', 'account.*delet', 'delet.*account', 'after.*terminat', 'days after', 'years after'],
+        low:  ['data', 'store', 'keep', 'account', 'terminat', 'remov'],
+    },
+    content_ownership: {
+        high: ['license', 'licence', 'intellectual property', 'copyright', 'own.*content', 'content.*own', 'rights.*content'],
+        low:  ['content', 'post', 'upload', 'submit', 'creat'],
+    },
+    dark_patterns: {
+        high: ['arbitrat', 'class action', 'liabilit', 'waiv', 'statute of limitation', 'binding.*individual', 'dispute resolution'],
+        low:  ['claim', 'lawsuit', 'legal', 'court', 'agree', 'settlement'],
+    },
+};
+
+/**
+ * POST-SCAN CITATION BACKFILL
+ *
+ * For every SAFE pillar whose citation is '[NOT_FOUND]', scan the full raw
+ * document text to find the most relevant sentence verbatim.
+ *
+ * Why: The LLM only sees individual chunks. If the relevant clause was in a
+ * chunk the model didn't receive for that pillar, it returns [NOT_FOUND] even
+ * though the clause exists in the full document. This function fixes that
+ * deterministically — same text always produces the same citation.
+ *
+ * Rules:
+ * - Only runs on SAFE pillars (violation: false) with [NOT_FOUND] citations.
+ * - Never changes violation flag or confidence — only updates citation text.
+ * - Only updates if a sentence scores above the minimum threshold.
+ */
+export function backfillSafeCitations(pillars: Record<string, any>, fullText: string): void {
+    if (!fullText || !pillars) return;
+
+    // Split full document into sentences using a simple but robust split
+    const sentences = fullText
+        .replace(/([.!?;])\s+/g, '$1\n')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(s => s.length >= 30 && s.length <= 600);
+
+    for (const [pillarKey, pillar] of Object.entries(pillars)) {
+        if (!pillar) continue;
+        // Only backfill SAFE pillars with a [NOT_FOUND] or empty citation
+        const cit = (pillar.citation || '').trim();
+        if (pillar.violation === true) continue;
+        if (cit !== '[NOT_FOUND]' && cit !== '' && cit !== 'Not addressed in document.') continue;
+
+        const kw = PILLAR_KEYWORDS[pillarKey];
+        if (!kw) continue;
+
+        let bestSentence = '';
+        let bestScore = 0;
+        const textLower = fullText.toLowerCase();
+
+        for (const sentence of sentences) {
+            const sLower = sentence.toLowerCase();
+            let score = 0;
+
+            // High-value keywords score 3 points each
+            for (const hw of kw.high) {
+                if (new RegExp(hw, 'i').test(sLower)) score += 3;
+            }
+            // Low-value keywords score 1 point each
+            for (const lw of kw.low) {
+                if (new RegExp(lw, 'i').test(sLower)) score += 1;
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestSentence = sentence;
+            }
+        }
+
+        // Only use if score is meaningful (at least 1 high-value keyword hit)
+        if (bestScore >= 3 && bestSentence.length >= 30) {
+            // Cap at 60 words to stay within citation display limits
+            const words = bestSentence.split(/\s+/);
+            pillar.citation = words.length > 60
+                ? words.slice(0, 60).join(' ') + '...'
+                : bestSentence;
+        }
+        // If no good match found, leave as [NOT_FOUND] — never manufacture a citation
+    }
+}
+
