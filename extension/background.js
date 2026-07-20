@@ -187,7 +187,7 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
       // Previously both defaulted to true, causing a split-brain state where
       // users who never opened the popup got ELI5 + dark patterns unexpectedly.
       eli5Mode: false,
-      darkPatterns: false, // FIX #4: default off — user must opt-in, not silently lose -40pts
+      darkPatterns: true, // restored: scoring rebalanced to -20pts so the penalty is no longer too harsh
     });
 
     const url = apiUrl || DEFAULT_API_URL;
