@@ -200,7 +200,7 @@ app.post('/api/report', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/analyze', authMiddleware, async (req, res) => {
-    const { text, tier = 'quick', url, forceRefresh = false } = req.body;
+    const { text, tier = 'quick', url, forceRefresh = false, eli5 = false, darkPatterns = false } = req.body;
     const uid = (req as any).uid;
 
     if (!text || text.length < 100) {
@@ -330,8 +330,11 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     try {
-        const sysPrompt = buildSystemPrompt(false, false, tier);
-        const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership', 'dark_patterns'];
+        const sysPrompt = buildSystemPrompt(eli5, darkPatterns, tier);
+        const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership'];
+        if (darkPatterns) {
+            PILLAR_KEYS.push('dark_patterns');
+        }
         const useParallelPillars = tier === 'deep' && process.env.PARALLEL_PILLARS === 'true';
 
         // Execute chunks sequentially to avoid triggering the 15 RPM API rate limits.
@@ -412,6 +415,9 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         // Quick scan prompt returns {"tldr":"...","ai_training":bool,...} without pillars.
         // Deep scan returns {"tldr":"...","pillars":{...}}. Both must produce validResults.
         const PILLAR_KEYS_NORM = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership'];
+        if (darkPatterns) {
+            PILLAR_KEYS_NORM.push('dark_patterns');
+        }
         const normalizedResults = results.map((r, idx) => {
             if (!r) return null;
             if (r.pillars) return r; // deep scan — already structured
