@@ -28,7 +28,7 @@ import { authMiddleware } from './server/middleware/auth.js';
 import { checkAndDeductCredits, refundCredits, getUserCredits } from './server/services/creditService.js';
 import { getSharedCache, setSharedCache, saveScanRecord, saveReport } from './server/services/databaseService.js';
 import { callGemini, callGeminiEnsemble } from './server/services/llmService.js';
-import { chunkText, extractJSON, findVerbatimInChunk, backfillSafeCitations } from './server/lib/textUtils.js';
+import { chunkText, extractJSON, findVerbatimInChunk, backfillSafeCitations, detectHardViolations, stripCookieBoilerplate } from './server/lib/textUtils.js';
 import { getCache, setCache } from './server/lib/redis.js';
 
 // Shared Logic
@@ -324,7 +324,11 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     const useProForThisRequest = isProMasterOn && (isAdmin || allowUsersPro);
 
     // Use 40,000 characters per chunk to prevent Gemini API output truncation/rate limit anomalies on massive inputs
-    const chunks = chunkText(text, 40000, 5000, 3);
+    // Strip cookie consent banners (OneTrust, Cookiebot, etc.) from page text before
+    // analysis. Cookie banners often contain data-sharing language that belongs to the
+    // cookie policy, not the ToS, and cause false positive data_selling citations.
+    const cleanText = stripCookieBoilerplate(text);
+    const chunks = chunkText(cleanText, 40000, 5000, 3);
     let keyPool = hybridPool;
     const modelStack = [primaryModel, fallbackModel];
 
@@ -514,7 +518,20 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         // deterministically for the most relevant sentence using keyword scoring.
         // Same document always produces the same citation — fixes scan-to-scan inconsistency.
         // Never changes violation flag or confidence — only fills in missing citations.
-        backfillSafeCitations(final.pillars, text);
+        backfillSafeCitations(final.pillars, cleanText);
+
+        // UNIVERSAL VIOLATION BACKSTOP:
+        // Scan the full clean text with compound regex patterns to catch violations
+        // the LLM missed due to chunking. Only upgrades SAFE → RISKY, never downgrades.
+        // "sublicensable", "class action", "binding arbitration" etc. are unambiguous
+        // in any legal document — no LLM confirmation needed.
+        detectHardViolations(cleanText, final.pillars);
+
+        // Recalculate score/rating/deductions — detectHardViolations may have added violations
+        const recalc = calculateScoreAndRating(final.pillars, tier, cleanText.length);
+        final.score = recalc.score;
+        final.rating = recalc.rating;
+        final.deductions = recalc.deductions;
 
         // FIX: Send result to client FIRST — before any DB/cache writes.
         // Previously, a Firestore or Redis failure inside Promise.all would throw,

@@ -273,3 +273,188 @@ export function backfillSafeCitations(pillars: Record<string, any>, fullText: st
     }
 }
 
+// ─── Hard Violation Patterns ─────────────────────────────────────────────────
+// Used by detectHardViolations() as a deterministic safety net. Each pattern
+// is a compound regex with near-zero false positive rate in legal documents.
+// 'negatable: true' patterns are skipped if the matching sentence contains
+// strong negation words ("do not sell", "will never train", etc.).
+interface ViolationPattern {
+    pattern: RegExp;
+    negatable: boolean;
+}
+
+const HARD_VIOLATION_PATTERNS: Record<string, ViolationPattern[]> = {
+    ai_training: [
+        // "train our AI/ML models", "training our machine learning models"
+        { pattern: /\btrain(?:ing|s)?\s+(?:our\s+)?(?:ai|ml|machine[\s-]learning|language[\s-])?\s*models?\b/i, negatable: true },
+        // "fine-tune" or "fine tuning" — almost always model training in ToS context
+        { pattern: /\bfine[\s-]tun/i, negatable: true },
+        // "machine learning" near "train"
+        { pattern: /\bmachine[\s-]learning\b.{0,120}\btrain/i, negatable: true },
+        { pattern: /\btrain.{0,120}\bmachine[\s-]learning\b/i, negatable: true },
+        // "generative AI" or "large language model" — inherently AI training territory
+        { pattern: /\bgenerative\s+ai\b/i, negatable: true },
+        { pattern: /\blarge\s+language\s+model\b/i, negatable: true },
+        // "content/data used to train model"
+        { pattern: /(?:content|data|input)s?\b.{0,100}\btrain(?:ing|s)?\b.{0,80}\bmodel\b/i, negatable: true },
+        { pattern: /\bai\s+model\b.{0,100}\btrain/i, negatable: true },
+    ],
+    data_selling: [
+        // Explicit selling of data
+        { pattern: /\bsell(?:ing|s)?\s+(?:your\s+|user\s+|personal\s+)?(?:data|information|details)\b/i, negatable: true },
+        { pattern: /\bsold\b.{0,60}\b(?:data|information|personal)\b/i, negatable: true },
+        // Third-party advertisers or marketing partners receiving personal data
+        { pattern: /\bthird[\s-]part(?:y|ies)\b.{0,80}\b(?:advertis(?:ing|ers?)|marketing(?:[\s-]partner)?|commercial)\b/i, negatable: true },
+        { pattern: /\b(?:share|disclose|provide)\b.{0,100}\bpersonal\b.{0,100}\b(?:advertis|marketing[\s-]partner|third[\s-]party)\b/i, negatable: true },
+        // "data broker" — unambiguously bad in any context
+        { pattern: /\bdata\s+broker\b/i, negatable: false },
+        // "monetize user data/information"
+        { pattern: /\bmonetiz(?:e|es|ing|ation)\b.{0,80}\b(?:data|information|content)\b/i, negatable: true },
+    ],
+    data_retention: [
+        // Explicit multi-year retention after account deletion
+        { pattern: /\b(?:retain|keep|store|held|maintain)\b.{0,100}\b(?:data|information|personal)\b.{0,80}\b(?:[2-9]|[1-9]\d+)\s*years?\b/i, negatable: false },
+        // "X months/years after deletion/termination"
+        { pattern: /\b(?:[2-9]|[1-9]\d+)\s*(?:months?|years?)\b.{0,120}\b(?:after|following)\b.{0,80}\b(?:delet|terminat|clos|cancell)/i, negatable: false },
+        // "retain for up to X years"
+        { pattern: /\bretain(?:ing|s)?\b.{0,80}\bup\s+to\b.{0,80}\b\d+\s*(?:months?|years?)/i, negatable: false },
+    ],
+    content_ownership: [
+        // "sublicensable" — grants company right to sublicense YOUR content to others
+        { pattern: /\bsub[\s-]?licens(?:e|able|ing|ed|es)?\b/i, negatable: false },
+        // Perpetual + irrevocable license — rights that can never be taken back
+        { pattern: /\bperpetual\b.{0,80}\birrevocable\b.{0,80}\blicen/i, negatable: false },
+        { pattern: /\birrevocable\b.{0,80}\bperpetual\b.{0,80}\blicen/i, negatable: false },
+        // Royalty-free license granting derivative works or commercial distribution
+        { pattern: /\broyalty[\s-]free\b.{0,120}\b(?:sublicens|creat(?:e|ing)\s+derivative|distribut\w+\s+commerc)/i, negatable: false },
+        // License "for any purpose" — beyond operating the service
+        { pattern: /\blicen(?:se|ce)\b.{0,120}\bfor\s+any\s+purpose\b/i, negatable: false },
+        { pattern: /\bfor\s+any\s+purpose\b.{0,120}\blicen(?:se|ce)\b/i, negatable: false },
+    ],
+    dark_patterns: [
+        // "class action" — virtually always a waiver in ToS context
+        { pattern: /\bclass\s+action\b/i, negatable: false },
+        // Class representative/member waiver pattern
+        { pattern: /\bclass\s+(?:representative|member)\b.{0,150}\b(?:waiv|not\s+bring|cannot\s+bring|may\s+not\s+bring)/i, negatable: false },
+        // Mandatory/binding arbitration
+        { pattern: /\b(?:mandatory|binding|compulsory)\s+arbitrat/i, negatable: false },
+        { pattern: /\bagree(?:s|d|ing)?\s+to\s+(?:binding\s+)?arbitrat/i, negatable: false },
+        // Statute of limitations shortened
+        { pattern: /\bstatute\s+of\s+limitation/i, negatable: false },
+        // Liability cap with dollar amount — e.g. "shall not exceed $100"
+        { pattern: /\bliabilit\w*\b.{0,80}\b(?:shall\s+not\s+exceed|is\s+limited\s+to|will\s+not\s+exceed|capped?\s+at)\b.{0,120}\b(?:\$\s*\d+|\d+\s*(?:dollars?|usd))\b/i, negatable: false },
+        // "individual basis" waiver (class/collective/representative action prohibited)
+        { pattern: /\bindividual\s+basis\b.{0,200}\b(?:class|collective|representative)\b/i, negatable: false },
+    ],
+};
+
+/**
+ * Returns true if a sentence contains negation words that invert a violation.
+ * Used to avoid false positives like "we do NOT sell your data".
+ */
+function hasStrongNegation(sentence: string): boolean {
+    return /\b(?:do(?:es)?|did|will|shall|have|has|had|can|could|may|might|should|would|must|are|is|was|were|am)\s+not\b|\b(?:don't|doesn't|didn't|won't|shan't|haven't|hasn't|hadn't|can't|couldn't|shouldn't|wouldn't|mustn't|aren't|isn't|wasn't|weren't)\b|\bnever\b|\bnot\s+(?:sell|share|train|use|disclose|transfer|collect|store)\b/i.test(sentence);
+}
+
+/**
+ * DETERMINISTIC VIOLATION BACKSTOP
+ *
+ * Runs AFTER the LLM chunked analysis. Scans the FULL document text for hard
+ * violation indicators that the LLM may have missed due to chunking boundaries.
+ *
+ * Only upgrades SAFE → RISKY, never downgrades. Uses compound regex patterns
+ * with near-zero false positive rate — terms like "sublicensable", "class action",
+ * "binding arbitration" are unambiguous violation signals in any legal document.
+ *
+ * When a missed violation is detected:
+ *   - violation = true
+ *   - confidence = 'HIGH'
+ *   - citation = the exact verbatim sentence from the document
+ *
+ * This makes the system universal: same document → same result, regardless of
+ * how the LLM happened to chunk it on this particular scan.
+ */
+export function detectHardViolations(fullText: string, pillars: Record<string, any>): void {
+    if (!fullText || !pillars) return;
+
+    // Split into sentences for targeted, contextual matching
+    const sentences = fullText
+        .replace(/([.!?])\s+(?=[A-Z\u201C\u2018"])/g, '$1\n')
+        .split('\n')
+        .map(s => s.trim())
+        .filter(s => s.length >= 20 && s.length <= 1000);
+
+    for (const [pillarKey, pillar] of Object.entries(pillars)) {
+        // Only run on pillars the LLM marked as SAFE or MEDIUM — never downgrade
+        if (!pillar || pillar.violation === true) continue;
+
+        const patterns = HARD_VIOLATION_PATTERNS[pillarKey];
+        if (!patterns || patterns.length === 0) continue;
+
+        let upgradeFound = false;
+        for (const { pattern, negatable } of patterns) {
+            if (upgradeFound) break;
+
+            for (const sentence of sentences) {
+                if (!pattern.test(sentence)) continue;
+                if (negatable && hasStrongNegation(sentence)) continue;
+
+                // Found a hard violation the LLM missed — upgrade pillar
+                pillar.violation = true;
+                pillar.confidence = 'HIGH';
+                const words = sentence.split(/\s+/);
+                pillar.citation = words.length > 60
+                    ? words.slice(0, 60).join(' ') + '...'
+                    : sentence;
+                upgradeFound = true;
+                console.log(`[TLDR Shield] detectHardViolations: upgraded ${pillarKey} SAFE→RISKY via pattern "${pattern.source.slice(0, 60)}"`);
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * COOKIE BOILERPLATE STRIPPER
+ *
+ * Removes cookie consent banner content from extracted page text before
+ * sending to the LLM. Cookie banners (OneTrust, Cookiebot, etc.) often contain
+ * data-sharing language ("user browsing data shared with advertisers") that
+ * belongs to the cookie policy — not the Terms of Service — and causes false
+ * positive data_selling citations.
+ *
+ * Method: splits text into paragraphs, removes any paragraph matching 2+
+ * known cookie consent indicators. This is surgical — it only removes confirmed
+ * cookie content, not any ToS text that happens to mention cookies.
+ */
+export function stripCookieBoilerplate(text: string): string {
+    if (!text) return text;
+
+    const cookieIndicators: RegExp[] = [
+        /targeting\s+cookies/i,
+        /strictly\s+necessary\s+cookies/i,
+        /functional\s+cookies/i,
+        /performance\s+cookies/i,
+        /accept\s+all\s+cookies/i,
+        /reject\s+all\s+cookies/i,
+        /cookie\s+preferences/i,
+        /universal\s+advertising\s+identifier/i,
+        /consent\s+management\s+platform/i,
+        /\bonetrust\b/i,
+        /\bcookiebot\b/i,
+        /vendors?\s+may\s+rely\s+on\s+your\s+consent/i,
+    ];
+
+    // Paragraphs with 2+ cookie indicators are cookie banner content, not ToS
+    const paragraphs = text.split(/\n{2,}/);
+    const cleaned = paragraphs.filter(para => {
+        const hits = cookieIndicators.filter(rx => rx.test(para)).length;
+        return hits < 2;
+    });
+
+    const result = cleaned.join('\n\n');
+    if (result.length < text.length - 200) {
+        console.log(`[TLDR Shield] stripCookieBoilerplate: removed ~${text.length - result.length} chars of cookie banner text`);
+    }
+    return result;
+}
