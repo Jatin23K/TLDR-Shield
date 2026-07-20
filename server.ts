@@ -28,7 +28,7 @@ import { authMiddleware } from './server/middleware/auth.js';
 import { checkAndDeductCredits, refundCredits, getUserCredits } from './server/services/creditService.js';
 import { getSharedCache, setSharedCache, saveScanRecord, saveReport } from './server/services/databaseService.js';
 import { callGemini, callGeminiEnsemble } from './server/services/llmService.js';
-import { chunkText, extractJSON, findVerbatimInChunk } from './server/lib/textUtils.js';
+import { chunkText, extractJSON, findVerbatimInChunk, backfillSafeCitations } from './server/lib/textUtils.js';
 import { getCache, setCache } from './server/lib/redis.js';
 
 // Shared Logic
@@ -508,6 +508,13 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         };
 
         sanitizeCitations(final.pillars);
+
+        // POST-SCAN CITATION BACKFILL:
+        // For any SAFE pillar that returned [NOT_FOUND], search the full raw text
+        // deterministically for the most relevant sentence using keyword scoring.
+        // Same document always produces the same citation — fixes scan-to-scan inconsistency.
+        // Never changes violation flag or confidence — only fills in missing citations.
+        backfillSafeCitations(final.pillars, text);
 
         // FIX: Send result to client FIRST — before any DB/cache writes.
         // Previously, a Firestore or Redis failure inside Promise.all would throw,
