@@ -254,6 +254,10 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
             (p: any) => p?.citation === 'Flagged by quick analysis'
         );
         if (hasQuickFakeCitation) return false;
+        // Reject stale cached results that are missing the dark_patterns pillar
+        // when the current request has darkPatterns enabled. Prevents pre-darkPatterns
+        // cache entries from being served as complete 6-pillar results.
+        if (darkPatterns && !pillars.dark_patterns) return false;
         return true;
     };
 
