@@ -248,6 +248,12 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         const pillars = result.pillars;
         if (!pillars || Object.keys(pillars).length === 0) return false;
         if (result.tldr === 'Analysis complete.') return false;
+        // FIX #5: Reject stale quick-scan results that have fake citations
+        // so they are never served to users who expect a deep scan.
+        const hasQuickFakeCitation = Object.values(pillars).some(
+            (p: any) => p?.citation === 'Flagged by quick analysis'
+        );
+        if (hasQuickFakeCitation) return false;
         return true;
     };
 
@@ -386,10 +392,12 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
                     }
 
                     // Pass 1: verbatim citation grounding — replace LLM paraphrases with exact source text
+                    // FIX #3: Skip grounding for placeholder labels (quick scan artifacts) — only
+                    // run on real LLM-generated citation text to avoid the "Exact text not found" warning.
                     if (parsed?.pillars) {
                         for (const key of Object.keys(parsed.pillars)) {
                             const p = parsed.pillars[key];
-                            if (p?.violation && p?.citation) {
+                            if (p?.violation && p?.citation && p.citation !== 'Flagged by quick analysis' && p.citation !== '[NOT_FOUND]') {
                                 p.citation = findVerbatimInChunk(p.citation, chunk);
                             }
                         }
@@ -459,8 +467,16 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
             }
         });
 
+        // FIX #2: Emit Step 3 status — "Auditing Privacy Pillars" — so the UI progress
+        // bar advances past Step 2. Previously the server went straight from chunk status to
+        // the final result without ever emitting Steps 3 or 4.
+        res.write(`data: ${JSON.stringify({ status: 'auditing pillars...' })}\n\n`);
+
         const crossCheckConfirmed = applyConsistencyCrossCheck(aggregatedPillars, text);
         updatePillarConfidence(aggregatedPillars, crossCheckConfirmed, text);
+
+        // FIX #2: Emit Step 4 status — "Calculating Score"
+        res.write(`data: ${JSON.stringify({ status: 'calculating score...' })}\n\n`);
 
         const { score, rating, deductions } = calculateScoreAndRating(aggregatedPillars, tier, text.length);
         const requestId = crypto.randomUUID();
