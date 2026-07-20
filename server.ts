@@ -419,6 +419,13 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         const normalizedResults = results.map((r, idx) => {
             if (!r) return null;
             if (r.pillars) return r; // deep scan — already structured
+            
+            // For deep scans, we require the structured pillars. Do not fall back to flat quick-scan format.
+            if (tier === 'deep') {
+                console.warn(`[TLDR Shield] Block ${idx + 1} returned flat format instead of deep pillars. Rejecting block.`);
+                return null;
+            }
+
             // Quick scan: flat booleans → convert to pillar format
             const hasAnyBool = PILLAR_KEYS_NORM.some(k => typeof r[k] === 'boolean');
             if (!hasAnyBool) {
