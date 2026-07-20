@@ -124,28 +124,78 @@ export function extractJSON(text: string): any {
 // as the citation verbatim — no LLM call, no hallucination risk.
 const PILLAR_KEYWORDS: Record<string, { high: string[]; low: string[] }> = {
     ai_training: {
-        high: ['train', 'machine learning', 'artificial intelligence', 'llm', 'fine-tune', 'training data', 'ai model', 'ml model'],
-        low:  ['data', 'improve', 'algorithm', 'model', 'personaliz', 'recommend'],
+        // Require explicit AI/ML training language — NOT generic "model" or "improve"
+        high: [
+            'train.{0,20}(?:model|ai|data)',   // "train our models", "training data"
+            'machine learning',
+            'artificial intelligence',
+            'fine.?tun',                        // fine-tune, fine-tuned
+            'large language model',
+            'generative ai',
+            'neural network',
+            'training data',
+        ],
+        low: [],   // no generic words — "model", "improve", "recommend" cause false positives
     },
     data_selling: {
-        high: ['sell', 'sold', 'third.?party', 'third parties', 'broker', 'advertis', 'marketing partner', 'disclose.*personal', 'share.*personal'],
-        low:  ['partner', 'affiliate', 'share', 'disclose', 'transfer', 'commercial'],
+        // Require explicit third-party commercial data sharing — NOT generic "partner"
+        high: [
+            'sell.{0,20}(?:data|information|personal)',
+            'third.?part.{0,20}(?:advertis|commercial|marketing)',
+            'data broker',
+            'marketing partner',
+            'advertis.{0,20}partner',
+            'share.{0,30}personal.{0,30}third',
+        ],
+        low: [],   // "share", "partner", "affiliate" alone are too generic
     },
     transparency: {
-        high: ['privacy policy', 'clear', 'simple', 'accessible', 'transparent', 'plain language', 'easy to understand'],
-        low:  ['policy', 'explain', 'inform', 'notice', 'disclose', 'communicate'],
+        // Transparency language is relatively unique — keep compound phrases only
+        high: [
+            'privacy policy',
+            'simple and clear',
+            'easy to understand',
+            'plain.{0,10}language',
+            'worked hard to make',
+            'transparent',
+        ],
+        low: ['clear', 'inform'],
     },
     data_retention: {
-        high: ['retain', 'retention', 'delete', 'deletion', 'account.*delet', 'delet.*account', 'after.*terminat', 'days after', 'years after'],
-        low:  ['data', 'store', 'keep', 'account', 'terminat', 'remov'],
+        // Must see an explicit retention PERIOD — NOT just "delete your account"
+        high: [
+            'retain.{0,20}(?:data|information|personal)',
+            '(?:data|information).{0,20}retain',
+            'retention period',
+            '(?:days|months|years).{0,30}(?:after|follow).{0,30}(?:delet|terminat|clos)',
+            'how long.{0,30}(?:keep|store|retain|held)',
+            '(?:keep|store|held).{0,20}(?:data|information).{0,30}(?:days|months|years)',
+            'after.{0,30}account.{0,30}(?:delet|clos).{0,30}(?:days|months|years)',
+        ],
+        low: [],   // "delete", "account", "terminat" alone match account-deletion sentences
     },
     content_ownership: {
-        high: ['license', 'licence', 'intellectual property', 'copyright', 'own.*content', 'content.*own', 'rights.*content'],
-        low:  ['content', 'post', 'upload', 'submit', 'creat'],
+        high: [
+            'sublicens',
+            'royalty.free.{0,20}licen',
+            'worldwide.{0,20}licen',
+            'licen.{0,30}content',
+            'intellectual property.{0,20}content',
+            'rights.{0,20}(?:your )?content',
+        ],
+        low: ['license', 'licence'],
     },
     dark_patterns: {
-        high: ['arbitrat', 'class action', 'liabilit', 'waiv', 'statute of limitation', 'binding.*individual', 'dispute resolution'],
-        low:  ['claim', 'lawsuit', 'legal', 'court', 'agree', 'settlement'],
+        high: [
+            'arbitrat',
+            'class action',
+            'waiv.{0,20}right',
+            'liabilit.{0,20}(?:cap|limit|shall not exceed)',
+            'statute of limitation',
+            '(?:individual|binding).{0,20}arbitrat',
+            'dispute.{0,20}(?:resolut|individual)',
+        ],
+        low: ['claim', 'court'],
     },
 };
 
@@ -208,8 +258,11 @@ export function backfillSafeCitations(pillars: Record<string, any>, fullText: st
             }
         }
 
-        // Only use if score is meaningful (at least 1 high-value keyword hit)
-        if (bestScore >= 3 && bestSentence.length >= 30) {
+        // Only use if score is meaningful — requires at least 2 high-value keyword hits
+        // (threshold 6 = two 3-point high-value matches). Single vague keyword matches
+        // are rejected to prevent false-positive citations like "delete your account"
+        // appearing under data_retention, or third-party sentences under ai_training.
+        if (bestScore >= 6 && bestSentence.length >= 30) {
             // Cap at 60 words to stay within citation display limits
             const words = bestSentence.split(/\s+/);
             pillar.citation = words.length > 60
