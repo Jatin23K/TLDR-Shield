@@ -39,9 +39,10 @@ BANNED PATTERNS (automatic fail — never write these):
 ✗ Descriptions of what the policy does ("The policy limits liability to...")
 
 FOR CLEAR PILLARS (violation: false):
-- If the document explicitly PROTECTS the user (e.g. "We do not sell data"), quote the verbatim sentence.
-- If the document is SILENT or does not address the pillar at all, you MUST write exactly: '[NOT_FOUND]'
-- NEVER write summary statements like "The policy doesn't mention training". Use the verbatim quote or '[NOT_FOUND]'.
+- If the document EXPLICITLY PROTECTS the user (e.g. "We do not sell data", "We will never train AI on your data"), quote that verbatim sentence. Set confidence: HIGH.
+- If the document is SILENT on this topic (does not mention it at all), find the most relevant sentence in the document that RELATES to this pillar's subject area (e.g. for ai_training: a sentence about how data is used; for data_selling: a sentence about data sharing; for data_retention: a sentence about account deletion or data storage). Quote that sentence verbatim. This gives the user context for why the pillar was marked SAFE. Set confidence: MEDIUM.
+- If you cannot find ANY related sentence in the entire document, write exactly: '[NOT_FOUND]'
+- NEVER write summary statements like "The policy doesn't mention training". Quote actual document text or '[NOT_FOUND]'.
 
 CORRECT FORMAT — first-person text copied exactly as it appears in the document:
 ✓ ai_training:       "for use with and training of our machine learning and artificial intelligence models, whether generative or another type"
@@ -127,8 +128,8 @@ Output ONLY valid JSON — no markdown fences, no text outside the JSON:
 }
 
 CONFIDENCE RULES:
-- HIGH: You found an explicit, unambiguous clause. Citation is a direct verbatim quote. No interpretation needed.
-- MEDIUM: Clause exists but is ambiguous, OR the pillar is SILENT (citation is '[NOT_FOUND]'). Silence can NEVER be HIGH confidence.
+- HIGH: You found an explicit, unambiguous clause. Citation is a direct verbatim quote proving or denying the violation. No interpretation needed.
+- MEDIUM: Clause exists but is ambiguous, OR the pillar is SILENT (citation is the most relevant contextual quote from the document, or '[NOT_FOUND]' only if truly nothing related exists). Silence can NEVER be HIGH confidence.
 - LOW: Inferred from indirect language, or delegated to an external document.
 Always include confidence for every pillar, including CLEAR ones.
 
