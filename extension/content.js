@@ -289,9 +289,9 @@ function createTriggerButton() {
     // Show skeleton immediately so user sees feedback right away
     showSkeletonPanel();
 
-    // PERSISTENCE FIX: Read the user's preferred tier (defaulting to quick) from storage
+    // PERSISTENCE FIX: Read the user's preferred tier (defaulting to deep) from storage
     // so the floating icon respects the selection made in the popup.
-    let tier = 'quick';
+    let tier = 'deep'; // FIX #1: default to deep — quick had fake "Flagged by quick analysis" citations
     try {
       const storage = await chrome.storage.local.get(['tier']);
       if (storage && storage.tier) tier = storage.tier;

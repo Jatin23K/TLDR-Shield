@@ -187,7 +187,7 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
       // Previously both defaulted to true, causing a split-brain state where
       // users who never opened the popup got ELI5 + dark patterns unexpectedly.
       eli5Mode: false,
-      darkPatterns: true,
+      darkPatterns: false, // FIX #4: default off — user must opt-in, not silently lose -40pts
     });
 
     const url = apiUrl || DEFAULT_API_URL;
@@ -200,8 +200,8 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
     //   tierOverride     → user explicitly chose quick/deep in popup
     //   forceDeep=true   → user clicked "Run Deep Scan" from quick result panel
     //   text > 30k       → auto-promote to deep for large documents
-    //   otherwise        → quick
-    const autoTier = tierOverride ?? (forceDeep || text.length > 30000 ? 'deep' : 'quick');
+    //   otherwise        → deep (FIX #6: was 'quick', caused most pages to always quick-scan)
+    const autoTier = tierOverride ?? (forceDeep || text.length > 30000 ? 'deep' : 'deep');
 
     // Read stored auth token from session storage (Fix #20).
     // TOKEN_SKEW_BUFFER: 5-minute grace period prevents valid tokens from being
