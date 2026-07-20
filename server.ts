@@ -313,10 +313,8 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     // 2. Either requester is an Admin OR user-access is explicitly enabled
     const useProForThisRequest = isProMasterOn && (isAdmin || allowUsersPro);
 
-    // INCREASE CHUNK SIZE: 150,000 characters per chunk (Gemini 2.5 has 1M token context window)
-    // This allows large documents (like Discord's ToS) to be processed in 1 or 2 chunks
-    // instead of being truncated after 96,000 characters.
-    const chunks = chunkText(text, 150000, 5000, 3);
+    // Use 40,000 characters per chunk to prevent Gemini API output truncation/rate limit anomalies on massive inputs
+    const chunks = chunkText(text, 40000, 5000, 3);
     let keyPool = hybridPool;
     const modelStack = [primaryModel, fallbackModel];
 
