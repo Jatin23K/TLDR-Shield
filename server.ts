@@ -36,6 +36,10 @@ import { calculateScoreAndRating } from './shared/scoring.js';
 import { buildSystemPrompt, buildPillarPrompt } from './server/prompts.js';
 import { applyConsistencyCrossCheck, sanitizeCitations, updatePillarConfidence } from './server/postprocess.js';
 
+// Cache version gate: bump this string whenever the detection pipeline changes.
+// Any cached result missing this version is automatically rejected and re-scanned.
+const CACHE_VERSION = 'v4';
+
 // Demo Data
 import demoResults from './shared/demo_results.json' with { type: 'json' };
 
@@ -258,6 +262,9 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
         // when the current request has darkPatterns enabled. Prevents pre-darkPatterns
         // cache entries from being served as complete 6-pillar results.
         if (darkPatterns && !pillars.dark_patterns) return false;
+        // Reject results from previous pipeline versions — they lack the
+        // detectHardViolations backstop and LOW-confidence penalty fixes.
+        if (result.cacheVersion !== CACHE_VERSION) return false;
         return true;
     };
 
@@ -508,7 +515,8 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
             pillars: aggregatedPillars,
             tldr: bestTldr || synthesizedTldr,
             requestId,
-            tier
+            tier,
+            cacheVersion: CACHE_VERSION,  // used by isCacheHealthy to reject stale cached results
         };
 
         sanitizeCitations(final.pillars);

@@ -60,8 +60,13 @@ export function calculateScoreAndRating(
         const penalty = PILLAR_PENALTY[key] ?? { full: 30, low: 15 };
         const confidence = (pillars[key]?.confidence ?? 'MEDIUM').toUpperCase();
         if (confidence === 'LOW') {
-            // Preserve the flag for transparency, but do not deduct.
-            deductions.push({ reason: `Low-confidence flag in ${key.replace(/_/g, ' ')} (no penalty)`, points: 0 });
+            // LOW confidence = violation found but citation unverifiable (paraphrased/missing).
+            // Apply reduced penalty (penalty.low) instead of 0 — the LLM saw something real,
+            // the citation just couldn't be grounded verbatim. Half-penalty prevents 100/100 SAFE
+            // on documents that clearly contain violations.
+            const lowPoints = penalty.low ?? Math.floor(penalty.full / 2);
+            score -= lowPoints;
+            deductions.push({ reason: `Low-confidence flag in ${key.replace(/_/g, ' ')} (reduced penalty)`, points: lowPoints });
             continue;
         }
         const points = penalty.full;
