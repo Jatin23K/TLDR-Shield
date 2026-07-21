@@ -45,11 +45,19 @@ export function findVerbatimInChunk(citation: string, chunkText: string): string
         return citation;
     }
 
-    // Fast path: citation is already verbatim (first 50 chars appear in source)
-    const citLower = citation.toLowerCase().replace(/\s+/g, ' ').trim();
-    const srcLower = chunkText.toLowerCase().replace(/\s+/g, ' ');
-    const prefix = citLower.slice(0, 50);
-    if (prefix.length >= 20 && srcLower.includes(prefix)) return citation;
+    const normalizeString = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const citNorm = normalizeString(citation);
+    const srcNorm = normalizeString(chunkText);
+    
+    const prefix = citNorm.slice(0, 50);
+    if (prefix.length >= 20 && srcNorm.includes(prefix)) {
+        // Fast path: find the actual matching text in the source (preserving original casing/punctuation)
+        // We do this by finding the index of the normalized prefix in the normalized source,
+        // then extracting the corresponding original characters. Since normalization removes chars,
+        // we use a simple regex to find the raw text.
+        // Actually, just returning the citation (without LLM-added quotes) is safest and cleanest.
+        return citation.replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '').trim();
+    }
 
     // 1. Extract key terms: 4+ chars, non-stopword, max 6
     const keyTerms = citation
@@ -62,6 +70,7 @@ export function findVerbatimInChunk(citation: string, chunkText: string): string
     if (keyTerms.length < 2) return citation;
 
     // 2. Find positions of each key term in the chunk
+    const srcLower = chunkText.toLowerCase().replace(/\s+/g, ' ');
     const termPositions: number[][] = keyTerms.map(term => {
         const positions: number[] = [];
         let idx = srcLower.indexOf(term);
