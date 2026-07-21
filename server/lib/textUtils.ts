@@ -336,13 +336,14 @@ const HARD_VIOLATION_PATTERNS: Record<string, ViolationPattern[]> = {
         { pattern: /\bclass\s+action\b/i, negatable: false },
         // Class representative/member waiver pattern
         { pattern: /\bclass\s+(?:representative|member)\b.{0,150}\b(?:waiv|not\s+bring|cannot\s+bring|may\s+not\s+bring)/i, negatable: false },
-        // Mandatory/binding arbitration
-        { pattern: /\b(?:mandatory|binding|compulsory)\s+arbitrat/i, negatable: false },
+        // Mandatory/binding arbitration — allows words between modifier and arbitration
+        // e.g. "binding individual arbitration", "mandatory binding arbitration"
+        { pattern: /\b(?:mandatory|binding|compulsory)\b.{0,30}\barbitrat/i, negatable: false },
         { pattern: /\bagree(?:s|d|ing)?\s+to\s+(?:binding\s+)?arbitrat/i, negatable: false },
         // Statute of limitations shortened
         { pattern: /\bstatute\s+of\s+limitation/i, negatable: false },
-        // Liability cap with dollar amount — e.g. "shall not exceed $100"
-        { pattern: /\bliabilit\w*\b.{0,80}\b(?:shall\s+not\s+exceed|is\s+limited\s+to|will\s+not\s+exceed|capped?\s+at)\b.{0,120}\b(?:\$\s*\d+|\d+\s*(?:dollars?|usd))\b/i, negatable: false },
+        // Liability cap with dollar amount — removed \b before \$ (non-word char, \b doesn't work)
+        { pattern: /\bliabilit\w*\b.{0,80}\b(?:shall\s+not\s+exceed|is\s+limited\s+to|will\s+not\s+exceed|capped?\s+at)\b.{0,120}(?:\$\s*\d+|\d+\s*(?:dollars?|usd))\b/i, negatable: false },
         // "individual basis" waiver (class/collective/representative action prohibited)
         { pattern: /\bindividual\s+basis\b.{0,200}\b(?:class|collective|representative)\b/i, negatable: false },
     ],
@@ -450,11 +451,13 @@ export function stripCookieBoilerplate(text: string): string {
         /vendors?\s+may\s+rely\s+on\s+your\s+consent/i,
     ];
 
-    // Paragraphs with 2+ cookie indicators are cookie banner content, not ToS
+    // Paragraphs with 3+ cookie indicators are cookie banner content, not ToS.
+    // Threshold of 3 (up from 2) prevents over-stripping ToS paragraphs that
+    // legitimately reference cookies in a data collection context.
     const paragraphs = text.split(/\n{2,}/);
     const cleaned = paragraphs.filter(para => {
         const hits = cookieIndicators.filter(rx => rx.test(para)).length;
-        return hits < 2;
+        return hits < 3;
     });
 
     const result = cleaned.join('\n\n');
