@@ -10,6 +10,33 @@
 // Runs keyword matching against the full source text to catch violations the LLM missed.
 // Returns a set of pillar keys that were confirmed by keyword evidence.
 
+/**
+ * Extract the full sentence surrounding a keyword from sourceText.
+ * Walks left to the nearest sentence boundary (. ! ? \n) and right
+ * to the nearest sentence boundary. Returns a clean, complete sentence
+ * that can be used as a verbatim citation — one the extension can highlight.
+ */
+function extractSentenceContaining(keyword: string, sourceText: string): string {
+    const idx = sourceText.toLowerCase().indexOf(keyword.toLowerCase());
+    if (idx === -1) return keyword;
+
+    // Walk left to sentence start
+    let start = idx;
+    while (start > 0 && !/[.!?\n]/.test(sourceText[start - 1])) start--;
+
+    // Walk right to sentence end
+    let end = idx + keyword.length;
+    while (end < sourceText.length && !/[.!?\n]/.test(sourceText[end])) end++;
+    if (end < sourceText.length) end++; // include the terminating punctuation
+
+    const sentence = sourceText.slice(start, end).trim();
+    if (sentence.length < 20) return keyword;
+
+    // Cap at 60 words to stay within citation display limits
+    const words = sentence.split(/\s+/);
+    return words.length > 60 ? words.slice(0, 60).join(' ') + '...' : sentence;
+}
+
 export function applyConsistencyCrossCheck(pillars: Record<string, any>, sourceText: string): Set<string> {
     const confirmed = new Set<string>();
     const textLower = sourceText.toLowerCase();
@@ -58,15 +85,30 @@ export function applyConsistencyCrossCheck(pillars: Record<string, any>, sourceT
         // Already confirmed by HIGH_CONFIDENCE — skip standard check for this pillar
         const highHits = (HIGH_CONFIDENCE[key] ?? []).filter(kw => textLower.includes(kw));
         if (highHits.length > 0) {
-            // Highly specific phrase found — we can force a violation because it's unambiguous
+            // Extract the full verbatim sentence surrounding the matched keyword.
+            // This gives the extension something real to highlight, and makes
+            // computeCitationConfidence return HIGH (not LOW) since the sentence
+            // is directly from the source text.
+            const verbatimCitation = extractSentenceContaining(highHits[0], sourceText);
+
             if (!pillars[key]?.violation) {
+                // LLM missed it — force violation with our verbatim evidence
                 pillars[key] = { 
                     ...pillars[key], 
                     violation: true, 
                     confidence: 'HIGH',
-                    citation: highHits[0] // Set matched phrase as citation so it is grounded
+                    citation: verbatimCitation,
                 };
+            } else if (!pillars[key].citation
+                || pillars[key].citation === '[NOT_FOUND]'
+                || pillars[key].citation === 'Not addressed in document.'
+                || pillars[key].confidence === 'LOW') {
+                // LLM found the violation but its citation was paraphrased/missing.
+                // Replace with our verbatim sentence and upgrade confidence.
+                pillars[key].citation = verbatimCitation;
+                pillars[key].confidence = 'HIGH';
             }
+            // else: LLM already has a MEDIUM/HIGH grounded citation — don't overwrite it.
             confirmed.add(key);
             continue;
         }
