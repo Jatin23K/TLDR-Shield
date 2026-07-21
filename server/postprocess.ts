@@ -17,23 +17,31 @@ export function applyConsistencyCrossCheck(pillars: Record<string, any>, sourceT
     // HIGH_CONFIDENCE: single unambiguous phrase is enough — these don't appear in compliant policies.
     // STANDARD: require 2+ hits to prevent loose single-word matches.
     const HIGH_CONFIDENCE: Record<string, string[]> = {
-        ai_training:       ['train our models', 'training data for ai', 'fine-tune our', 'generative ai trained', 'llm trained on', 'used to train ai'],
+        ai_training:       ['train our models', 'training data for ai', 'fine-tune our', 'generative ai trained', 'llm trained on', 'used to train ai',
+                            'machine learning and ai models', 'machine learning or ai', 'training our machine learning'],
         data_selling:      [
             'sell your personal data', 'sell user data', 'selling data', 'data broker', 'sell or share your',
-            // Meta/Instagram miss audit: the "advertisers and partners" share-language
-            // that Meta's PP uses to commercialize data without calling it "selling"
             'advertising partners for their',
             'commercial purposes',
         ],
         content_ownership: [
             'for any purpose',
             'sublicensable',
+            'sub-licensable',   // hyphenated variant (Spotify, Apple, etc.)
+            'sub licensable',
             'royalty-free',
             'irrevocable',
             'perpetual',
             'derivative works',
         ],
-        dark_patterns:     ['class action waiver', 'waive your right to participate', 'binding individual arbitration', 'forced arbitration', 'not exceed $100', 'shortened statute'],
+        dark_patterns:     [
+            'class action waiver', 'waive your right to participate', 'binding individual arbitration',
+            'forced arbitration', 'not exceed $100', 'shortened statute',
+            'class action',      // standalone — virtually always a waiver in ToS context
+            'mandatory arbitration', 'compulsory arbitration',
+            'statute of limitations',
+            'individual basis',  // "on an individual basis" = class action waiver language
+        ],
         data_retention:    ['retain indefinitely', 'retain forever', 'stored permanently'],
     };
 
@@ -118,10 +126,17 @@ export function updatePillarConfidence(
         const p = pillars[key];
         if (!p) continue;
 
-        // Fix B: If a pillar is marked as a violation, but has no citation or citation is [NOT_FOUND],
-        // demote it to violation: false immediately. No citation = no violation.
+        // Fix: Do NOT clear violation=true when citation is [NOT_FOUND] or missing.
+        // The LLM correctly identified a violation but couldn't produce verbatim text
+        // (paraphrased, or text was in a different chunk). Clearing violation=false here
+        // was silently causing 100/100 scores on real violations.
+        //
+        // NEW RULE: violation with no verifiable citation → keep violation=true but
+        // set confidence=LOW. Scored at half-penalty. User sees a warning icon.
+        // This is far better than pretending the violation doesn't exist.
         if (p.violation && (!p.citation || p.citation === '[NOT_FOUND]' || p.citation === 'Not addressed in document.')) {
-            p.violation = false;
+            p.confidence = 'LOW';
+            // Don't clear violation — proceed to scoring with LOW confidence
         }
 
         if (!p.violation) {
