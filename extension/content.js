@@ -552,7 +552,7 @@ function updateProgressPanel(status) {
   }
 
   if (stepIdx < 0) return;
-  if (stepIdx <= _progressState.currentStep) return; // monotonic â€” skip if already at or past this step
+  if (stepIdx <= _progressState.currentStep) return; // monotonic — skip if already at or past this step
 
   PROGRESS_STEPS.forEach((step, i) => {
     const row = stepsContainer.querySelector('#tldr-step-' + step.key);
@@ -568,7 +568,7 @@ function updateProgressPanel(status) {
   _progressState.currentStep = stepIdx;
 }
 
-// â”€â”€ Shared panel drag setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ————————————————— Shared panel drag setup —————————————————————————————————————
 function _attachPanelDrag(panel, header, closeBtn) {
   let pOffX = 0, pOffY = 0;
   header.addEventListener('pointerdown', (e) => {
@@ -600,7 +600,7 @@ function _attachPanelDrag(panel, header, closeBtn) {
 }
 
 // Finds citation text in the page DOM, scrolls to it, and highlights it
-// â”€â”€ Citation highlighting using mark.js â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ————————————————— Citation highlighting using mark.js ——————————————————————————
 // mark.js (lib/mark.min.js loaded before this file) handles:
 //   - Text split across inline DOM elements (<strong>, <em>, <span>, <a>)
 //   - React/Vue rendered content (reconciles text node fragments)
@@ -644,25 +644,32 @@ function highlightCitation(citation) {
   const clean = citation.replace(/^["'"'\u201c\u2018]|["'"'\u201d\u2019]$/g, '').trim();
   if (!clean) return false;
 
-  // Build ordered candidates â€” most specific first
+  // Normalize typographic variants: en/em-dash->hyphen, curly quotes->straight, NBSP->space.
+  // Server extracts text via Readability; the live browser DOM may render different Unicode chars.
+  const normalize = (s) => s
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const cleanNorm = normalize(clean);
+
+  // Build ordered candidates -- most specific first
   const candidates = [];
 
-  // 1. Full citation
+  // 1. Full citation (original + normalized variant)
   candidates.push(clean);
+  if (cleanNorm !== clean) candidates.push(cleanNorm);
 
-  // 2. Prefix slices (longest â†’ shortest)
+  // 2. Prefix slices (longest -> shortest) using normalized string
   for (const len of [80, 60, 40, 25]) {
-    const s = clean.slice(0, len).trim();
-    if (s.length >= 20 && s !== clean) candidates.push(s);
+    const s = cleanNorm.slice(0, len).trim();
+    if (s.length >= 20 && s !== cleanNorm) candidates.push(s);
   }
 
-  // 3. Sliding word windows (8â†’5 words)
-  const words = clean.split(/\s+/).filter(Boolean);
-  for (const size of [8, 7, 6, 5]) {
-    for (let i = 0; i <= words.length - size; i++) {
-      candidates.push(words.slice(i, i + size).join(' '));
-    }
-  }
+  // 3. Sliding word windows (8->5 words) using normalized string
+  const words = cleanNorm.split(/\s+/).filter(Boolean);
 
   // Try each candidate until mark.js finds a match
   return new Promise((resolve) => {
@@ -1287,11 +1294,14 @@ function showResultPanel(data) {
                   quoteBox.appendChild(silenceNote);
                 }
               } else if (!found) {
-                // Only add once per quoteBox
-                if (!quoteBox.querySelector('.tldr-citation-miss')) {
+                // ONLY show the warning if this is a violation pillar (OKAY/RISKY).
+                // For SAFE pillars, the citation is just context — it's not evidence of
+                // wrongdoing, so failing to highlight it on-page is not alarming.
+                const isViolation = val.violation === true;
+                if (isViolation && !quoteBox.querySelector('.tldr-citation-miss')) {
                   const missNote = document.createElement('div');
                   missNote.className = 'tldr-citation-miss';
-                  missNote.textContent = '\u26A0\uFE0F Exact text not found on page \u2014 may be paraphrased or on another section.';
+                  missNote.textContent = '\u26A0\uFE0F Exact text not found on page \u2014 may be in a collapsed section or paraphrased.';
                   missNote.style.cssText = [
                     'font-size:10px',
                     'color:rgba(255,200,100,0.85)',
