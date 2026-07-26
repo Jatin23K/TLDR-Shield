@@ -46,7 +46,8 @@ jobs:
 
       - name: Verify deployment
         run: |
-          sleep 30
+          echo "Waiting 90s for Render cold start..."
+          sleep 90
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://tldr-shield.onrender.com/health)
           if [ "$STATUS" != "200" ]; then
             echo "❌ Health check failed — status $STATUS"
