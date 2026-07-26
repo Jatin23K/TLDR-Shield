@@ -37,8 +37,8 @@ import { buildSystemPrompt, buildPillarPrompt } from './server/prompts.js';
 import { applyConsistencyCrossCheck, sanitizeCitations, updatePillarConfidence } from './server/postprocess.js';
 
 // Cache version gate: bump this string whenever the detection pipeline changes.
-// All older cached scans will be auto-evicted to ensure users get the new logic.
-const CACHE_VERSION = 'v5';
+// Any cached result missing this version is automatically rejected and re-scanned.
+const CACHE_VERSION = 'v4';
 
 // Demo Data
 import demoResults from './shared/demo_results.json' with { type: 'json' };
@@ -349,7 +349,7 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     res.setHeader('Connection', 'keep-alive');
 
     try {
-        const sysPrompt = buildSystemPrompt(darkPatterns, tier);
+        const sysPrompt = buildSystemPrompt(eli5, darkPatterns, tier);
         const PILLAR_KEYS = ['ai_training', 'data_selling', 'transparency', 'data_retention', 'content_ownership'];
         if (darkPatterns) {
             PILLAR_KEYS.push('dark_patterns');
@@ -370,7 +370,7 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
                     // This is safe per-chunk (6 concurrent calls is under the 15 RPM limit).
                     const pillarSettled = await Promise.allSettled(
                         PILLAR_KEYS.map(async (pillar) => {
-                            const pPrompt = buildPillarPrompt(pillar);
+                            const pPrompt = buildPillarPrompt(pillar, false);
                             const resp = await callGeminiEnsemble(pPrompt, chunk, 256, 20000, modelStack[0], corroborator as string, keyPool);
                             const pResult = extractJSON(resp.content);
                             return { pillar, result: pResult };
