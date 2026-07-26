@@ -2,8 +2,10 @@
 
 ![Version](https://img.shields.io/badge/version-2.0.0-6366f1)
 ![License](https://img.shields.io/badge/license-Apache--2.0-10b981)
-![Stack](https://img.shields.io/badge/stack-React%20%7C%20Express%20%7C%20Gemini%202.5%20%7C%20Firebase-3b82f6)
-![Platform](https://img.shields.io/badge/platform-Chrome%20MV3%20%7C%20Firefox-f59e0b)
+![Stack](https://img.shields.io/badge/stack-TypeScript%20%7C%20Express%20%7C%20Gemini%202.5%20Paid-3b82f6)
+![Hosting](https://img.shields.io/badge/hosting-Render%20%28Backend%20%2B%20Frontend%29-46e3b7)
+![Storage](https://img.shields.io/badge/storage-Firestore-f59e0b)
+![Platform](https://img.shields.io/badge/platform-Chrome%20MV3%20%7C%20Firefox%20%28Unpacked%29-f59e0b)
 ![Deep Accuracy](https://img.shields.io/badge/deep%20accuracy-25%2F25-brightgreen)
 ![Recall](https://img.shields.io/badge/recall-93%25-brightgreen)
 ![Precision](https://img.shields.io/badge/precision-94%25-brightgreen)
@@ -212,10 +214,11 @@ Free-tier LLM APIs impose strict IP-level rate limits (e.g., 15 RPM). A naive wa
 | Rating | Score Range | Condition |
 |--------|-------------|-----------|
 | **SAFE** | 90–100 | No violations |
-| **OKAY** | 50–89 | Minor issues only (e.g., vague transparency) |
+| **OKAY** | 50–89 | Minor issues only |
 | **RISKY** | 0–49 | One or more serious violations detected |
 
-**Penalty weights:** Dark patterns −40 pts, AI training / data selling / data retention / content ownership −30 pts each, Transparency −20 pts.
+**Penalty weights (HIGH/MEDIUM confidence):** Dark Patterns −20 pts · AI Training / Data Selling / Data Retention / Content Ownership −15 pts each · Transparency −10 pts.  
+**LOW confidence:** Half the above penalty applied — violation is real but citation could not be verified verbatim.
 
 ---
 
@@ -237,13 +240,13 @@ Free-tier LLM APIs impose strict IP-level rate limits (e.g., 15 RPM). A naive wa
 | Layer | Technology |
 |-------|-----------|
 | Chrome Extension | Manifest V3, Vanilla JavaScript |
-| Backend | Node.js, Express, TypeScript |
-| AI Models | Google Gemini 2.5 Flash / Flash-Lite |
+| Firefox Extension | Manifest V2 port (`dist-firefox/`) |
+| Backend | Node.js, Express, TypeScript — deployed on **Render** |
+| Frontend | React 19, Tailwind CSS 4 — deployed on **Render** |
+| AI Models | Google Gemini 2.5 Flash / Flash-Lite (**Paid API**) |
 | NLP Chunking | `compromise` (sentence-aware splitting) |
-| Auth and Database | Firebase Auth + Firestore |
-| Cache | In-memory LRU (L1) + Firestore shared cache (L2) |
-| Deployment | Render Web Services |
-| Web App | React 19, Tailwind CSS 4 |
+| Auth | Firebase Auth |
+| Cache / Storage | Firestore (L2 shared cache + user data) + In-memory LRU (L1) |
 | Content Extraction | `@mozilla/readability` |
 
 ---
@@ -256,7 +259,7 @@ cd TLDR-Shield
 npm install
 ```
 
-Create a `.env` file:
+Create a `.env` file (Gemini paid API keys required):
 
 ```env
 GEMINI_SCAN_KEY_1=AIza...
@@ -270,12 +273,20 @@ npm run build   # Production build
 npm run lint    # TypeScript type-check
 ```
 
-**Chrome Extension (unpacked):**
+**Chrome Extension (load unpacked):**
+
+> The extension is not listed on the Chrome Web Store (store listing requires a one-time developer fee). Load it directly:
 
 1. Open `chrome://extensions/`
 2. Enable **Developer mode**
 3. Click **Load unpacked** → select the `extension/` folder
 4. Enter your backend URL in the popup → Save
+
+**Firefox Extension:**
+
+1. Open `about:debugging#/runtime/this-firefox`
+2. Click **Load Temporary Add-on**
+3. Select `dist-firefox/manifest.json`
 
 ---
 
