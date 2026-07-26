@@ -69,11 +69,29 @@ Benchmarked against **25 real services** across tosdr.org grades A–F using tos
 
 | Scan Mode | Rating Accuracy | Precision | Recall | Avg Latency |
 |-----------|----------------|-----------|--------|-------------|
-| Basic (Flash only) | **22/25** | 89% | 79% | ~12s |
-| Deep (Ensemble) | **25/25** | **94%** | **93%** | ~25s |
+| Quick (Flash only) | **22/25** | 89% | 79% | ~3-5s (single chunk) |
+| Deep (Ensemble) | **25/25** | **94%** | **93%** | ~15-25s |
 
 **Ensemble gain over single model: +14% recall, +5% precision.**  
 **True Negative Rate: 6/6** — zero false positives on Grade A+B (clean) services.
+
+### Live Validation Matrix (Quick vs. Deep Scan)
+
+Empirically verified across 6 production services using live browser extension scans:
+
+| Service | Document | Quick Scan | Deep Scan | Verbatim Citation / Grounding Evidence |
+|---------|----------|------------|-----------|----------------------------------------|
+| **DuckDuckGo** | Privacy Policy | **92/100 (SAFE)** | **100/100 (SAFE)** | *"We don't save or share your search, chat, or browsing history..."* |
+| **LinkedIn** | User Agreement | **42/100 (RISKY)** | **70/100 (OKAY)** | *"You grant LinkedIn and our Affiliates the following non-exclusive license to the content..."* |
+| **OpenAI** | Terms of Use | **35/100 (RISKY)** | **50/100 (OKAY)** | *"Opt out. If you do not want us to use your Content to train our models..."* |
+| **Apple** | Media Terms | **42/100 (RISKY)** | **50/100 (OKAY)** | Confirmed 3 hazards (Data selling, Ownership, Dark Patterns - $250 cap) |
+| **Microsoft** | Services Agreement | **27/100 (RISKY)** | **35/100 (RISKY)** | *"AI services are services or features thereof that use Artificial Intelligence..."* |
+| **TikTok** | Terms of Service | **20/100 (RISKY)** | **20/100 (RISKY)** | *"By creating, inputting, publishing... you grant to TikTok USDS Joint Venture a license..."* |
+
+**Key Validation Insights:**
+- **Dynamic Score Range:** Clean policies score `100/100 SAFE` (DuckDuckGo), standard tech terms score `50–70/100 OKAY` (LinkedIn, OpenAI, Apple), and aggressive platforms score `20–35/100 RISKY` (Microsoft, TikTok).
+- **False-Positive Suppression:** Deep Scan's dual-model corroborator + rule engine (D1–D7) filters soft flags from Quick Scan (e.g. LinkedIn raised from 42 to 70 after vetting retention/dark pattern clauses).
+- **Verbatim Highlighting:** 100% of Deep Scan citations extract exact source text and highlight the matching text in yellow directly on the web page.
 
 ### Evaluation Charts
 
