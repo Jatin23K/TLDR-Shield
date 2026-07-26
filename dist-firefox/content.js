@@ -1,56 +1,22 @@
-// ── TLDR Shield – Content Script ──────────────────────────────────────────────
+// â”€â”€ TLDR Shield â€“ Content Script (UI + Bootstrap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Multi-agent pipeline (browser side):
-//   Agent 1 → detect T&C presence (this file)
-//   Agent 2 → extract + clean text (this file)
-//   Agent 3 → send to server for analysis (background.js)
-//   Agent 4 → aggregate + display result (this file)
+//   Agent 1 â†’ detect T&C presence          (detection.js)
+//   Agent 2 â†’ extract + clean text          (extraction.js)
+//   Agent 3 â†’ send to server for analysis   (background.js)
+//   Agent 4 â†’ aggregate + display result    (this file)
+//   Auth    â†’ token bridge                  (bridge.js)
+//
+// detection.js and extraction.js are loaded BEFORE this file by manifest.json.
+// They export all shared functions/constants via window.TLDRShield namespace.
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AGENT 1 — T&C DETECTION ENGINE
-// Uses multi-signal confidence scoring instead of naive body-text scan.
-// Only fires the trigger button when confidence is HIGH enough.
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€ Re-import from namespace (set by detection.js + extraction.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// All constants/functions from detection.js and extraction.js are already in scope
+// Constants/functions from detection.js and extraction.js are already in scope
+// (shared content script scope). We do not need to destructure them.
+// const { extractPageText, extractPolicySuite } = window.TLDRShield;
 
-// Signal weights (summed → confidence score 0-100)
-const SIGNALS = {
-  URL_PATH:       40,  // /terms, /privacy, /tos, /eula in URL path
-  PAGE_TITLE:     25,  // legal keyword in <title>
-  H1_HEADING:     20,  // h1 contains legal keyword
-  H2_HEADING:     15,  // h2 contains legal keyword
-  MODAL_PRESENT:  30,  // visible modal/dialog with legal keyword
-  COOKIE_BANNER:  20,  // cookie consent overlay detected
-  META_TAG:       10,  // og:type or meta description mentions legal
-};
 
-const CONFIDENCE_THRESHOLD = 30; // minimum score to show the trigger button
-
-// Resolves the backend base URL from chrome.storage (key: apiUrl).
-// Falls back to empty string — callers must handle the empty case.
-const TLDR_DEFAULT_API_BASE = 'https://tldr-shield-292798741977.us-central1.run.app';
-
-function getReportUrl(cb) {
-  if (typeof chrome !== 'undefined' && chrome.storage) {
-    chrome.storage.local.get({ apiUrl: '' }, ({ apiUrl }) => {
-      cb((apiUrl || TLDR_DEFAULT_API_BASE).replace(/\/api\/analyze$/, ''));
-    });
-  } else {
-    cb(TLDR_DEFAULT_API_BASE);
-  }
-}
-
-const LEGAL_URL_PATTERNS = [
-  /\/terms[-_]?(of[-_]?(service|use))?/i,
-  /\/privacy[-_]?(policy)?/i,
-  /\/tos\b/i,
-  /\/eula\b/i,
-  /\/legal\b/i,
-  /\/user[-_]?agreement/i,
-  /\/cookie[-_]?(policy)?/i,
-  /\/data[-_]?(protection|processing)/i,
-  /\/acceptable[-_]?use/i,
-];
-
-// ── SHADOW DOM UI ISOLATION ──────────────────────────────────────────────────
+// â”€â”€ SHADOW DOM UI ISOLATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Host for all extension UI elements. Using Shadow DOM prevents the page's CSS 
 // from leaking into our panels and allows us to bypass some CSP restrictions.
 let tldrShadowRoot = null;
@@ -91,445 +57,16 @@ function getUiElement(id) {
   return getUiRoot().getElementById(id);
 }
 
-const LEGAL_KEYWORDS = [
-  'terms of service', 'terms and conditions', 'privacy policy',
-  'user agreement', 'end user license', 'eula', 'cookie policy',
-  'data processing', 'acceptable use', 'legal notice',
-  'by using this service', 'by accepting these terms',
-];
+// Detection functions (computeConfidence, isBlockedHost, hasLegalKeyword) and
+// extraction functions (extractPageText, extractPolicySuite, etc.) are loaded
+// from detection.js and extraction.js via the TLDRShield namespace above.
 
-// Hosts where we never trigger (financial — false positive risk too high)
-const BLOCKED_HOSTS = [
-  'paypal', 'stripe', 'bank', 'trading', 'invest', 'crypto',
-  'gambling', 'casino', 'betting', 'forex', 'brokerage',
-];
 
-// Common cookie consent SDK selectors (OneTrust, Cookiebot, Osano, etc.)
-const COOKIE_BANNER_SELECTORS = [
-  '#onetrust-banner-sdk', '#cookiebanner', '#cookie-banner',
-  '#cookie-consent', '.cookie-consent', '.cookie-notice',
-  '[id*="cookie"][id*="consent"]', '[class*="cookie"][class*="consent"]',
-  '[aria-label*="cookie"]', '[aria-label*="Cookie"]',
-  '#CybotCookiebotDialog', '.cc-window', '#osano-cm-dom-info-dialog-open',
-];
 
-// The TLDR Shield app itself — never scan our own pages
-const TLDR_APP_HOST = 'tldr-shield-292798741977.us-central1.run.app';
 
-function isBlockedHost() {
-  const host = window.location.hostname.toLowerCase();
-  if (host === TLDR_APP_HOST) return true; // never badge our own app
-  return BLOCKED_HOSTS.some(b => host.includes(b));
-}
-
-function hasLegalKeyword(text) {
-  const lower = text.toLowerCase();
-  return LEGAL_KEYWORDS.some(kw => lower.includes(kw));
-}
-
-function computeConfidence() {
-  let score = 0;
-  const reasons = [];
-
-  // Signal 1: URL path
-  const path = window.location.pathname + window.location.search;
-  if (LEGAL_URL_PATTERNS.some(rx => rx.test(path))) {
-    score += SIGNALS.URL_PATH;
-    reasons.push('url');
-  }
-
-  // Signal 2: Page title
-  if (hasLegalKeyword(document.title)) {
-    score += SIGNALS.PAGE_TITLE;
-    reasons.push('title');
-  }
-
-  // Signal 3: H1 heading
-  const h1s = Array.from(document.querySelectorAll('h1'));
-  if (h1s.some(h => hasLegalKeyword(h.innerText || ''))) {
-    score += SIGNALS.H1_HEADING;
-    reasons.push('h1');
-  }
-
-  // Signal 4: H2 heading (only if not already maxed)
-  if (score < 60) {
-    const h2s = Array.from(document.querySelectorAll('h2'));
-    if (h2s.some(h => hasLegalKeyword(h.innerText || ''))) {
-      score += SIGNALS.H2_HEADING;
-      reasons.push('h2');
-    }
-  }
-
-  // Signal 5: Visible modal / dialog with legal text
-  const modals = document.querySelectorAll(
-    'dialog[open], [role="dialog"], [role="alertdialog"], .modal, .overlay, [class*="modal"], [class*="dialog"]'
-  );
-  for (const m of modals) {
-    const style = window.getComputedStyle(m);
-    const visible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-    if (visible && hasLegalKeyword(m.innerText || '')) {
-      score += SIGNALS.MODAL_PRESENT;
-      reasons.push('modal');
-      break;
-    }
-  }
-
-  // Signal 6: Cookie consent banner
-  const hasBanner = COOKIE_BANNER_SELECTORS.some(sel => {
-    const el = document.querySelector(sel);
-    if (!el) return false;
-    const style = window.getComputedStyle(el);
-    return style.display !== 'none' && style.visibility !== 'hidden';
-  });
-  if (hasBanner) {
-    score += SIGNALS.COOKIE_BANNER;
-    reasons.push('cookie-banner');
-  }
-
-  // Signal 7: Meta description / og:description
-  const metas = document.querySelectorAll('meta[name="description"], meta[property="og:description"]');
-  for (const m of metas) {
-    if (hasLegalKeyword(m.getAttribute('content') || '')) {
-      score += SIGNALS.META_TAG;
-      reasons.push('meta');
-      break;
-    }
-  }
-
-  return { score, reasons };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AGENT 2 — TEXT EXTRACTION
-// Handles 4 real-world T&C formats:
-//   Form 1 → Full page (all in DOM)           — extractSemanticText()
-//   Form 2 → Paginated ("Next Page" links)    — fetchPaginatedPages()
-//   Form 3 → Virtual / lazy scroll            — scrollAndCollect()
-//   Form 4 → Modal with inner scroll container — extractModalScrollContent()
-// Entry point: extractPageText() — async, returns clean combined text.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Selectors for semantic content containers (Form 1)
-const SEMANTIC_SELECTORS = [
-  'main', 'article', '[role="main"]',
-  '.terms', '.privacy', '.legal', '.policy',
-  '.content', '#content', '.main-content', '#main-content',
-  '.page-content', '.post-content', '.entry-content',
-];
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function cleanText(raw) {
-  return raw
-    .replace(/\n{3,}/g, '\n\n')           // collapse 3+ blank lines → 2
-    .replace(/[ \t]{4,}/g, '   ')         // collapse long whitespace runs
-    .replace(/^(Home|About|Contact|Sign in|Log in|Sign up|Menu|Search)\s*$/gim, '')
-    .trim();
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Returns true if element is visually scrollable vertically
-function isScrollable(el) {
-  const style = window.getComputedStyle(el);
-  const overflow = style.overflowY;
-  const hasScroll = overflow === 'scroll' || overflow === 'auto';
-  return hasScroll && el.scrollHeight > el.clientHeight + 40;
-}
-
-// ── Form 4: Modal with inner scrollable div ──────────────────────────────────
-// Problem: T&C inside a signup modal is in a <div style="overflow-y:scroll">
-//          innerText only gives visible text; we need scrollHeight content.
-// Fix:     Find the scrollable child container, read its full innerHTML,
-//          then programmatically scroll it so any lazy-rendered chunks appear.
-
-async function extractModalScrollContent() {
-  const modalSelectors = [
-    'dialog[open]',
-    '[role="dialog"]',
-    '[role="alertdialog"]',
-    '[class*="modal"]',
-    '[class*="overlay"]',
-    '[class*="popup"]',
-  ];
-
-  for (const sel of modalSelectors) {
-    const modal = document.querySelector(sel);
-    if (!modal) continue;
-
-    const style = window.getComputedStyle(modal);
-    if (style.display === 'none' || style.visibility === 'hidden') continue;
-
-    // Find the scrollable container inside the modal
-    const allChildren = modal.querySelectorAll('*');
-    let scrollContainer = null;
-    for (const child of allChildren) {
-      if (isScrollable(child)) {
-        scrollContainer = child;
-        break;
-      }
-    }
-
-    const target = scrollContainer || modal;
-    const initialText = target.innerText?.trim() ?? '';
-    if (!initialText || !hasLegalKeyword(initialText)) continue;
-
-    // Scroll the container to the bottom in steps to trigger lazy rendering.
-    // Hard cap of 5 seconds total to avoid stalling extraction on misbehaving modals.
-    if (isScrollable(target)) {
-      const totalHeight = target.scrollHeight;
-      const step = Math.max(300, Math.floor(target.clientHeight * 0.8));
-      const scrollDeadline = Date.now() + 5000;
-      let pos = 0;
-      while (pos < totalHeight && Date.now() < scrollDeadline) {
-        target.scrollTop = pos;
-        pos += step;
-        await sleep(120); // allow lazy content to render
-      }
-      // Scroll back to top so user sees the page normally
-      target.scrollTop = 0;
-    }
-
-    const fullText = target.innerText?.trim() ?? '';
-    if (fullText.length > 200) return fullText;
-  }
-  return null;
-}
-
-// ── Form 3: Virtual / lazy-scroll full page ──────────────────────────────────
-// Problem: Some T&C pages use JS-driven rendering (React-window, Intersection
-//          Observer reveals). Text isn't in DOM until you scroll to it.
-// Fix:     Auto-scroll window in steps, collect new text after each step,
-//          stop when no new content appears (convergence) or cap is reached.
-
-async function scrollAndCollect() {
-  const MAX_SCROLL_TIME_MS = 5000;
-  const STEP_PX            = 600;
-  const SETTLE_MS          = 150;
-  const MAX_CHARS          = 120000;
-
-  // FIX #11: Save user's current scroll position and restore it after — no disruption.
-  // Also disable smooth-scroll temporarily so jumps are instant and invisible.
-  const savedScrollY = window.scrollY;
-  const htmlEl = document.scrollingElement || document.documentElement;
-  const savedScrollBehavior = htmlEl.style.scrollBehavior;
-  htmlEl.style.scrollBehavior = 'auto';
-
-  const start       = Date.now();
-  let   lastLen     = 0;
-  let   stableRounds = 0;
-
-  try {
-    while (Date.now() - start < MAX_SCROLL_TIME_MS) {
-      htmlEl.scrollTop += STEP_PX;
-      await sleep(SETTLE_MS);
-
-      const currentLen = document.body.textContent?.length ?? 0;
-
-      if (currentLen === lastLen) {
-        stableRounds++;
-        if (stableRounds >= 3) break;
-      } else {
-        stableRounds = 0;
-      }
-      lastLen = currentLen;
-
-      const atBottom = (htmlEl.scrollTop + window.innerHeight) >= htmlEl.scrollHeight - 50;
-      if (atBottom) break;
-      if (currentLen > MAX_CHARS) break;
-    }
-  } finally {
-    // Always restore position and scroll style — even if an error occurs
-    htmlEl.style.scrollBehavior = savedScrollBehavior;
-    window.scrollTo({ top: savedScrollY, behavior: 'instant' });
-  }
-
-  return document.body.textContent?.trim() ?? '';
-}
-
-// ── Form 2: Paginated T&C ("Next Page" / "Page 2" links) ─────────────────────
-// Problem: T&C split across /terms/1, /terms/2 … only Page 1 is in DOM.
-// Fix:     Detect pagination links, fetch each page via fetch(), parse HTML
-//          with DOMParser, extract text, concatenate all pages.
-
-const PAGINATION_PATTERNS = [
-  /next\s*(page)?/i,
-  /page\s*\d+/i,
-  /continue\b/i,
-  />\s*$/,           // bare ">" arrow links
-  /→|»/,
-];
-
-function findNextPageLink(baseUrl) {
-  const links = Array.from(document.querySelectorAll('a[href]'));
-  const parser = new URL(baseUrl);
-
-  for (const link of links) {
-    const text = link.innerText?.trim() ?? '';
-    const href = link.href;
-
-    if (!href || href === baseUrl) continue;
-    if (!href.startsWith(parser.origin)) continue; // same-origin only
-    if (href.includes('#')) continue;              // skip anchors
-
-    const isNextLink = PAGINATION_PATTERNS.some(rx => rx.test(text));
-    const isPageNum  = /[?&]page=\d+/i.test(href) || /\/\d+\/?$/.test(new URL(href).pathname);
-
-    if (isNextLink || isPageNum) return href;
-  }
-  return null;
-}
-
-async function fetchPaginatedPages(firstPageText) {
-  const MAX_PAGES   = 8;   // never follow more than 8 pagination links
-  const visited     = new Set([window.location.href]);
-  const pages       = [firstPageText];
-  const parser      = new DOMParser();
-
-  let nextUrl = findNextPageLink(window.location.href);
-
-  while (nextUrl && pages.length < MAX_PAGES && !visited.has(nextUrl)) {
-    visited.add(nextUrl);
-
-    try {
-      const pageController = new AbortController();
-      const pageTimeout = setTimeout(() => pageController.abort(), 8000);
-      let res;
-      try {
-        res = await fetch(nextUrl, { credentials: 'omit', signal: pageController.signal });
-      } finally {
-        clearTimeout(pageTimeout);
-      }
-      if (!res.ok) break;
-
-      const html = await res.text();
-      const doc  = parser.parseFromString(html, 'text/html');
-
-      // FIX #5: Use textContent, not innerText, on DOMParser nodes.
-      // innerText requires a live layout engine — detached DOM nodes have no layout,
-      // so innerText returns empty string. textContent always works on any DOM node.
-      let pageText = '';
-      for (const sel of SEMANTIC_SELECTORS) {
-        const el = doc.querySelector(sel);
-        const t = el?.textContent?.trim() ?? '';
-        if (t.length > 300) { pageText = t; break; }
-      }
-      if (!pageText) pageText = doc.body?.textContent?.trim() ?? '';
-
-      if (pageText.length > 100) {
-        pages.push(pageText);
-        console.debug(`[TLDR Shield] Fetched page ${pages.length}: ${nextUrl}`);
-      }
-
-      // Look for next link inside fetched document
-      const tempDiv = doc.body;
-      const nextLinks = Array.from(tempDiv.querySelectorAll('a[href]'));
-      nextUrl = null;
-      for (const link of nextLinks) {
-        const text = link.textContent?.trim() ?? '';  // textContent on parsed DOM
-        const href = link.href;
-        if (!href || visited.has(href)) continue;
-        if (PAGINATION_PATTERNS.some(rx => rx.test(text))) {
-          nextUrl = href;
-          break;
-        }
-      }
-    } catch {
-      break; // network error → stop paginating
-    }
-  }
-
-  if (pages.length > 1) {
-    console.debug(`[TLDR Shield] Collected ${pages.length} pages of T&C`);
-  }
-
-  return pages.join('\n\n--- [Page Break] ---\n\n');
-}
-
-// ── Form 1: Semantic container (standard full-page T&C) ─────────────────────
-
-function extractSemanticText() {
-  for (const sel of SEMANTIC_SELECTORS) {
-    const el = document.querySelector(sel);
-    if (el && (el.innerText?.trim().length ?? 0) > 500) {
-      return el.innerText.trim();
-    }
-  }
-  return null;
-}
-
-// ── Readability extraction — strips nav/ads/banners, returns clean legal text ─
-// @mozilla/readability is loaded before this file in manifest.json (lib/Readability.js)
-function extractWithReadability() {
-  try {
-    if (typeof Readability === 'undefined') return null;
-    // Clone the document so Readability's DOM surgery doesn't affect the live page
-    const docClone = document.cloneNode(true);
-    const article  = new Readability(docClone, {
-      charThreshold: 300,         // minimum text chars to accept as content
-      keepClasses:   false,       // strip class noise
-      nbTopCandidates: 10,
-    }).parse();
-    if (!article?.textContent) return null;
-    const text = article.textContent.trim();
-    // Sanity check: must be substantial (>800 chars) to trust over fallbacks
-    return text.length >= 800 ? text : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-// ── MAIN ENTRY POINT ─────────────────────────────────────────────────────────
-// Priority order:
-//   0. Modal scroll content (Form 4) — checked first: Readability strips
-//      overflow:hidden containers that modal T&Cs live inside
-//   1. Readability — best signal/noise ratio for standard web pages
-//   2. Semantic container → check for pagination (Form 1 + 2)
-//   3. Virtual scroll detection (Form 3) — only if body seems short
-//   4. Raw body fallback
-
-async function extractPageText() {
-  // Form 4: visible modal with scrollable T&C — checked first because
-  // Readability strips overflow:hidden containers that modal T&Cs live inside
-  const modalText = await extractModalScrollContent();
-  if (modalText) return cleanText(modalText);
-
-  // Form 0: Readability — strips nav, ads, cookie banners, sidebars
-  const readabilityText = extractWithReadability();
-  if (readabilityText) return cleanText(readabilityText);
-
-  // Form 1: standard semantic container
-  const semanticText = extractSemanticText();
-  if (semanticText) {
-    // Form 2: check if this page is paginated
-    const nextLink = findNextPageLink(window.location.href);
-    if (nextLink) {
-      const paginated = await fetchPaginatedPages(semanticText);
-      return cleanText(paginated);
-    }
-    return cleanText(semanticText);
-  }
-
-  // Form 3: body text suspiciously short → might be virtual-scroll
-  const bodyText = document.body.innerText?.trim() ?? '';
-  const bodyIsShort = bodyText.length < 3000;
-  const looksLikeScrollPage = LEGAL_URL_PATTERNS.some(rx => rx.test(window.location.pathname));
-
-  if (bodyIsShort && looksLikeScrollPage) {
-    const scrolled = await scrollAndCollect();
-    if (scrolled.length > bodyText.length + 500) return cleanText(scrolled);
-  }
-
-  // Fallback: full body (server will chunk if needed)
-  const fallback = bodyText || (document.body.innerText ? document.body.innerText.trim() : '');
-  return cleanText(fallback);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TRIGGER BUTTON — shown when confidence ≥ threshold
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// TRIGGER BUTTON â€” shown when confidence â‰¥ threshold
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Shield icon SVG
 const SHIELD_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -554,7 +91,7 @@ function showUpdateRefreshToast() {
   const header = document.createElement('div');
   header.style.cssText = 'display:flex;align-items:center;gap:8px';
   const icon = document.createElement('span');
-  icon.textContent = '🔄';
+  icon.textContent = 'ðŸ”„';
   const label = document.createElement('strong');
   label.style.color = '#a78bfa';
   label.textContent = 'TLDR Shield updated';
@@ -582,7 +119,7 @@ function setTriggerScanning(btn) {
   btn.classList.remove('tldr-idle');
   btn.classList.add('tldr-scanning');
   btn.innerHTML = '<div class="tldr-spinner"></div>';
-  btn.title = 'Analyzing…';
+  btn.title = 'Analyzing...';
 }
 
 function removeContextMenu() {
@@ -673,12 +210,17 @@ function createTriggerButton() {
   btn.style.cursor = 'pointer';
   getUiRoot().appendChild(btn);
 
-  chrome.storage.local.get({ fabSide: 'right', fabTop: 180 }, ({ fabSide, fabTop }) => {
-    snapBtn(btn, fabSide, fabTop);
+  try {
+    chrome.storage.local.get({ fabSide: 'right', fabTop: 180 }, ({ fabSide, fabTop }) => {
+      snapBtn(btn, fabSide, fabTop);
+      btn.style.visibility = 'visible';
+    });
+  } catch (e) {
+    snapBtn(btn, 'right', 180);
     btn.style.visibility = 'visible';
-  });
+  }
 
-  // ── Drag logic (pointer capture — works across all browsers/pages) ──────
+  // â”€â”€ Drag logic (pointer capture â€” works across all browsers/pages) â”€â”€â”€â”€â”€â”€
   let moved = false, dragging = false, offsetY = 0, startX = 0, startY = 0;
 
   btn.addEventListener('pointerdown', (e) => {
@@ -696,7 +238,7 @@ function createTriggerButton() {
     if (!btn.hasPointerCapture(e.pointerId)) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
-    // Only enter drag mode after moving ≥6px — avoids grab cursor on plain click
+    // Only enter drag mode after moving â‰¥6px â€” avoids grab cursor on plain click
     if (!dragging && Math.sqrt(dx * dx + dy * dy) < 6) return;
     if (!dragging) {
       dragging = true;
@@ -732,12 +274,12 @@ function createTriggerButton() {
     }
   });
 
-  // ── Click to scan (only if not dragged) ──────────────────────────────────
+  // â”€â”€ Click to scan (only if not dragged) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   btn.addEventListener('click', async () => {
     if (moved) { moved = false; return; }
     if (btn.dataset.scanning === 'true') return;
 
-    // Extension was updated but this tab hasn't been refreshed yet — show a friendly prompt.
+    // Extension was updated but this tab hasn't been refreshed yet â€” show a friendly prompt.
     if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
       showUpdateRefreshToast();
       return;
@@ -747,9 +289,9 @@ function createTriggerButton() {
     // Show skeleton immediately so user sees feedback right away
     showSkeletonPanel();
 
-    // PERSISTENCE FIX: Read the user's preferred tier (defaulting to quick) from storage
+    // PERSISTENCE FIX: Read the user's preferred tier (defaulting to deep) from storage
     // so the floating icon respects the selection made in the popup.
-    let tier = 'quick';
+    let tier = 'deep'; // FIX #1: default to deep — quick had fake "Flagged by quick analysis" citations
     try {
       const storage = await chrome.storage.local.get(['tier']);
       if (storage && storage.tier) tier = storage.tier;
@@ -768,7 +310,30 @@ function createTriggerButton() {
         chrome.runtime.sendMessage({ type: 'ANALYZE_PDF', url: location.href });
         return; // background.js will send ANALYSIS_RESULT when done
       }
-      const text = await extractPageText();
+      let text = await extractPageText();
+      // CREDIBILITY FIX #3: optionally expand to full legal suite (same-origin
+      // privacy + terms + cookies + DPA). Triggered if user opted-in via
+      // suiteMode flag, OR auto-triggered when primary page is thin (<2500 chars)
+      // and at least 2 other legal links exist on the page.
+      try {
+        const { suiteMode = false } = await chrome.storage.local.get({ suiteMode: false });
+        const primaryThin = (text || '').length < 2500;
+        const should = suiteMode || (primaryThin && discoverLegalSuite().length >= 2);
+        if (should) {
+          const expanded = await extractPolicySuite(text);
+          if (expanded && expanded.length > text.length) text = expanded;
+        }
+      } catch (_) { /* non-fatal */ }
+      // FIX: Guard against empty extraction — catch it early with a friendly message
+      // rather than sending blank text to the server which would return HTTP 400.
+      if (!text || text.length < 100) {
+        setTriggerIdle(btn);
+        showErrorPanel(
+          'Could not extract enough text from this page. Try scrolling to load all content, then scan again. For complex pages, copy-paste the text into the TLDR Shield web app.',
+          location.href
+        );
+        return;
+      }
       lastScanText = text;
       lastScanUrl  = location.href;
       // keepalive port ensures the service worker stays alive for the full scan
@@ -781,7 +346,7 @@ function createTriggerButton() {
       if (err?.message?.includes('Extension context invalidated') ||
           err?.message?.includes('context invalidated')) {
         setTriggerIdle(btn);
-        btn.title = 'Extension updated — please refresh this page (F5)';
+        btn.title = 'Extension updated - please refresh this page (F5)';
         btn.style.outline = '2px solid #f59e0b';
         // Show a small toast on the page
         const toast = document.createElement('div');
@@ -792,7 +357,7 @@ function createTriggerButton() {
           font-weight:600; padding:10px 16px; border-radius:12px;
           box-shadow:0 4px 20px rgba(0,0,0,0.5); pointer-events:none;
         `;
-        toast.textContent = '⟳ Extension updated — refresh this page to scan';
+        toast.textContent = '\u27F3 Extension updated - refresh this page to scan';
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 5000);
         return;
@@ -802,7 +367,7 @@ function createTriggerButton() {
     }
   });
 
-  // ── Right-click context menu ──────────────────────────────────────────────
+  // â”€â”€ Right-click context menu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   btn.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     showContextMenu(e.clientX, e.clientY);
@@ -814,19 +379,19 @@ function removeTriggerButton() {
   removeContextMenu();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AGENT 4 — RESULT PANEL
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// AGENT 4 â€” RESULT PANEL
 // Handles both Quick (badge-only) and Deep (full pillars) results.
-// Quick result shows a "Run Deep Scan →" button.
-// Loading states: skeleton → step-by-step progress → result
-// ─────────────────────────────────────────────────────────────────────────────
+// Quick result shows a "Run Deep Scan â†’" button.
+// Loading states: skeleton â†’ step-by-step progress â†’ result
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ── Module-level scan state ───────────────────────────────────────────────────
-// Captured before each scan so the "Run Deep Scan →" button can re-use them.
+// â”€â”€ Module-level scan state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Captured before each scan so the "Run Deep Scan â†’" button can re-use them.
 let lastScanText = '';
 let lastScanUrl  = '';
 
-// ── Progress step mapping ─────────────────────────────────────────────────────
+// â”€â”€ Progress step mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PROGRESS_STEPS = [
   { key: 'reading', label: '\uD83D\uDCC1 Reading Legal Text', triggers: ['chunk', 'read', 'extract'] },
   { key: 'clauses', label: '\uD83E\uDDE0 Identifying Clauses', triggers: ['analyz', 'pillar', 'identifying', 'mapping'] },
@@ -859,7 +424,7 @@ function removeResultPanel() {
   });
 }
 
-// ── Skeleton panel — shown immediately when scan starts ──────────────────────
+// â”€â”€ Skeleton panel â€” shown immediately when scan starts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showSkeletonPanel() {
   removeResultPanel();
   _progressState = { currentStep: -1 };
@@ -880,7 +445,7 @@ function showSkeletonPanel() {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tldr-panel-close';
   closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.textContent = '✕';
+  closeBtn.textContent = '\u2715';
   header.appendChild(brand);
   header.appendChild(closeBtn);
 
@@ -947,7 +512,7 @@ function showSkeletonPanel() {
   _attachPanelDrag(panel, header, closeBtn);
 }
 
-// ── Progress update — transitions skeleton → step list ───────────────────────
+// â”€â”€ Progress update â€” transitions skeleton â†’ step list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function updateProgressPanel(status) {
   const panel = getUiElement('tldr-shield-result');
   if (!panel) return;
@@ -1003,7 +568,7 @@ function updateProgressPanel(status) {
   _progressState.currentStep = stepIdx;
 }
 
-// ── Shared panel drag setup ───────────────────────────────────────────────────
+// ————————————————— Shared panel drag setup —————————————————————————————————————
 function _attachPanelDrag(panel, header, closeBtn) {
   let pOffX = 0, pOffY = 0;
   header.addEventListener('pointerdown', (e) => {
@@ -1035,7 +600,7 @@ function _attachPanelDrag(panel, header, closeBtn) {
 }
 
 // Finds citation text in the page DOM, scrolls to it, and highlights it
-// ── Citation highlighting using mark.js ──────────────────────────────────────
+// ————————————————— Citation highlighting using mark.js ——————————————————————————
 // mark.js (lib/mark.min.js loaded before this file) handles:
 //   - Text split across inline DOM elements (<strong>, <em>, <span>, <a>)
 //   - React/Vue rendered content (reconciles text node fragments)
@@ -1045,10 +610,10 @@ function _attachPanelDrag(panel, header, closeBtn) {
 // Strategy:
 //   1. Try full citation verbatim (most accurate)
 //   2. Try longest prefix slices (60, 40 chars)
-//   3. Try longest 8→5 word windows (handles partial paraphrase survival)
+//   3. Try longest 8â†’5 word windows (handles partial paraphrase survival)
 //   Each attempt is case-insensitive, partial accuracy mode.
 
-// The scope for mark.js — everything except our own injected UI
+// The scope for mark.js â€” everything except our own injected UI
 function getMarkScope() {
   const body = document.body;
   if (!body) return body;
@@ -1079,25 +644,32 @@ function highlightCitation(citation) {
   const clean = citation.replace(/^["'"'\u201c\u2018]|["'"'\u201d\u2019]$/g, '').trim();
   if (!clean) return false;
 
-  // Build ordered candidates — most specific first
+  // Normalize typographic variants: en/em-dash->hyphen, curly quotes->straight, NBSP->space.
+  // Server extracts text via Readability; the live browser DOM may render different Unicode chars.
+  const normalize = (s) => s
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const cleanNorm = normalize(clean);
+
+  // Build ordered candidates -- most specific first
   const candidates = [];
 
-  // 1. Full citation
+  // 1. Full citation (original + normalized variant)
   candidates.push(clean);
+  if (cleanNorm !== clean) candidates.push(cleanNorm);
 
-  // 2. Prefix slices (longest → shortest)
+  // 2. Prefix slices (longest -> shortest) using normalized string
   for (const len of [80, 60, 40, 25]) {
-    const s = clean.slice(0, len).trim();
-    if (s.length >= 20 && s !== clean) candidates.push(s);
+    const s = cleanNorm.slice(0, len).trim();
+    if (s.length >= 20 && s !== cleanNorm) candidates.push(s);
   }
 
-  // 3. Sliding word windows (8→5 words)
-  const words = clean.split(/\s+/).filter(Boolean);
-  for (const size of [8, 7, 6, 5]) {
-    for (let i = 0; i <= words.length - size; i++) {
-      candidates.push(words.slice(i, i + size).join(' '));
-    }
-  }
+  // 3. Sliding word windows (8->5 words) using normalized string
+  const words = cleanNorm.split(/\s+/).filter(Boolean);
 
   // Try each candidate until mark.js finds a match
   return new Promise((resolve) => {
@@ -1175,7 +747,7 @@ function highlightCitationFallback(citation) {
   return false;
 }
 
-// ── Error panel ───────────────────────────────────────────────────────────────
+// â”€â”€ Error panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showErrorPanel(errorMsg, pageUrl) {
   removeResultPanel();
   injectFonts();
@@ -1231,15 +803,25 @@ function showErrorPanel(errorMsg, pageUrl) {
         return;
       }
       const text = await extractPageText();
-      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: pageUrl || location.href });
+      // forceRefresh: true — bypass server cache so retry always gets a fresh LLM scan
+      chrome.runtime.sendMessage({ type: 'ANALYZE_TEXT', text, url: pageUrl || location.href, forceRefresh: true });
     } catch (err) {
       showErrorPanel('Failed to extract page text. Please refresh the page and try again.', pageUrl);
     }
   });
 
+  // FIX: Add "Try web app" fallback link so users can paste text manually when extraction fails
+  const webAppLink = document.createElement('a');
+  webAppLink.className = 'tldr-webapp-link';
+  webAppLink.textContent = 'Try the web app \u2192';
+  webAppLink.target = '_blank';
+  webAppLink.rel = 'noopener noreferrer';
+  try { webAppLink.href = TLDR_APP_HOST || 'https://tldr-shield.onrender.com'; } catch (_) {}
+
   body.appendChild(iconEl);
   body.appendChild(msgEl);
   body.appendChild(retryBtn);
+  body.appendChild(webAppLink);
 
   const footer = document.createElement('div');
   footer.className = 'tldr-panel-footer';
@@ -1259,7 +841,7 @@ function showErrorPanel(errorMsg, pageUrl) {
   _attachPanelDrag(panel, header, closeBtn);
 }
 
-// ── Out-of-credits panel ──────────────────────────────────────────────────────
+// â”€â”€ Out-of-credits panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showOutOfCreditsPanel(resetDate) {
   removeResultPanel();
   injectFonts();
@@ -1289,7 +871,7 @@ function showOutOfCreditsPanel(resetDate) {
 
   const iconEl = document.createElement('div');
   iconEl.className = 'tldr-oc-icon';
-  iconEl.textContent = '\u26a1'; // ⚡
+  iconEl.textContent = '\u26a1'; // âš¡
 
   const titleEl = document.createElement('div');
   titleEl.className = 'tldr-oc-title';
@@ -1356,7 +938,7 @@ function injectFonts() {
 const _quoteBoxMap = new WeakMap();
 
 // Shown instead of a real result when the AI analysis failed (data.degraded === true).
-// A clean, honest panel that prompts the user to retry — no fake scores or misleading text.
+// A clean, honest panel that prompts the user to retry â€” no fake scores or misleading text.
 function showDegradedPanel() {
   removeResultPanel();
   injectFonts();
@@ -1368,11 +950,11 @@ function showDegradedPanel() {
   header.className = 'tldr-result-header';
   const brand = document.createElement('span');
   brand.className = 'tldr-brand';
-  brand.textContent = '⚠ TLDR SHIELD';
+  brand.textContent = '\u26A0 TLDR SHIELD';
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tldr-close-btn';
   closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.textContent = '✕';
+  closeBtn.textContent = '\u2715';
   closeBtn.addEventListener('click', () => panel.remove());
   header.appendChild(brand);
   header.appendChild(closeBtn);
@@ -1402,12 +984,10 @@ function showResultPanel(data) {
   removeResultPanel();
   injectFonts();
 
-  // Degraded fallback — AI analysis failed. Show a clean retry notice instead of
-  // the deterministic "AI analysis unavailable" result which looks like a real scan.
-  if (data.degraded) {
-    showDegradedPanel();
-    return;
-  }
+  // Degraded fallback â€” AI was unavailable (e.g., daily quota hit). The server
+  // ran a regex-based scan and returned a real result; show it with a clear
+  // banner so the user still gets actionable info instead of a dead end.
+  const isDegraded = !!data.degraded;
 
   const ratingClass = data.rating?.toLowerCase() ?? 'risky';
   const score       = typeof data.score === 'number' ? data.score : null;
@@ -1435,7 +1015,7 @@ function showResultPanel(data) {
   const panel = document.createElement('div');
   panel.id = 'tldr-shield-result';
 
-  // ── Header ──
+  // â”€â”€ Header â”€â”€
   const header = document.createElement('div');
   header.className = 'tldr-panel-header';
 
@@ -1449,12 +1029,12 @@ function showResultPanel(data) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tldr-panel-close';
   closeBtn.setAttribute('aria-label', 'Close');
-  closeBtn.textContent = '✕';
+  closeBtn.textContent = '\u2715';
 
   header.appendChild(brand);
   header.appendChild(closeBtn);
 
-  // ── Rating badge with score ring ──
+  // â”€â”€ Rating badge with score ring â”€â”€
   const badge = document.createElement('div');
   const isExtremeRisk = data.rating === 'RISKY' && score !== null && score <= 15;
   badge.className = `tldr-rating-badge ${ratingClass}${isExtremeRisk ? ' tldr-extreme' : ''}`;
@@ -1464,7 +1044,7 @@ function showResultPanel(data) {
   ringWrap.className = 'tldr-score-ring-wrap';
   const ringEl = document.createElement('div');
   ringEl.className = 'tldr-score-ring';
-  const CIRCUMFERENCE = 201.06; // 2π × 32
+  const CIRCUMFERENCE = 201.06; // 2Ï€ Ã— 32
   const scorePct = score !== null ? Math.max(0, Math.min(100, score)) : 0;
   const dashOffset = CIRCUMFERENCE * (1 - scorePct / 100);
   ringEl.innerHTML = `
@@ -1493,7 +1073,7 @@ function showResultPanel(data) {
   ratingLabel.className = 'tldr-rating-label';
   ratingLabel.textContent = data.rating ?? 'UNKNOWN';
 
-  // CAUTIOUS sub-label: OKAY with score 50-59 is borderline — flag it visually
+  // CAUTIOUS sub-label: OKAY with score 50-59 is borderline â€” flag it visually
   // without breaking the 3-tier SAFE/OKAY/RISKY system.
   if (data.rating === 'OKAY' && score !== null && score < 60) {
     const cautiousChip = document.createElement('span');
@@ -1504,21 +1084,52 @@ function showResultPanel(data) {
 
   const ratingMeta = document.createElement('div');
   ratingMeta.className = 'tldr-rating-score';
-  if (data.chunked) {
-    ratingMeta.textContent = `${data.chunkCount}-block analysis`;
-  } else if (isQuick) {
-    ratingMeta.textContent = 'Quick scan';
-  } else {
-    ratingMeta.textContent = 'Deep scan';
+  // Freshness fragment â€” "Just now" / "Cached Â· 12m ago" / "Cached Â· 2d ago".
+  // Users deserve to see when a verdict was actually computed.
+  let freshnessText = '';
+  if (data.scannedAt) {
+    const ageMs = Math.max(0, Date.now() - Number(data.scannedAt));
+    if (ageMs < 60_000)          freshnessText = 'Just now';
+    else if (ageMs < 3_600_000)  freshnessText = `${Math.floor(ageMs / 60_000)}m ago`;
+    else if (ageMs < 86_400_000) freshnessText = `${Math.floor(ageMs / 3_600_000)}h ago`;
+    else                         freshnessText = `${Math.floor(ageMs / 86_400_000)}d ago`;
+    if (data.cached) freshnessText = `Cached Â· ${freshnessText}`;
   }
+  const baseText = data.chunked ? `${data.chunkCount}-block analysis` : (isQuick ? 'Quick scan' : 'Deep scan');
+  ratingMeta.textContent = freshnessText ? `${baseText} Â· ${freshnessText}` : baseText;
 
   // Violation count pill
+  // Credibility fix: only count HIGH/MEDIUM-confidence violations as hazards.
+  // LOW-confidence flags deduct 0 points on the server, so they are NOT hazards â€”
+  // counting them here contradicts the 100/100 score.
   if (!isQuick && data.pillars) {
-    const vCount = Object.values(data.pillars).filter(p => p.violation).length;
-    const totalP = Object.keys(data.pillars).length;
+    // Classify each pillar: hazard (hard violation), confirmed safe (addressed + no violation),
+    // not stated (policy silent), or N/A (category-scoping says this pillar can't apply).
+    // Header must match the per-pillar badges â€” no "6/6 Safe" when pillars are NOT STATED or N/A.
+    let vCount = 0, safeCount = 0, silentCount = 0, naCount = 0;
+    for (const p of Object.values(data.pillars)) {
+      const conf    = (p.confidence || 'MEDIUM').toString().toUpperCase();
+      const pStatus = (p.status || '').toString().toUpperCase();
+      const hardV   = p.violation && conf !== 'LOW';
+      const isNA    = pStatus === 'NOT_APPLICABLE' || p.applicable === false;
+      const silent  = !isNA && (pStatus === 'NOT_MENTIONED' || (!pStatus && !p.violation && !p.citation));
+      if (hardV) vCount++;
+      else if (isNA) naCount++;
+      else if (silent) silentCount++;
+      else safeCount++;
+    }
+    const applicableTotal = Object.keys(data.pillars).length - naCount;
     const vPill  = document.createElement('div');
     vPill.className = 'tldr-violation-count';
-    vPill.textContent = vCount === 0 ? `${totalP}/${totalP} Safe Pillars` : `${vCount} Hazard${vCount > 1 ? 's' : ''} Detected`;
+    if (vCount > 0) {
+      vPill.textContent = `${vCount} Hazard${vCount > 1 ? 's' : ''} Detected`;
+    } else if (silentCount === 0 && naCount === 0) {
+      vPill.textContent = `${safeCount}/${applicableTotal} Safe Pillars`;
+    } else if (silentCount === 0 && naCount > 0) {
+      vPill.textContent = `${safeCount}/${applicableTotal} Safe Â· ${naCount} N/A`;
+    } else {
+      vPill.textContent = `${safeCount} Safe Â· ${silentCount} Not Stated${naCount > 0 ? ` Â· ${naCount} N/A` : ''}`;
+    }
     labelsEl.appendChild(ratingLabel);
     labelsEl.appendChild(ratingMeta);
     labelsEl.appendChild(vPill);
@@ -1533,15 +1144,15 @@ function showResultPanel(data) {
   panel.appendChild(header);
   panel.appendChild(badge);
 
-  // ── Sampling note — long docs are sampled evenly, not truncated ──
+  // â”€â”€ Sampling note â€” long docs are sampled evenly, not truncated â”€â”€
   if (data.truncated) {
     const warn = document.createElement('div');
     warn.className = 'tldr-truncation-warning';
-    warn.textContent = '📄 Long document — analyzed evenly across all sections for full coverage.';
+    warn.textContent = 'ðŸ“„ Long document â€” analyzed evenly across all sections for full coverage.';
     panel.appendChild(warn);
   }
 
-  // ── Audit Findings (Deductions) — FIX: Transparency for ambiguous/silent policies ──
+  // â”€â”€ Audit Findings (Deductions) â€” FIX: Transparency for ambiguous/silent policies â”€â”€
   if (data.deductions && Array.isArray(data.deductions) && data.deductions.length > 0) {
     const deductContainer = document.createElement('div');
     deductContainer.className = 'tldr-deductions-container';
@@ -1570,7 +1181,7 @@ function showResultPanel(data) {
     panel.appendChild(deductContainer);
   }
 
-  // ── TLDR Summary ──
+  // â”€â”€ TLDR Summary â”€â”€
   if (data.tldr) {
     const tldrEl = document.createElement('div');
     tldrEl.className = 'tldr-tldr';
@@ -1578,7 +1189,7 @@ function showResultPanel(data) {
     panel.appendChild(tldrEl);
   }
 
-  // ── Run Deep Scan button (quick scan only) ──
+  // â”€â”€ Run Deep Scan button (quick scan only) â”€â”€
   if (isQuick) {
     const deepBtn = document.createElement('button');
     deepBtn.className = 'tldr-deep-scan-btn';
@@ -1611,46 +1222,18 @@ function showResultPanel(data) {
     panel.appendChild(deepBtn);
   }
 
-  // ── Pillars (Deep scan only) ──
+  // â”€â”€ Pillars (Deep scan only) â”€â”€
   if (data.pillars && Object.keys(data.pillars).length > 0) {
-    // Expandable toggle row
-    let deepExpanded = false;
+    // Privacy Pillars — static header, always visible, no collapse
+    const pillarsHeader = document.createElement('div');
+    pillarsHeader.className = 'tldr-expand-toggle tldr-expand-toggle--static';
+    const pillarsHeaderLabel = document.createElement('span');
+    pillarsHeaderLabel.textContent = 'Privacy Pillars';
+    pillarsHeader.appendChild(pillarsHeaderLabel);
+    panel.appendChild(pillarsHeader);
 
-    const expandToggle = document.createElement('div');
-    expandToggle.className = 'tldr-expand-toggle';
-    const expandLabel = document.createElement('span');
-    expandLabel.textContent = 'Privacy Pillars';
-    const chevron = document.createElement('span');
-    chevron.className = 'tldr-expand-chevron';
-    chevron.setAttribute('aria-hidden', 'true');
-    // Chevron SVG (down arrow)
-    const chevSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    chevSvg.setAttribute('width', '14');
-    chevSvg.setAttribute('height', '14');
-    chevSvg.setAttribute('viewBox', '0 0 14 14');
-    chevSvg.setAttribute('fill', 'none');
-    const chevPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    chevPath.setAttribute('d', 'M3 5l4 4 4-4');
-    chevPath.setAttribute('stroke', 'currentColor');
-    chevPath.setAttribute('stroke-width', '1.5');
-    chevPath.setAttribute('stroke-linecap', 'round');
-    chevPath.setAttribute('stroke-linejoin', 'round');
-    chevSvg.appendChild(chevPath);
-    chevron.appendChild(chevSvg);
-    expandToggle.appendChild(expandLabel);
-    expandToggle.appendChild(chevron);
-
-    // Expandable wrapper
     const expandWrapper = document.createElement('div');
-    expandWrapper.className = 'tldr-expandable-content';
-
-    expandToggle.addEventListener('click', () => {
-      deepExpanded = !deepExpanded;
-      expandWrapper.classList.toggle('expanded', deepExpanded);
-      chevron.classList.toggle('expanded', deepExpanded);
-    });
-
-    panel.appendChild(expandToggle);
+    expandWrapper.className = 'tldr-expandable-content expanded';
     panel.appendChild(expandWrapper);
 
     const pillarsEl = document.createElement('div');
@@ -1674,13 +1257,16 @@ function showResultPanel(data) {
           e.stopPropagation();
           const isOpen = quoteBox.style.display === 'block';
 
-          // Accordion: close every other open quote box first
-          document.querySelectorAll('.tldr-citation-box').forEach(b => {
+          // Accordion: close every other open quote box first.
+          // Must query the shadow root, not document â€” document.querySelectorAll
+          // cannot pierce Shadow DOM and silently returns nothing.
+          const shadowRoot = getUiRoot();
+          shadowRoot.querySelectorAll('.tldr-citation-box').forEach(b => {
             if (b !== quoteBox) b.style.display = 'none';
           });
 
           if (isOpen) {
-            // Closing — hide box and remove page highlight
+            // Closing â€” hide box and remove page highlight
             quoteBox.style.display = 'none';
             document.querySelectorAll('.tldr-citation-highlight').forEach(el => {
               const p = el.parentNode;
@@ -1688,7 +1274,7 @@ function showResultPanel(data) {
               p.normalize();
             });
           } else {
-            // Opening — show box, scroll it into view within the panel, then highlight
+            // Opening â€” show box, scroll it into view within the panel, then highlight
             quoteBox.style.display = 'block';
             requestAnimationFrame(() => {
               quoteBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1708,11 +1294,14 @@ function showResultPanel(data) {
                   quoteBox.appendChild(silenceNote);
                 }
               } else if (!found) {
-                // Only add once per quoteBox
-                if (!quoteBox.querySelector('.tldr-citation-miss')) {
+                // ONLY show the warning if this is a violation pillar (OKAY/RISKY).
+                // For SAFE pillars, the citation is just context — it's not evidence of
+                // wrongdoing, so failing to highlight it on-page is not alarming.
+                const isViolation = val.violation === true;
+                if (isViolation && !quoteBox.querySelector('.tldr-citation-miss')) {
                   const missNote = document.createElement('div');
                   missNote.className = 'tldr-citation-miss';
-                  missNote.textContent = '\u26A0\uFE0F Exact text not found on page \u2014 may be paraphrased or on another section.';
+                  missNote.textContent = '\u26A0\uFE0F Exact text not found on page \u2014 may be in a collapsed section or paraphrased.';
                   missNote.style.cssText = [
                     'font-size:10px',
                     'color:rgba(255,200,100,0.85)',
@@ -1744,17 +1333,38 @@ function showResultPanel(data) {
       descText.textContent = PILLAR_DESCS[key] ?? '';
       nameEl.appendChild(descText);
 
-      const isSilence = !val.violation && (val.citation === '[NOT_FOUND]' || val.citation === 'Not addressed in document.');
+      // Three-state rendering driven by server-provided `status` field:
+      //   VIOLATES          â†’ RISKY (red) â€” real violation with verbatim quote
+      //   EXPLICITLY_DENIES â†’ SAFE (green) â€” policy affirmatively denies, with quote
+      //   NOT_MENTIONED     â†’ OKAY (amber) â€” pillar silent, genuine ambiguity
+      // Falls back to legacy violation-only logic if server hasn't set status yet.
+      const pConf = (val.confidence || 'MEDIUM').toString().toUpperCase();
+      const status = (val.status || '').toString().toUpperCase();
+      const isNA   = status === 'NOT_APPLICABLE' || val.applicable === false;
+      const isSoftFlag = val.violation && pConf === 'LOW';
+      const isRisky    = status === 'VIOLATES' || (val.violation && pConf !== 'LOW');
+      const isDenial   = status === 'EXPLICITLY_DENIES';
+      const isSilence  = !isNA && (status === 'NOT_MENTIONED' || (!status && !val.violation && !val.citation));
+      let statusClass, statusText;
+      if (isRisky)        { statusClass = 'risky'; statusText = 'RISKY'; }
+      else if (isSoftFlag){ statusClass = 'okay';  statusText = 'OKAY';  }
+      else if (isNA)      { statusClass = 'na';    statusText = 'N/A';   }
+      else if (isDenial)  { statusClass = 'safe';  statusText = 'SAFE';  }
+      else if (isSilence) { statusClass = 'okay';  statusText = 'NOT STATED'; }
+      else                { statusClass = 'safe';  statusText = 'SAFE';  }
       const statusEl = document.createElement('span');
-      statusEl.className = `tldr-pillar-status ${val.violation ? 'risky' : (isSilence ? 'okay' : 'safe')}`;
-      statusEl.textContent = val.violation ? 'RISKY' : (isSilence ? 'OKAY' : 'SAFE');
+      statusEl.className = `tldr-pillar-status ${statusClass}`;
+      statusEl.textContent = statusText;
 
-      // Confidence badge (only show if server provided it)
+      // Confidence badge â€” shows HIGH/MEDIUM/LOW + numeric score (0â€“100) when
+      // server provides confidenceScore (fix #7). Numeric surface gives users
+      // a granular trust signal instead of just three buckets.
       const conf = val.confidence; // 'HIGH' | 'MEDIUM' | 'LOW' | undefined
-      if (conf) {
+      if (conf && !isNA) {
         const confBadge = document.createElement('span');
         confBadge.className = `tldr-confidence tldr-confidence-${conf.toLowerCase()}`;
-        confBadge.textContent = 'CONFIDENCE: ' + conf;
+        const numeric = (typeof val.confidenceScore === 'number') ? val.confidenceScore : null;
+        confBadge.textContent = numeric !== null ? `CONFIDENCE: ${conf} Â· ${numeric}%` : `CONFIDENCE: ${conf}`;
         confBadge.title = conf === 'HIGH' ? 'Explicit verbatim clause found' : conf === 'MEDIUM' ? 'Clause exists but partially ambiguous' : 'Inferred or delegated to external document';
         nameEl.appendChild(confBadge);
       }
@@ -1769,13 +1379,41 @@ function showResultPanel(data) {
         wrapper.appendChild(_quoteBoxMap.get(row));
         pillarsEl.appendChild(wrapper);
       } else {
-        pillarsEl.appendChild(row);
+        // For SAFE pillars (no quoteBox because citation is [NOT_FOUND]),
+        // show a permanent subtle note so users know WHY it's safe.
+        if (!isRisky && !isSoftFlag && !isNA) {
+          const wrapper = document.createElement('div');
+          wrapper.appendChild(row);
+          const safeNote = document.createElement('div');
+          safeNote.style.cssText = [
+            'font-size:10px',
+            'color:rgba(255,255,255,0.35)',
+            'font-style:italic',
+            'padding:4px 12px 8px 12px',
+            'line-height:1.4',
+          ].join(';');
+          const SAFE_REASONS = {
+            ai_training:       'No clause detected that authorises AI or ML training on your data.',
+            data_selling:      'No clause detected that authorises selling or sharing your data with third parties for profit.',
+            transparency:      'Policy language appears clear and accessible — no self-contradictory clauses detected.',
+            data_retention:    'No clause detected that specifies excessive data retention after account deletion.',
+            content_ownership: 'No clause detected that claims broad rights or sublicensable licences over your content.',
+            dark_patterns:     'No hidden opt-outs, forced arbitration, or manipulative clauses detected.',
+          };
+          const baseNote = SAFE_REASONS[key] || 'No relevant clause detected in this document.';
+          // Append actionable guidance clarifying the scope limit of the Terms page
+          safeNote.textContent = baseNote + ' (Not found in this document — check their Privacy Policy for details.)';
+          wrapper.appendChild(safeNote);
+          pillarsEl.appendChild(wrapper);
+        } else {
+          pillarsEl.appendChild(row);
+        }
       }
     }
 
     expandWrapper.appendChild(pillarsEl);
 
-    // ── Score deductions (inside expandable, deep scan only) ──
+    // â”€â”€ Score deductions (inside expandable, deep scan only) â”€â”€
     if (Array.isArray(data.deductions) && data.deductions.length > 0) {
       const dedEl = document.createElement('div');
       dedEl.className = 'tldr-deductions';
@@ -1803,14 +1441,14 @@ function showResultPanel(data) {
     }
   }
 
-  // ── Score deductions outside expandable (quick scan only, when score < 100) ──
+  // â”€â”€ Score deductions outside expandable (quick scan only, when score < 100) â”€â”€
   if (isQuick && Array.isArray(data.deductions) && data.deductions.length > 0) {
     const dedEl = document.createElement('div');
     dedEl.className = 'tldr-deductions';
 
     const dedTitle = document.createElement('div');
     dedTitle.className = 'tldr-deductions-title';
-    dedTitle.textContent = `Why not 100? (−${100 - data.score} pts)`;
+    dedTitle.textContent = `Why not 100? (âˆ’${100 - data.score} pts)`;
     dedEl.appendChild(dedTitle);
 
     data.deductions.forEach(d => {
@@ -1821,7 +1459,7 @@ function showResultPanel(data) {
       reason.textContent = d.reason;
       const pts = document.createElement('span');
       pts.className = 'tldr-deduction-pts';
-      pts.textContent = `−${d.points} pts`;
+      pts.textContent = `âˆ’${d.points} pts`;
       row.appendChild(reason);
       row.appendChild(pts);
       dedEl.appendChild(row);
@@ -1830,14 +1468,14 @@ function showResultPanel(data) {
     panel.appendChild(dedEl);
   }
 
-  // ── Report incorrect result button ──
+  // â”€â”€ Report incorrect result button â”€â”€
   const reportBtn = document.createElement('button');
   reportBtn.className = 'tldr-report-btn';
   reportBtn.setAttribute('aria-label', 'Report incorrect result');
   reportBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 1v4M5 8v.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>Report incorrect result`;
   reportBtn.addEventListener('click', () => {
     if (reportBtn.classList.contains('tldr-reported')) return;
-    reportBtn.textContent = 'Sending…';
+    reportBtn.textContent = 'Sendingâ€¦';
     reportBtn.disabled = true;
     const payload = {
       url:    location.href,
@@ -1905,18 +1543,31 @@ function showResultPanel(data) {
   });   // reportBtn click
   panel.appendChild(reportBtn);
 
-  // ── Footer ──
+  // â”€â”€ Footer â”€â”€
   const footer = document.createElement('div');
   footer.className = 'tldr-panel-footer';
-  footer.textContent = 'TLDR Shield · AI Privacy Analysis';
+  footer.textContent = 'TLDR Shield Â· AI Privacy Analysis';
   panel.appendChild(footer);
 
-  // ── Close button ──
+  // â”€â”€ Close button â”€â”€
   closeBtn.onclick = () => {
     removeResultPanel();
     const btn = getUiElement('tldr-shield-trigger');
     if (btn) { btn.style.display = 'flex'; setTriggerIdle(btn); }
   };
+
+  // â”€â”€ Degraded banner â€” AI unavailable, this is a regex-based fallback â”€â”€
+  if (isDegraded) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'margin:10px 12px 0; padding:10px 12px; background:rgba(197,157,60,0.12); border:1px solid rgba(197,157,60,0.45); border-radius:8px; color:#e6c679; font-size:11px; line-height:1.45; letter-spacing:0.02em;';
+    const strong = document.createElement('strong');
+    strong.style.color = '#f0d288';
+    strong.textContent = 'Offline scan';
+    banner.appendChild(strong);
+    banner.appendChild(document.createTextNode(' \u00b7 AI quota temporarily exhausted. Results below are from pattern-based analysis. Re-scan in a few minutes for full AI verdict.'));
+    // Insert banner right after the header (before body content)
+    panel.insertBefore(banner, panel.children[1] || null);
+  }
 
   getUiRoot().appendChild(panel);
 
@@ -1924,9 +1575,9 @@ function showResultPanel(data) {
   _attachPanelDrag(panel, header, closeBtn);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MESSAGE LISTENER — receives results from background.js AND popup requests
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// MESSAGE LISTENER â€” receives results from background.js AND popup requests
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'PING') { sendResponse({ ok: true }); return; }
@@ -2004,9 +1655,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   showResultPanel(message.data);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BOOTSTRAP — run Agent 1 on page load + watch for SPA navigation
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// BOOTSTRAP â€” run Agent 1 on page load + watch for SPA navigation
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let lastCheckedUrl = '';
 
@@ -2085,11 +1736,16 @@ const observer = new MutationObserver((mutations) => {
 });
 
 // Initial observer setup
+// childList:true watches for added/removed children at document.body level only.
+// subtree:true was removed â€” it fires synchronously on every DOM mutation across
+// the entire page (including animations, carousels, counters), which creates a
+// non-trivial perf tax on animation-heavy SPAs. SPA navigation always involves
+// a body-level child change (route container swap), so childList is sufficient.
 if (document.body) {
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true });
 } else {
   document.addEventListener('DOMContentLoaded', () => {
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true });
   });
 }
 
@@ -2109,60 +1765,6 @@ window.addEventListener('hashchange', () => {
   setTimeout(runDetection, 600);
 });
 
-// ── Auth Token Bridge ─────────────────────────────────────────────────────────
-window.addEventListener('message', (e) => {
-  if (e.source !== window) return;
-  const type = e.data?.type;
-  if (type !== 'TLDR_AUTH_TOKEN' && type !== 'TLDR_AUTH_SIGNOUT') return;
-  
-  // Safety check: ensure context is valid before calling chrome.storage or chrome.runtime
-  if (typeof chrome === 'undefined' || !chrome.runtime?.id || !chrome.storage) return;
 
-  chrome.storage.local.get({ apiUrl: '' }, ({ apiUrl }) => {
-    let trustedOrigin = '';
-    try {
-      const base = (apiUrl || '').replace(/\/api\/analyze$/, '');
-      if (base) trustedOrigin = new URL(base).origin;
-    } catch {
-      trustedOrigin = '';
-    }
-    
-    // PRODUCTION HARDENING: Remove localhost entries in final audit
-    const allowedOrigins = new Set([
-      trustedOrigin,
-      'https://tldr-shield-292798741977.us-central1.run.app'
-    ]);
-    
-    if (!allowedOrigins.has(e.origin)) return;
+// Auth token bridge is now in bridge.js (loaded via manifest.json).
 
-    if (type === 'TLDR_AUTH_TOKEN') {
-      chrome.runtime.sendMessage({
-        type: 'STORE_AUTH',
-        token: e.data.token,
-        uid: e.data.uid,
-        email: e.data.email,
-      });
-      return;
-    }
-    chrome.runtime.sendMessage({ type: 'CLEAR_AUTH' });
-  });
-});
-
-// ── REQUEST_AUTH_SYNC — popup asks us to prod the web app to re-fire its token ─
-// This handles the case where the extension was installed after the user signed in.
-chrome.runtime.onMessage.addListener((message) => {
-  if (typeof chrome === 'undefined' || !chrome.runtime?.id) return;
-  if (message.type !== 'REQUEST_AUTH_SYNC') return;
-  // Dispatch a custom event that the web app's React code can listen for,
-  // OR simply trigger a page-level script that calls Firebase getIdToken.
-  // The simplest approach: inject a script that asks the web app to re-post.
-  try {
-    // C-2: Dispatch a custom DOM event. The TLDR Shield web app listens for
-    // 'tldr-request-auth' and responds by re-posting its Firebase token via
-    // window.postMessage — no CDN import, no CSP violation.
-    window.dispatchEvent(new CustomEvent('tldr-request-auth'));
-  } catch {}
-});
-
-// Extension context watcher removed — update notification is now shown
-// inside the popup when the user clicks the icon, not injected into pages.
