@@ -1,10 +1,10 @@
 // ─── System Prompts ───────────────────────────────────────────────────────────
 // Extracted from server.ts to reduce monolith size.
 // Quick: badge-only verdict (rating + score + tldr). No pillars, minimal tokens → ~3s.
-// Deep:  full breakdown — all 6 pillars + verbatim citations → ~6-10s.
+// Deep:  full breakdown — all 6 pillars + verbatim citations + ELI5 → ~6-10s.
 // Chunking is auto-triggered by size for BOTH tiers — it is infrastructure, not a feature.
 
-export function buildSystemPrompt(darkPatterns: boolean, tier: 'quick' | 'deep'): string {
+export function buildSystemPrompt(eli5: boolean, darkPatterns: boolean, tier: 'quick' | 'deep'): string {
 
     // ── QUICK: instant verdict, badge only ────────────────────────────────────
     if (tier === 'quick') {
@@ -27,7 +27,9 @@ Output ONLY valid JSON — no markdown, no extra text:
         ? ',\n    "dark_patterns": { "violation": boolean, "citation": "string", "confidence": "HIGH"|"MEDIUM"|"LOW" }'
         : "";
 
-    const citationInstruction = `CITATION RULE — VERBATIM COPY-PASTE ONLY, NO EXCEPTIONS:
+    const citationInstruction = eli5
+        ? "For 'citation': write a plain-English ELI5 explanation (no legal jargon) of what the policy says about this pillar."
+        : `CITATION RULE — VERBATIM COPY-PASTE ONLY, NO EXCEPTIONS:
 The 'citation' field must be a verbatim copy-paste of 15-60 consecutive words taken directly from the text. The words must appear exactly as written in the document. This will be used to highlight text in the page — so the citation MUST be exact words from the document.
 
 BANNED PATTERNS (automatic fail — never write these):
@@ -168,12 +170,13 @@ VIOLATION = ANY of: liability cap under $1000, class action waiver, forced indiv
 Examples: "aggregate liability shall not exceed $100" = VIOLATION. "waive right to class action" = VIOLATION. "binding individual arbitration" = VIOLATION. "claims must be filed within 1 year" = VIOLATION.`,
 };
 
-export function buildPillarPrompt(pillar: string): string {
+export function buildPillarPrompt(pillar: string, eli5: boolean): string {
   const def = PILLAR_DEFINITIONS[pillar];
   if (!def) throw new Error(`Unknown pillar: ${pillar}`);
 
-  const citRule = `CITATION RULE — VERBATIM COPY-PASTE ONLY, NO EXCEPTIONS:
-The 'citation' field must be a verbatim copy-paste of 15-60 consecutive words taken directly from the text. The words must appear exactly as written in the document. This will be used to highlight text in the page — so the citation MUST be exact words from the document.`;
+  const citRule = eli5
+    ? "citation: plain-English ELI5 explanation of what the policy says about this."
+    : `citation: VERBATIM copy-paste of 15-60 consecutive words from the text proving the violation. If no violation, write '[NOT_FOUND]' or copy the protective clause verbatim.`;
 
   return `You are a senior privacy attorney. Analyze ONLY the ${pillar} pillar.
 
