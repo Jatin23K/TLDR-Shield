@@ -5,6 +5,11 @@ dist-server/
 *.zip
 
 # ── Secrets & environment ─────────────────────────────────────────────────────
+# Firebase service account keys — NEVER commit these (contain private keys)
+*firebase*key*.json
+*service_account*.json
+*serviceaccount*.json
+
 .env
 .env.*
 !.env.example
