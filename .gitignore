@@ -1,33 +1,47 @@
-.env
-.env.*
-!.env.example
+# ── Dependencies & build output ──────────────────────────────────────────────
 node_modules/
 dist/
 dist-server/
-.vs/
-.worktrees/
+*.zip
+
+# ── Secrets & environment ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+firebase-applet-config.json
+
+# ── AI assistant / dev tool configs (internal, not for public repo) ───────────
 .agents/
 .claude/
-*.log
-*.zip
-*.csv
-scripts/
+.codex/
+.vs/
+.worktrees/
+.mcp.json
+**/CLAUDE.md
+**/AGENTS.md
+
+# ── Research & internal planning docs ─────────────────────────────────────────
+research/
+docs/superpowers/
+docs/deployment/railway.json
+docs/deployment/nixpacks.toml
+docs/deployment/cloud-scheduler.md
 scratch/
 
-# Internal / admin files — not for public repo
-TLDR_Admin.txt
-INTERVIEW.md
-interview.html
-
-# Debug / test output
-eval_output.txt
+# ── Debug / test output & logs ────────────────────────────────────────────────
+*.log
+*.csv
 log.txt
 log2.txt
+eval_output.txt
 
-# Scratch test files
+# ── Scratch / one-off test files ──────────────────────────────────────────────
 test-cit.ts
 test-cit.js
 test_*.ts
 test_*.js
 list_models.ts
 models.json
+TLDR_Admin.txt
+INTERVIEW.md
+interview.html
