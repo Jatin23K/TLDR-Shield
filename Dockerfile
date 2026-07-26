@@ -21,7 +21,7 @@ RUN npm ci --omit=dev
 # Copy compiled server + frontend from build stage
 COPY --from=build /app/dist-server ./dist-server
 COPY --from=build /app/dist ./dist
-COPY firebase-applet-config.json ./
+# Firebase client config is now inlined in src/firebase.ts — no JSON file needed
 
 EXPOSE 8080
 
