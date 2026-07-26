@@ -201,7 +201,7 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
     //   forceDeep=true   → user clicked "Run Deep Scan" from quick result panel
     //   text > 30k       → auto-promote to deep for large documents
     //   otherwise        → deep (FIX #6: was 'quick', caused most pages to always quick-scan)
-    const autoTier = tierOverride ?? (forceDeep || text.length > 30000 ? 'deep' : 'deep');
+    const autoTier = tierOverride ?? (forceDeep || text.length > 30000 ? 'deep' : 'quick');
 
     // Read stored auth token from session storage (Fix #20).
     // TOKEN_SKEW_BUFFER: 5-minute grace period prevents valid tokens from being

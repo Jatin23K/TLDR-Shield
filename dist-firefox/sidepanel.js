@@ -140,15 +140,27 @@ const PILLAR_LABELS = {
 function showResult(data) {
   if (!data) return;
 
-  // Degraded fallback — AI analysis failed. Show a clean retry prompt instead of
-  // the misleading deterministic result with "AI analysis unavailable" text.
-  if (data.degraded) {
-    showError('AI scan could not be completed. Tap "Scan Again" to retry.');
-    return;
-  }
+  // Degraded fallback — AI was unavailable (quota hit). Server returned a
+  // regex-based scan; show it with a banner rather than hiding the data.
+  const isDegraded = !!data.degraded;
 
   lastResult = data;
   hideAll();
+
+  // Inject / clear the degraded banner inside the result panel
+  const oldBanner = panelResult.querySelector('.tldr-degraded-banner');
+  if (oldBanner) oldBanner.remove();
+  if (isDegraded) {
+    const banner = document.createElement('div');
+    banner.className = 'tldr-degraded-banner';
+    banner.style.cssText = 'margin:10px 14px 0; padding:10px 12px; background:rgba(197,157,60,0.12); border:1px solid rgba(197,157,60,0.45); border-radius:8px; color:#e6c679; font-size:12px; line-height:1.45;';
+    const strong = document.createElement('strong');
+    strong.style.color = '#f0d288';
+    strong.textContent = 'Offline scan';
+    banner.appendChild(strong);
+    banner.appendChild(document.createTextNode(' \u00b7 AI quota temporarily exhausted. Results below are pattern-based; re-scan in a few minutes for full AI verdict.'));
+    panelResult.insertBefore(banner, panelResult.firstChild);
+  }
 
   // Rating banner
   const rating = (data.rating || 'OKAY').toUpperCase();
@@ -217,29 +229,49 @@ function showResult(data) {
   tierPill.textContent = tier === 'deep' ? '\uD83D\uDD2C Deep' : '\u26A1 Quick';
 
   // Pillars (deep only)
-  if (data.pillars && typeof data.pillars === 'object') {
+  if (tier === 'deep' && data.pillars && typeof data.pillars === 'object') {
     pillarsList.textContent = ''; // clear safely
     const pillarKeys = Object.keys(PILLAR_LABELS);
     pillarKeys.forEach((key) => {
       // Pillar values are objects: { violation: bool, citation: string, confidence: string }
       const pillar  = data.pillars[key];
-      const violated = pillar?.violation === true;
+      // Three-state via server-provided `status`: VIOLATES / EXPLICITLY_DENIES / NOT_MENTIONED.
+      // Legacy fallback: use violation + confidence when status is missing.
+      const pConfUp = (pillar?.confidence || 'MEDIUM').toString().toUpperCase();
+      const pStatus = (pillar?.status || '').toString().toUpperCase();
+      const hardViolation = pStatus === 'VIOLATES' || (pillar?.violation === true && pConfUp !== 'LOW');
+      const softFlag      = pillar?.violation === true && pConfUp === 'LOW';
+      const isNA          = pStatus === 'NOT_APPLICABLE' || pillar?.applicable === false;
+      const silence       = !isNA && pStatus === 'NOT_MENTIONED' && !pillar?.violation;
       const row = document.createElement('div');
       row.className = 'pillar-row';
 
       const top = document.createElement('div');
       top.className = 'pillar-top';
 
+      const dotClass = hardViolation ? 'risky' : (isNA ? 'na' : (softFlag || silence ? 'okay' : 'safe'));
+      const lblText  = hardViolation ? 'RISKY' : (isNA ? 'N/A' : (softFlag ? 'OKAY' : (silence ? 'NOT STATED' : 'SAFE')));
+
       const dot = document.createElement('span');
-      dot.className = `pillar-dot ${violated ? 'risky' : 'safe'}`;
+      dot.className = `pillar-dot ${dotClass}`;
 
       const name = document.createElement('span');
       name.className = 'pillar-name';
       name.textContent = PILLAR_LABELS[key] || key;
 
+      // Fix #7: transparency is informational-only — not scored
+      if (key === 'transparency') {
+        const infoTag = document.createElement('span');
+        infoTag.className = 'pillar-info-tag';
+        infoTag.textContent = 'info only';
+        infoTag.title = 'Transparency is shown for context but does not affect the score';
+        infoTag.style.cssText = 'font-size:8px; color:#8b95a5; background:rgba(139,149,165,0.12); padding:1px 5px; border-radius:3px; margin-left:6px; font-weight:500; text-transform:uppercase; letter-spacing:0.3px;';
+        name.appendChild(infoTag);
+      }
+
       const status = document.createElement('span');
-      status.className = `pillar-status-label ${violated ? 'risky' : 'safe'}`;
-      status.textContent = violated ? 'RISKY' : 'SAFE';
+      status.className = `pillar-status-label ${dotClass}`;
+      status.textContent = lblText;
       status.style.marginLeft = 'auto';
       status.style.fontSize = '9px';
       status.style.fontWeight = '700';
@@ -341,7 +373,7 @@ retryBtn.addEventListener('click', () => {
 
 // ── Sign-in button ───────────────────────────────────────────────────────────
 signinBtn.addEventListener('click', () => {
-  _browser.storage.local.get({ apiUrl: 'https://tldr-shield-292798741977.us-central1.run.app/api/analyze' }, ({ apiUrl }) => {
+  _browser.storage.local.get({ apiUrl: 'https://tldr-shield.onrender.com/api/analyze' }, ({ apiUrl }) => {
     const dashUrl = (apiUrl || '').replace(/\/api\/analyze$/, '');
     if (dashUrl) _browser.tabs.create({ url: dashUrl });
   });
@@ -367,7 +399,8 @@ if (gdprGenerateBtn) {
     gdprGenerateBtn.textContent = 'Generating\u2026';
     gdprGenerateBtn.disabled = true;
 
-    _browser.storage.local.get(['authToken', 'authTokenExpiry', 'apiUrl'], async ({ authToken, authTokenExpiry, apiUrl }) => {
+    _browser.storage.session.get(['authToken', 'authTokenExpiry'], async ({ authToken, authTokenExpiry }) => {
+      const apiUrl = await new Promise(r => _browser.storage.local.get({ apiUrl: 'https://tldr-shield.onrender.com/api/analyze' }, d => r(d.apiUrl)));
       const validToken = authToken && authTokenExpiry > Date.now() ? authToken : null;
       if (!validToken) {
         if (gdprError) { gdprError.textContent = 'Sign in to generate emails.'; gdprError.style.display = 'block'; }
@@ -376,7 +409,7 @@ if (gdprGenerateBtn) {
         return;
       }
 
-      const base = (apiUrl || 'https://tldr-shield-292798741977.us-central1.run.app').replace(/\/api\/analyze$/, '');
+      const base = (apiUrl || 'https://tldr-shield.onrender.com').replace(/\/api\/analyze$/, '');
       const violations = Object.entries(lastResult?.pillars ?? {})
         .filter(([, v]) => v?.violation)
         .map(([k]) => k);

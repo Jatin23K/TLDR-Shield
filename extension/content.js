@@ -289,9 +289,8 @@ function createTriggerButton() {
     // Show skeleton immediately so user sees feedback right away
     showSkeletonPanel();
 
-    // PERSISTENCE FIX: Read the user's preferred tier (defaulting to deep) from storage
-    // so the floating icon respects the selection made in the popup.
-    let tier = 'deep'; // FIX #1: default to deep — quick had fake "Flagged by quick analysis" citations
+    // Read user's preferred tier from storage (defaulting to quick for icon scans unless changed in popup)
+    let tier = 'quick';
     try {
       const storage = await chrome.storage.local.get(['tier']);
       if (storage && storage.tier) tier = storage.tier;
@@ -992,7 +991,7 @@ function showResultPanel(data) {
   const ratingClass = data.rating?.toLowerCase() ?? 'risky';
   const score       = typeof data.score === 'number' ? data.score : null;
   const scoreDisplay = score !== null ? score : '?';
-  const isQuick     = !data.pillars;
+  const isQuick     = data.tier ? data.tier === 'quick' : !data.pillars;
 
   const PILLAR_LABELS = {
     ai_training:       'AI Training',
@@ -1222,8 +1221,8 @@ function showResultPanel(data) {
     panel.appendChild(deepBtn);
   }
 
-  // â”€â”€ Pillars (Deep scan only) â”€â”€
-  if (data.pillars && Object.keys(data.pillars).length > 0) {
+  // ── Pillars (Deep scan only) ──
+  if (!isQuick && data.pillars && Object.keys(data.pillars).length > 0) {
     // Privacy Pillars — static header, always visible, no collapse
     const pillarsHeader = document.createElement('div');
     pillarsHeader.className = 'tldr-expand-toggle tldr-expand-toggle--static';

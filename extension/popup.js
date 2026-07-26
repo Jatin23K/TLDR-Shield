@@ -339,11 +339,15 @@ function showResult(data) {
   }
 
   // C1/C2: Pillar breakdown (deep scan only)
+  const isDeep = data.tier ? data.tier === 'deep' : (
+    data.pillars !== null &&
+    typeof data.pillars === 'object' &&
+    !Array.isArray(data.pillars) &&
+    Object.keys(data.pillars).length > 0
+  );
+
   if (resultPillars) {
-    if (data.pillars !== null &&
-        typeof data.pillars === 'object' &&
-        !Array.isArray(data.pillars) &&
-        Object.keys(data.pillars).length > 0) {
+    if (isDeep && data.pillars) {
       renderPillars(data.pillars);
     } else {
       resultPillars.style.display = 'none';
@@ -352,7 +356,7 @@ function showResult(data) {
 
   // Fix 2: Quick scan flag grid (pillar violated/safe without citations)
   if (resultQuickFlags) {
-    if (data.flagged && typeof data.flagged === 'object' && data.pillars === null) {
+    if (!isDeep && data.flagged && typeof data.flagged === 'object') {
       renderQuickFlags(data.flagged);
     } else {
       resultQuickFlags.style.display = 'none';
@@ -361,10 +365,6 @@ function showResult(data) {
 
   // C3: Scan type label
   if (scanTypeLabel) {
-    const isDeep = data.pillars !== null &&
-                   typeof data.pillars === 'object' &&
-                   !Array.isArray(data.pillars) &&
-                   Object.keys(data.pillars).length > 0;
     scanTypeLabel.textContent = isDeep ? 'Deep Scan \u00b7 Full analysis' : 'Quick Scan \u00b7 Basic verdict';
     scanTypeLabel.style.display = 'block';
   }

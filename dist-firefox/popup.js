@@ -8,7 +8,7 @@ const _browser = (typeof browser !== 'undefined' && browser.runtime) ? browser :
 let _autoCloseTimer = null;
 let _scanInProgress = false;
 
-function startAutoClose(delayMs = 5000) {
+function startAutoClose(delayMs = 15000) {
   clearTimeout(_autoCloseTimer);
   if (_scanInProgress) return;
   // Animate the countdown bar: shrink from 100% → 0% over delayMs
@@ -74,16 +74,16 @@ function cancelAutoClose() {
 })();
 
 // Start the countdown immediately on open (normal popup path)
-startAutoClose(5000);
+startAutoClose(15000);
 
 // Any interaction resets the timer — user is actively using the popup
-document.addEventListener('mousemove', () => startAutoClose(5000), { passive: true });
-document.addEventListener('keydown',   () => startAutoClose(5000), { passive: true });
+document.addEventListener('mousemove', () => startAutoClose(15000), { passive: true });
+document.addEventListener('keydown',   () => startAutoClose(15000), { passive: true });
 
 
 // Set the production backend URL here before shipping.
 // Intentionally empty so misconfigured builds fail loudly rather than routing to a dev server.
-const DEFAULT_API_URL = 'https://tldr-shield-292798741977.us-central1.run.app/api/analyze';
+const DEFAULT_API_URL = 'https://tldr-shield.onrender.com/api/analyze';
 
 // ── DOM references ──────────────────────────────────────────────────────────
 const scanBtn          = document.getElementById('scan-btn');
@@ -221,9 +221,12 @@ function renderPillars(pillars) {
 
   for (const k of availableKeys) {
     const p        = pillars[k];
-    const violated = !!p?.violation;
     const rawConf  = (p?.confidence || 'medium').toLowerCase();
     let   conf     = ['high', 'medium', 'low'].includes(rawConf) ? rawConf : 'medium';
+    // Credibility fix: LOW-confidence violations deduct 0 points on the server,
+    // so rendering them as a red/violated pillar contradicts the overall score.
+    // Treat violation+LOW as a soft, non-violated flag.
+    const violated = !!p?.violation && conf !== 'low';
     // Non-violated pillars are safe — LOW confidence is misleading (absence of
     // violation doesn't need a verbatim citation). Clamp to minimum MEDIUM for
     // cached results that may have been stored before the server-side fix.
@@ -252,6 +255,15 @@ function renderPillars(pillars) {
     const nameText = document.createTextNode(name + '\u00a0'); // non-breaking space before dot
     nameEl.appendChild(nameText);
 
+    // Fix #7: transparency is informational-only — not scored
+    if (k === 'transparency') {
+      const infoTag = document.createElement('span');
+      infoTag.textContent = 'info only';
+      infoTag.title = 'Transparency is shown for context but does not affect the score';
+      infoTag.style.cssText = 'font-size:7px; color:#8b95a5; background:rgba(139,149,165,0.12); padding:1px 4px; border-radius:3px; margin-right:4px; font-weight:500; text-transform:uppercase; letter-spacing:0.3px;';
+      nameEl.appendChild(infoTag);
+    }
+
     const dot = document.createElement('span');
     dot.className = 'conf-dot ' + conf;
     dot.title = conf.charAt(0).toUpperCase() + conf.slice(1) + ' confidence';
@@ -278,12 +290,9 @@ function renderPillars(pillars) {
 function showResult(data) {
   if (!data || !data.rating) return;
 
-  // Degraded fallback — AI analysis failed. Show a clean retry prompt instead of
-  // the misleading deterministic result with "AI analysis unavailable" text.
-  if (data.degraded) {
-    showError('AI scan could not be completed. Please try again in a moment.');
-    return;
-  }
+  // Degraded fallback — AI was unavailable (quota hit). Server still returned
+  // a real regex-based scan; render it normally with a banner below.
+  const isDegraded = !!data.degraded;
 
   const cls = data.rating.toLowerCase(); // 'safe' | 'okay' | 'risky'
   const isCautious = data.rating === 'OKAY' && typeof data.score === 'number' && data.score < 60;
@@ -330,11 +339,15 @@ function showResult(data) {
   }
 
   // C1/C2: Pillar breakdown (deep scan only)
+  const isDeep = data.tier ? data.tier === 'deep' : (
+    data.pillars !== null &&
+    typeof data.pillars === 'object' &&
+    !Array.isArray(data.pillars) &&
+    Object.keys(data.pillars).length > 0
+  );
+
   if (resultPillars) {
-    if (data.pillars !== null &&
-        typeof data.pillars === 'object' &&
-        !Array.isArray(data.pillars) &&
-        Object.keys(data.pillars).length > 0) {
+    if (isDeep && data.pillars) {
       renderPillars(data.pillars);
     } else {
       resultPillars.style.display = 'none';
@@ -343,7 +356,7 @@ function showResult(data) {
 
   // Fix 2: Quick scan flag grid (pillar violated/safe without citations)
   if (resultQuickFlags) {
-    if (data.flagged && typeof data.flagged === 'object' && data.pillars === null) {
+    if (!isDeep && data.flagged && typeof data.flagged === 'object') {
       renderQuickFlags(data.flagged);
     } else {
       resultQuickFlags.style.display = 'none';
@@ -352,10 +365,6 @@ function showResult(data) {
 
   // C3: Scan type label
   if (scanTypeLabel) {
-    const isDeep = data.pillars !== null &&
-                   typeof data.pillars === 'object' &&
-                   !Array.isArray(data.pillars) &&
-                   Object.keys(data.pillars).length > 0;
     scanTypeLabel.textContent = isDeep ? 'Deep Scan \u00b7 Full analysis' : 'Quick Scan \u00b7 Basic verdict';
     scanTypeLabel.style.display = 'block';
   }
@@ -390,6 +399,21 @@ function showResult(data) {
     }
   }
 
+  // Inject degraded banner (remove any previous one first)
+  const oldBanner = resultCard.querySelector('.tldr-degraded-banner');
+  if (oldBanner) oldBanner.remove();
+  if (isDegraded) {
+    const banner = document.createElement('div');
+    banner.className = 'tldr-degraded-banner';
+    banner.style.cssText = 'margin:8px 12px; padding:8px 10px; background:rgba(197,157,60,0.12); border:1px solid rgba(197,157,60,0.45); border-radius:6px; color:#e6c679; font-size:11px; line-height:1.4;';
+    const strong = document.createElement('strong');
+    strong.style.color = '#f0d288';
+    strong.textContent = 'Offline scan';
+    banner.appendChild(strong);
+    banner.appendChild(document.createTextNode(' \u00b7 AI quota hit. Pattern-based result below. Re-scan shortly for full AI verdict.'));
+    resultCard.insertBefore(banner, resultCard.firstChild);
+  }
+
   resultCard.style.display = 'block';
   const statusLabel = isCautious ? 'OKAY · CAUTIOUS' : data.rating;
   setStatus(statusLabel + ' · ' + (data.score ?? '–') + '/100', 'done');
@@ -420,24 +444,66 @@ function renderAuthState({ authEmail, authTokenExpiry } = {}) {
 // ── Load all settings and auth state in a single storage read ───────────────
 _browser.storage.local.get(
   {
-    authEmail: null,
-    authTokenExpiry: 0,
     authCredits: null,
-    authToken: null,
     apiUrl: DEFAULT_API_URL,
-    eli5Mode: true,
+    eli5Mode: false,
     darkPatterns: true,
     tier: 'quick',
   },
   (data) => {
-    // Auth state
-    renderAuthState(data);
-    if (data.authCredits != null) {
-      creditsPill.style.display = 'block';
-      creditsVal.textContent = data.authCredits + ' credits';
-    }
+    // Auth state: read from session storage via background.js GET_AUTH message (Fix #20)
+    _browser.runtime.sendMessage({ type: 'GET_AUTH' }, (authData) => {
+      if (_browser.runtime.lastError || !authData) {
+        renderAuthState({});
+      } else {
+        renderAuthState(authData);
+      }
 
-    // Toggles
+      // Fetch live credits from server if signed in
+      const TOKEN_SKEW_BUFFER = 5 * 60 * 1000;
+      const validToken = authData?.authTokenExpiry > (Date.now() - TOKEN_SKEW_BUFFER)
+        ? true : false;
+      // Credits fetch uses GET_AUTH to get the token from session storage;
+      // we need the actual token, not just validity
+      if (validToken && (data.apiUrl || DEFAULT_API_URL)) {
+        // Request token from session storage to use for credits fetch
+        _browser.storage.session.get(['authToken'], ({ authToken }) => {
+          if (!authToken) return;
+          const base = (data.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
+          const creditsController = new AbortController();
+          const creditsTimeout = setTimeout(() => creditsController.abort(), 5000);
+          fetch(base + '/api/credits', {
+            headers: { 'Authorization': 'Bearer ' + authToken },
+            signal: creditsController.signal,
+          })
+            .then(r => {
+              if (r.status === 401) {
+                _browser.runtime.sendMessage({ type: 'CLEAR_AUTH' });
+                renderAuthState({});
+                creditsPill.style.display = 'none';
+                if (authBanner) {
+                  authBanner.style.display = 'block';
+                  const msg = authBanner.querySelector('p') || authBanner;
+                  msg.textContent = 'Session expired \u2014 please sign in again.';
+                }
+                return null;
+              }
+              return r.ok ? r.json() : null;
+            })
+            .then(d => {
+              if (d && typeof d.credits === 'number') {
+                _browser.storage.local.set({ authCredits: d.credits });
+                creditsPill.style.display = 'block';
+                creditsVal.textContent = d.credits + ' credits';
+              }
+            })
+            .catch(() => {})
+            .finally(() => clearTimeout(creditsTimeout));
+        });
+      }
+    });
+
+    // Settings
     eli5Mode     = data.eli5Mode;
     darkPatterns = data.darkPatterns;
     updateToggleUI();
@@ -463,65 +529,30 @@ _browser.storage.local.get(
       }
     }
 
-    // Fetch live credits from server if signed in
-    const TOKEN_SKEW_BUFFER = 5 * 60 * 1000;
-    const validToken = data.authToken && data.authTokenExpiry > (Date.now() - TOKEN_SKEW_BUFFER) ? data.authToken : null;
-    if (validToken && (data.apiUrl || DEFAULT_API_URL)) {
-      const base = (data.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
-      const creditsController = new AbortController();
-      const creditsTimeout = setTimeout(() => creditsController.abort(), 5000);
-      fetch(base + '/api/credits', {
-        headers: {
-          'Authorization': 'Bearer ' + validToken,
-        },
-        signal: creditsController.signal,
-      })
-        .then(r => {
-          if (r.status === 401) {
-            // E-2: Token was revoked (e.g. password change) — clear stale credentials
-            // and show signed-out state so user knows they need to re-authenticate.
-            _browser.storage.local.remove(['authToken', 'authUid', 'authEmail', 'authTokenExpiry', 'authCredits']);
-            renderAuthState({});
-            creditsPill.style.display = 'none';
-            if (authBanner) {
-              authBanner.style.display = 'block';
-              const msg = authBanner.querySelector('p') || authBanner;
-              msg.textContent = 'Session expired — please sign in again.';
-            }
-            return null;
-          }
-          return r.ok ? r.json() : null;
-        })
-        .then(d => {
-          if (d && typeof d.credits === 'number') {
-            _browser.storage.local.set({ authCredits: d.credits });
-            creditsPill.style.display = 'block';
-            creditsVal.textContent = d.credits + ' credits';
-          } else if (d && d.unavailable) {
-            // Firestore flapping — keep cached credits, don't break UI
-          }
-        })
-        .catch(() => {}) // silently ignore network errors — cached value stays displayed
-        .finally(() => clearTimeout(creditsTimeout));
+    // Credits from local cache
+    if (data.authCredits != null) {
+      creditsPill.style.display = 'block';
+      creditsVal.textContent = data.authCredits + ' credits';
     }
 
     // ── Active auth probe ─────────────────────────────────────────────────────
     // If the popup shows "signed out" but the web app might be open and signed in,
-    // inject a tiny script that asks the web app to re-broadcast its Firebase token.
-    // This handles: extension installed AFTER sign-in, expired token refresh, etc.
-    const signedIn = data.authEmail && data.authTokenExpiry > Date.now();
-    if (!signedIn) {
-      const webAppOrigin = (data.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
-      _browser.tabs.query({}, (tabs) => {
-        for (const tab of tabs) {
-          if (tab.id && tab.url && tab.url.startsWith(webAppOrigin)) {
-            // Found an open web app tab — ask the content script to request a token re-sync
-            _browser.tabs.sendMessage(tab.id, { type: 'REQUEST_AUTH_SYNC' }).catch(() => {});
-            break;
+    // ask the web app to re-broadcast its Firebase token.
+    _browser.runtime.sendMessage({ type: 'GET_AUTH' }, (authData) => {
+      if (_browser.runtime.lastError) return;
+      const signedIn = authData?.authEmail && authData?.authTokenExpiry > Date.now();
+      if (!signedIn) {
+        const webAppOrigin = (data.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
+        _browser.tabs.query({}, (tabs) => {
+          for (const tab of tabs) {
+            if (tab.id && tab.url && tab.url.startsWith(webAppOrigin)) {
+              _browser.tabs.sendMessage(tab.id, { type: 'REQUEST_AUTH_SYNC' }).catch(() => {});
+              break;
+            }
           }
-        }
-      });
-    }
+        });
+      }
+    });
   }
 );
 
@@ -538,15 +569,13 @@ signInBtn.addEventListener('click', () => {
 // Covers: sign-in propagating from web app, token refresh, and credits deducted
 // after each scan (background.js writes authCredits on every ANALYSIS_RESULT).
 _browser.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local') return;
-  // Auth state changed — re-render signed-in / signed-out UI
-  if (changes.authEmail || changes.authTokenExpiry) {
-    _browser.storage.local.get(['authEmail', 'authTokenExpiry', 'authCredits'], (data) => {
-      renderAuthState(data);
-      if (data.authCredits != null) {
-        creditsPill.style.display = 'block';
-        creditsVal.textContent = data.authCredits + ' credits';
-      }
+  // Fix #20: auth state changes come from 'session' area now
+  if (area !== 'local' && area !== 'session') return;
+  // Auth state changed (session storage) — re-render signed-in / signed-out UI
+  if (area === 'session' && (changes.authEmail || changes.authTokenExpiry)) {
+    _browser.runtime.sendMessage({ type: 'GET_AUTH' }, (authData) => {
+      if (_browser.runtime.lastError) return;
+      renderAuthState(authData || {});
     });
   }
   // Credits changed — update pill immediately without a full re-render
@@ -559,13 +588,12 @@ _browser.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-// Sign out — clear stored token
+// Sign out — clear stored token from both session and local
 signOutBtn.addEventListener('click', () => {
-  _browser.storage.local.remove(['authToken', 'authUid', 'authEmail', 'authTokenExpiry', 'authCredits'], () => {
-    renderAuthState({});
-    creditsPill.style.display = 'none';
-    setStatus('Signed out.', 'idle');
-  });
+  _browser.runtime.sendMessage({ type: 'CLEAR_AUTH' });
+  renderAuthState({});
+  creditsPill.style.display = 'none';
+  setStatus('Signed out.', 'idle');
 });
 
 // ── Save URL ─────────────────────────────────────────────────────────────────
@@ -702,64 +730,7 @@ scanBtn.addEventListener('click', async () => {
   }
 });
 
-// ── Batch Scan ──────────────────────────────────────────────────────────────
-const batchScanBtn     = document.getElementById('batch-scan-btn');
-const batchProgress    = document.getElementById('batch-progress');
-const batchStatus      = document.getElementById('batch-status');
-const batchResultsList = document.getElementById('batch-results-list');
-
-function clearChildren(el) {
-  if (!el) return;
-  while (el.firstChild) el.removeChild(el.firstChild);
-}
-
-// Detect legal links on active tab to decide whether to show batch button
-_browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-  const tabId = tabs[0]?.id;
-  if (!tabId) return;
-  _browser.tabs.sendMessage(tabId, { type: 'GET_LEGAL_LINKS' }, (response) => {
-    const batchSection = document.getElementById('batch-section');
-    const btn = document.getElementById('batch-scan-btn');
-    if (!batchSection || !btn) return;
-    batchSection.style.display = 'block';
-    if (_browser.runtime.lastError || !response?.links?.length) {
-      btn.disabled = true;
-      btn.title = 'No legal links found on this page';
-      return;
-    }
-    btn.disabled = false;
-    btn.title = '';
-    batchSection.dataset.links = JSON.stringify(response.links);
-  });
-});
-
-if (batchScanBtn) {
-  batchScanBtn.addEventListener('click', () => {
-    const batchSection = document.getElementById('batch-section');
-    let links;
-    try {
-      links = JSON.parse(batchSection?.dataset.links ?? '[]');
-    } catch (_) {
-      links = [];
-    }
-    if (!links.length) return;
-
-    batchScanBtn.disabled = true;
-    batchScanBtn.textContent = 'Scanning\u2026';
-    if (batchProgress) batchProgress.style.display = 'block';
-    if (batchStatus) batchStatus.textContent = `Starting scan of ${links.length} link(s)\u2026`;
-    clearChildren(batchResultsList);
-
-    // Get current tier from storage
-    _browser.storage.local.get({ tier: 'quick' }, ({ tier }) => {
-      _browser.runtime.sendMessage({
-        type: 'BATCH_SCAN',
-        urls: links,
-        tier: tier,
-      });
-    });
-  });
-}
+// ── Batch Scan — Removed for Portfolio MVP ──
 
 // Listen for background messages
 _browser.runtime.onMessage.addListener((message) => {

@@ -229,7 +229,7 @@ function showResult(data) {
   tierPill.textContent = tier === 'deep' ? '\uD83D\uDD2C Deep' : '\u26A1 Quick';
 
   // Pillars (deep only)
-  if (data.pillars && typeof data.pillars === 'object') {
+  if (tier === 'deep' && data.pillars && typeof data.pillars === 'object') {
     pillarsList.textContent = ''; // clear safely
     const pillarKeys = Object.keys(PILLAR_LABELS);
     pillarKeys.forEach((key) => {

@@ -3,11 +3,15 @@
 // Cross-browser compatibility — works in Chrome and Firefox
 const _browser = (typeof browser !== 'undefined' && browser.runtime) ? browser : chrome; // eslint-disable-line no-undef
 
-// Backend URL is read from chrome.storage.local key 'apiUrl'.
-// Set this once via the extension's storage (or ship a production build with the correct value).
-// Fallback is intentionally empty — if not configured the scan will fail loudly rather than
-// silently routing to a dev/staging server.
-const DEFAULT_API_URL = 'https://tldr-shield-292798741977.us-central1.run.app/api/analyze';
+//   Agent 4 → aggregate + display result    (content.js)
+//
+// KEEP-ALIVE ARCHITECTURE:
+// MV3 service workers are killed after ~30s of inactivity. However, a Gemini 1.5 Pro
+// deep scan can take 35-50s (reasoning + grounding). We keep the worker alive by 
+// opening a messaging port to the content script; as long as the port is open, 
+// Chrome's "idle timer" is suspended.
+
+const DEFAULT_API_URL = 'https://tldr-shield.onrender.com/api/analyze';
 
 // Last scan result — cached so the side panel can retrieve it when opened
 let lastResult = { tabId: null, timestamp: 0, data: null };
@@ -18,11 +22,6 @@ if (_browser.sidePanel && _browser.action && _browser.action.onClicked) {
     _browser.sidePanel.open({ tabId: tab.id }).catch(() => {});
   });
 }
-
-// FIX #3: MV3 service workers are killed after ~30s of inactivity.
-// A deep scan can take 25-40s. We keep the worker alive by opening a port
-// to the content script — Chrome does not terminate workers with open ports.
-// The port is opened at the start of a scan and disconnected on completion.
 const activePorts = new Map(); // tabId → port
 
 _browser.runtime.onConnect.addListener((port) => {
@@ -46,16 +45,9 @@ _browser.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// WASM local inference via offscreen document
-async function tryLocalInference(text) {
-  if (!text || text.length > 5000) return null;
-  try {
-    await ensureOffscreenDocument();
-    return await _browser.runtime.sendMessage({ type: 'WASM_INFER', text });
-  } catch {
-    return null;
-  }
-}
+// NOTE: WASM local inference path removed — it was calling ensureOffscreenDocument
+// and sending WASM_INFER to a handler that was never implemented in offscreen.js,
+// silently returning null on every short-text scan and adding unnecessary latency.
 
 // ── PDF extraction via offscreen document ─────────────────────────────────
 // chrome.offscreen is MV3 — creates a hidden document that can use ESM + pdf.js
@@ -108,15 +100,7 @@ _browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Try WASM local inference for short texts (free, offline), then fall through to cloud.
     (async () => {
       try {
-        const localResult = await tryLocalInference(message.text);
-        if (localResult?.result) {
-          const standardizedData = { ...localResult.result, local: true };
-          // Standardize on ANALYSIS_RESULT so content/sidepanel catch it
-          if (tabId) _browser.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', data: standardizedData }).catch(() => {});
-          _browser.runtime.sendMessage({ type: 'ANALYSIS_RESULT', data: standardizedData }).catch(() => {});
-          return;
-        }
-        // No local result — Fall back to cloud analysis
+        // Fall through directly to cloud analysis (WASM path removed — dead code)
         await analyzeText(
           message.text,
           tabId,
@@ -126,7 +110,7 @@ _browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message.forceRefresh ?? false
         );
       } catch (err) {
-        console.error('[TLDR Shield] Local/Cloud Analysis error:', err);
+        console.error('[TLDR Shield] Cloud Analysis error:', err);
         if (tabId) {
           _browser.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: 'Analysis process failed.' }).catch(() => {});
         }
@@ -138,31 +122,34 @@ _browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'ANALYZE_PDF') {
     extractPdfAndAnalyze(message.url, sender.tab?.id);
   }
-  // Auth token storage — sent by content.js after web app sign-in
+  // Auth token storage — sent by content.js after web app sign-in.
+  // Fix #20: Auth tokens are stored in chrome.storage.session (memory-only,
+  // cleared on browser close) instead of chrome.storage.local (persisted on disk).
+  // The token already expires after 1 hour; session storage matches its real lifetime.
   if (message.type === 'STORE_AUTH') {
-    _browser.storage.local.set({
+    _browser.storage.session.set({
       authToken:       message.token,
       authUid:         message.uid,
       authEmail:       message.email,
       // Firebase ID tokens expire after 1 hour; store expiry so we know when to prompt re-login
       authTokenExpiry: Date.now() + 55 * 60 * 1000,
     });
+    // Mirror email to local for popup display (non-sensitive)
+    _browser.storage.local.set({ authEmail: message.email });
   }
   if (message.type === 'CLEAR_AUTH') {
-    _browser.storage.local.remove(['authToken', 'authUid', 'authEmail', 'authTokenExpiry']);
+    _browser.storage.session.remove(['authToken', 'authUid', 'authEmail', 'authTokenExpiry']);
+    _browser.storage.local.remove(['authEmail', 'authCredits']);
   }
   // Allow popup / side panel to read auth state
   if (message.type === 'GET_AUTH') {
-    _browser.storage.local.get(
+    _browser.storage.session.get(
       ['authEmail', 'authUid', 'authTokenExpiry'],
       (data) => {
         const valid = !!(data.authEmail && data.authTokenExpiry > Date.now());
         if (sender.tab) {
-          // Content-script caller — broadcast back via tab messaging
           _browser.tabs.sendMessage(sender.tab.id, { type: 'AUTH_STATE', ...data, valid });
         } else {
-          // Extension-page caller (popup, side panel) — use sendResponse so the
-          // callback passed to _browser.runtime.sendMessage receives the result directly
           sendResponse({ type: 'AUTH_STATE', ...data, valid });
         }
       }
@@ -176,128 +163,10 @@ _browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   // Allow popup to ping for status
   if (message.type === 'PING') return true;
-  if (message.type === 'BATCH_SCAN') {
-    processBatchScan(message.urls, message.tier ?? 'quick', sender);
-    return; // fire-and-forget — progress sent via separate messages
-  }
+  // BATCH_SCAN — Removed for Portfolio MVP
 });
 
-function isSafeExternalUrl(href) {
-  try {
-    const u = new URL(href);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
-    const h = u.hostname;
-    // Block private, loopback, link-local, and cloud metadata IP ranges
-    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0)/i.test(h)) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function processBatchScan(urls, tier, sender) {
-  const results = [];
-  const keepAlive = setInterval(() => _browser.runtime.getPlatformInfo(() => {}), 20000);
-  try {
-  for (let i = 0; i < urls.length; i++) {
-    const { url } = urls[i];
-    if (!isSafeExternalUrl(url)) {
-      results.push({ url, error: 'Unsafe or Invalid URL' });
-      continue;
-    }
-    // Send progress update
-    _browser.runtime.sendMessage({
-      type: 'BATCH_PROGRESS',
-      total: urls.length,
-      completed: i,
-      currentUrl: url,
-      results,
-    }).catch(() => {});
-
-    try {
-      // Fetch and extract text from the URL directly from the background service worker
-      const pageResp = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      const html = await pageResp.text();
-      // Use a basic text extractor (strip tags)
-      const pageText = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 80000);
-
-      const storage = await _browser.storage.local.get(['authToken', 'authTokenExpiry', 'apiUrl', 'eli5Mode', 'darkPatterns']);
-      const validToken = storage.authToken && storage.authTokenExpiry > Date.now() ? storage.authToken : null;
-      const apiBase = (storage.apiUrl || DEFAULT_API_URL).replace(/\/api\/analyze$/, '');
-
-      const response = await fetch(`${apiBase}/api/analyze`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(validToken ? { 'Authorization': `Bearer ${validToken}` } : {}),
-        },
-        body: JSON.stringify({
-          text: pageText,
-          tier: tier,
-          eli5: storage.eli5Mode ?? false,
-          darkPatterns: storage.darkPatterns ?? true,
-          url: url,
-        }),
-        signal: AbortSignal.timeout(60000),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        if (response.status === 402) {
-          results.push({ url, error: 'OUT_OF_CREDITS' });
-          break; // Stop batch if out of credits
-        }
-        results.push({ url, error: errBody.error ?? `HTTP ${response.status}` });
-        continue;
-      }
-
-      // Parse SSE stream to get final result
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let finalResult = null;
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              if (parsed.rating) finalResult = parsed; // Final result has rating
-            } catch (_) {}
-          }
-        }
-      }
-
-      if (finalResult) {
-        results.push({ url, rating: finalResult.rating, score: finalResult.score, tldr: finalResult.tldr });
-      } else {
-        results.push({ url, error: 'No result returned' });
-      }
-    } catch (err) {
-      results.push({ url, error: err.name === 'TimeoutError' ? 'Timed out' : 'Fetch failed' });
-    }
-  }
-
-  // Send final completion message
-  _browser.runtime.sendMessage({
-    type: 'BATCH_COMPLETE',
-    total: urls.length,
-    completed: urls.length,
-    results,
-  }).catch(() => {});
-  } finally {
-    clearInterval(keepAlive);
-  }
-}
+// ── Batch Scan — Removed for Portfolio MVP ──
 
 async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, sourceUrl = null, forceRefresh = false) {
   if (!tabId) return;
@@ -314,8 +183,11 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
   try {
     const { apiUrl, eli5Mode, darkPatterns } = await _browser.storage.local.get({
       apiUrl: DEFAULT_API_URL,
-      eli5Mode: true,
-      darkPatterns: true,
+      // Defaults match the popup UI initial state (both off).
+      // Previously both defaulted to true, causing a split-brain state where
+      // users who never opened the popup got ELI5 + dark patterns unexpectedly.
+      eli5Mode: false,
+      darkPatterns: true, // restored: scoring rebalanced to -20pts so the penalty is no longer too harsh
     });
 
     const url = apiUrl || DEFAULT_API_URL;
@@ -328,14 +200,14 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
     //   tierOverride     → user explicitly chose quick/deep in popup
     //   forceDeep=true   → user clicked "Run Deep Scan" from quick result panel
     //   text > 30k       → auto-promote to deep for large documents
-    //   otherwise        → quick
+    //   otherwise        → deep (FIX #6: was 'quick', caused most pages to always quick-scan)
     const autoTier = tierOverride ?? (forceDeep || text.length > 30000 ? 'deep' : 'quick');
 
-    // Read stored auth token (set when user signs in on the TLDR Shield web app).
+    // Read stored auth token from session storage (Fix #20).
     // TOKEN_SKEW_BUFFER: 5-minute grace period prevents valid tokens from being
     // flagged as expired on machines with minor clock skew (VMs, corporate laptops).
     const TOKEN_SKEW_BUFFER = 5 * 60 * 1000;
-    const { authToken, authTokenExpiry } = await _browser.storage.local.get(['authToken', 'authTokenExpiry']);
+    const { authToken, authTokenExpiry } = await _browser.storage.session.get(['authToken', 'authTokenExpiry']);
     const validToken = authToken && authTokenExpiry > (Date.now() - TOKEN_SKEW_BUFFER) ? authToken : null;
 
     // Allow up to 90s for multi-block parallel analysis
@@ -436,8 +308,10 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
       // Also broadcast to side panel (may not be open — ignore errors)
       _browser.runtime.sendMessage({ type: 'ANALYSIS_RESULT', data: result }).catch(() => {});
     } else {
-      _browser.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: 'No result returned' }).catch(() => {});
-      _browser.runtime.sendMessage({ type: 'ANALYSIS_RESULT', error: 'No result returned' }).catch(() => {});
+      // FIX: Descriptive error message instead of bare "No result returned"
+      const noResultMsg = 'The scan completed but returned no data. The page text may be too short or the server is temporarily unavailable. Please refresh the page and try again.';
+      _browser.tabs.sendMessage(tabId, { type: 'ANALYSIS_RESULT', error: noResultMsg }).catch(() => {});
+      _browser.runtime.sendMessage({ type: 'ANALYSIS_RESULT', error: noResultMsg }).catch(() => {});
     }
 
   } catch (error) {
@@ -452,61 +326,17 @@ async function analyzeText(text, tabId, forceDeep = false, tierOverride = null, 
   }
 }
 
-// ── Policy Change Notification Badge ─────────────────────────────────────────
-// On service worker startup, check for unread policy change notifications and
-// update the extension action badge so the user knows without opening the app.
+// ── Notification Check — Removed for Portfolio MVP ──
 
-async function checkNotifications() {
-  try {
-    const storage = await _browser.storage.local.get(['authToken', 'authTokenExpiry', 'apiUrl']);
-    // TOKEN_SKEW_BUFFER: 5-minute grace period for clock skew.
-    const TOKEN_SKEW_BUFFER = 5 * 60 * 1000;
-    const validToken = (storage.authToken && storage.authTokenExpiry > (Date.now() - TOKEN_SKEW_BUFFER))
-      ? storage.authToken
-      : null;
-    if (!validToken) {
-      // Not signed in — clear any stale badge
-      _browser.action.setBadgeText({ text: '' }).catch(() => {});
-      return;
-    }
+_browser.runtime.onStartup.addListener(refreshAuthToken); 
+_browser.runtime.onInstalled.addListener(() => {
+  console.log('[TLDR Shield] Extension installed/updated.');
+});
 
-    // Derive the base API URL (strip trailing /api/analyze if present)
-    const rawUrl = storage.apiUrl || DEFAULT_API_URL;
-    const apiBase = rawUrl.replace(/\/api\/analyze$/, '').replace(/\/$/, '');
-
-    const resp = await fetch(`${apiBase}/api/notifications`, {
-      headers: { Authorization: `Bearer ${validToken}` },
-      signal: AbortSignal.timeout(10000),
-    }).catch(() => null);
-
-    if (!resp || !resp.ok) return;
-
-    const data = await resp.json().catch(() => null);
-    if (!data || typeof data.unreadCount !== 'number' || data.unreadCount === 0) {
-      _browser.action.setBadgeText({ text: '' }).catch(() => {});
-      return;
-    }
-
-    const badgeText = data.unreadCount > 9 ? '9+' : String(data.unreadCount);
-    _browser.action.setBadgeText({ text: badgeText }).catch(() => {});
-    _browser.action.setBadgeBackgroundColor({ color: '#ef4444' }).catch(() => {});
-  } catch {
-    // Ignore — badge is non-critical
-  }
-}
-
-_browser.runtime.onStartup.addListener(checkNotifications);
-_browser.runtime.onInstalled.addListener(checkNotifications);
-
-// ── C-1: Proactive auth token refresh ────────────────────────────────────────
-// Firebase ID tokens expire after 1 hour. We stored the expiry as
-// Date.now() + 55min when the token arrived. This alarm fires every 45 min;
-// if the token is within 15 min of expiry we ask any open web-app tab to
-// re-broadcast a fresh token via the 'tldr-request-auth' CustomEvent path
-// (same mechanism used by the popup's active auth probe).
 async function refreshAuthToken() {
   try {
-    const storage = await _browser.storage.local.get(['authToken', 'authTokenExpiry', 'apiUrl']);
+    const storage = await _browser.storage.session.get(['authToken', 'authTokenExpiry']);
+    const localStorage = await _browser.storage.local.get(['apiUrl']);
     if (!storage.authToken) return; // not signed in — nothing to refresh
 
     const expiresIn = (storage.authTokenExpiry ?? 0) - Date.now();
@@ -514,7 +344,7 @@ async function refreshAuthToken() {
     if (expiresIn > 15 * 60 * 1000) return;
 
     // Derive the web-app origin from the configured API URL
-    const rawUrl = storage.apiUrl || DEFAULT_API_URL;
+    const rawUrl = localStorage.apiUrl || DEFAULT_API_URL;
     const webAppOrigin = rawUrl.replace(/\/api\/analyze$/, '').replace(/\/$/, '');
 
     // Find any open tab on the web-app origin and ask the content script
@@ -532,14 +362,7 @@ async function refreshAuthToken() {
   }
 }
 
-_browser.alarms.create('tldrNotificationCheck', { delayInMinutes: 60, periodInMinutes: 60 });
-_browser.alarms.create('tldrTokenRefresh',       { delayInMinutes: 45, periodInMinutes: 45 });
-
+_browser.alarms.create('tldrTokenRefresh', { delayInMinutes: 45, periodInMinutes: 45 });
 _browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'tldrNotificationCheck') {
-    checkNotifications();
-  }
-  if (alarm.name === 'tldrTokenRefresh') {
-    refreshAuthToken();
-  }
+  if (alarm.name === 'tldrTokenRefresh') refreshAuthToken();
 });
