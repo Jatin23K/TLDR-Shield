@@ -12,16 +12,22 @@ dist-server/
 *.zip
 *.csv
 scripts/
-TLDR_Admin.txt
-tldr-shield-firefox.zip
-*.zip
 scratch/
-INTERVIEW.md
 
-# Debug / test scripts
+# Internal / admin files — not for public repo
+TLDR_Admin.txt
+INTERVIEW.md
+interview.html
+
+# Debug / test output
+eval_output.txt
+log.txt
+log2.txt
+
+# Scratch test files
+test-cit.ts
+test-cit.js
 test_*.ts
 test_*.js
 list_models.ts
 models.json
-log.txt
-log2.txt
