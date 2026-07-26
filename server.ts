@@ -38,7 +38,7 @@ import { applyConsistencyCrossCheck, sanitizeCitations, updatePillarConfidence }
 
 // Cache version gate: bump this string whenever the detection pipeline changes.
 // Any cached result missing this version is automatically rejected and re-scanned.
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v6';
 
 // Demo Data
 import demoResults from './shared/demo_results.json' with { type: 'json' };
@@ -241,7 +241,11 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     }
 
     // 3. Persistent Cache Check (L1)
-    const redisKey = `cache:${urlHash || crypto.createHash('sha256').update(text.slice(0, 500)).digest('hex')}`;
+    // IMPORTANT: tier is part of the cache key — Quick and Deep must NEVER share a cache entry.
+    // A cached Deep result served for a Quick request shows full pillars when only a badge was expected,
+    // and vice versa (a Quick badge cached and served as a Deep result shows no pillars).
+    const baseHash = urlHash || crypto.createHash('sha256').update(text.slice(0, 500)).digest('hex');
+    const redisKey = `cache:${baseHash}:${tier}`;
     const currentContentHash = crypto.createHash('sha256').update(text.slice(0, 10000)).digest('hex');
 
     // Quality check for cached results: skip if pillars are empty or TLDR is the old placeholder.
@@ -249,21 +253,18 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     // was cached as SAFE/100 with 0 pillars because readability grabbed the wrong page section).
     const isCacheHealthy = (result: any): boolean => {
         if (!result) return false;
+        // Reject if the cached tier doesn't match the requested tier.
+        // This is the primary guard — tier is also in the cache key, but this
+        // double-checks in case an old key without tier somehow survives.
+        if (result.tier && result.tier !== tier) return false;
         const pillars = result.pillars;
-        if (!pillars || Object.keys(pillars).length === 0) return false;
+        // Quick scans legitimately have no pillars — only deep scans do.
+        if (tier === 'deep' && (!pillars || Object.keys(pillars).length === 0)) return false;
         if (result.tldr === 'Analysis complete.') return false;
-        // FIX #5: Reject stale quick-scan results that have fake citations
-        // so they are never served to users who expect a deep scan.
-        const hasQuickFakeCitation = Object.values(pillars).some(
-            (p: any) => p?.citation === 'Flagged by quick analysis'
-        );
-        if (hasQuickFakeCitation) return false;
         // Reject stale cached results that are missing the dark_patterns pillar
-        // when the current request has darkPatterns enabled. Prevents pre-darkPatterns
-        // cache entries from being served as complete 6-pillar results.
-        if (darkPatterns && !pillars.dark_patterns) return false;
-        // Reject results from previous pipeline versions — they lack the
-        // detectHardViolations backstop and LOW-confidence penalty fixes.
+        // when the current request has darkPatterns enabled.
+        if (darkPatterns && pillars && !pillars.dark_patterns) return false;
+        // Reject results from previous pipeline versions.
         if (result.cacheVersion !== CACHE_VERSION) return false;
         return true;
     };
@@ -280,15 +281,17 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
     }
 
     // 4. Shared Cache Check (L2)
+    // Use tier-scoped key: `<urlHash>:<tier>` so Quick and Deep never collide in Firestore.
     if (!forceRefresh && urlHash) {
-        const l2Cache = await getSharedCache(firestoreDb, urlHash);
+        const l2Key = `${urlHash}:${tier}`;
+        const l2Cache = await getSharedCache(firestoreDb, l2Key);
         if (l2Cache && l2Cache.contentHash === currentContentHash) {
             if (isCacheHealthy(l2Cache.result)) {
-                console.log('[TLDR Shield] L2 Firestore Hit');
+                console.log(`[TLDR Shield] L2 Firestore Hit (${tier})`);
                 setCache(redisKey, l2Cache, 3600).catch(() => {}); // Backfill Redis (non-blocking)
                 return sendAsSSE({ ...l2Cache.result, cached: true });
             }
-            console.log('[TLDR Shield] L2 Firestore Hit REJECTED (stale/empty pillars) — running fresh scan');
+            console.log(`[TLDR Shield] L2 Firestore Hit REJECTED (tier mismatch or stale) — running fresh scan`);
         }
     }
 
@@ -551,9 +554,11 @@ app.post('/api/analyze', authMiddleware, async (req, res) => {
 
         // Save and cache after responding (non-blocking — failures are logged but ignored)
         const cacheObject = { contentHash: currentContentHash, result: final };
+        // Use tier-scoped L2 key to match the tier-scoped read — Quick and Deep never collide.
+        const l2WriteKey = `${urlHash || baseHash}:${tier}`;
         Promise.all([
             setCache(redisKey, cacheObject, 3600 * 24),
-            setSharedCache(firestoreDb, urlHash || '', cacheObject, tier),
+            setSharedCache(firestoreDb, l2WriteKey, cacheObject, tier),
             saveScanRecord(firestoreDb, uid, final, { url, tier, cached: false })
         ]).catch(saveErr => {
             console.warn('[TLDR Shield] Non-fatal: cache/DB save failed:', saveErr);
