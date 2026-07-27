@@ -89,13 +89,17 @@ let firestoreInitError: string | null = null;
             credential = cert(JSON.parse(readFileSync(saPath, 'utf8')));
         }
         if (credential) {
-            let dbId: string | undefined;
-            try {
-                const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-                const appletConfig = JSON.parse(readFileSync(configPath, 'utf8'));
-                dbId = appletConfig.firestoreDatabaseId;
-            } catch (configErr) {
-                console.warn('[TLDR Shield] Could not read firebase-applet-config.json database ID, using (default):', configErr);
+            // Primary: env var (set this on Render/production).
+            // Fallback: firebase-applet-config.json (local dev only — gitignored).
+            let dbId: string | undefined = process.env.FIRESTORE_DATABASE_ID;
+            if (!dbId) {
+                try {
+                    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+                    const appletConfig = JSON.parse(readFileSync(configPath, 'utf8'));
+                    dbId = appletConfig.firestoreDatabaseId;
+                } catch (configErr) {
+                    console.warn('[TLDR Shield] Could not read firebase-applet-config.json database ID, using (default):', configErr);
+                }
             }
             initializeApp({ credential });
             firestoreDb = dbId ? getFirestore(dbId) : getFirestore();
