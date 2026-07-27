@@ -1447,7 +1447,7 @@ function showResultPanel(data) {
 
     const dedTitle = document.createElement('div');
     dedTitle.className = 'tldr-deductions-title';
-    dedTitle.textContent = `Why not 100? (âˆ’${100 - data.score} pts)`;
+    dedTitle.textContent = 'Why not 100? (\u2212' + (100 - data.score) + ' pts)';
     dedEl.appendChild(dedTitle);
 
     data.deductions.forEach(d => {
@@ -1458,7 +1458,7 @@ function showResultPanel(data) {
       reason.textContent = d.reason;
       const pts = document.createElement('span');
       pts.className = 'tldr-deduction-pts';
-      pts.textContent = `âˆ’${d.points} pts`;
+      pts.textContent = '\u2212' + d.points + ' pts';
       row.appendChild(reason);
       row.appendChild(pts);
       dedEl.appendChild(row);
