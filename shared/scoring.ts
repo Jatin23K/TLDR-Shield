@@ -79,10 +79,13 @@ export function calculateScoreAndRating(
     score = Math.max(5, Math.min(100, score));
 
     // Score-based rating bands (score is the single source of truth)
+    // SAFE  ≥ 80 : minimal or no violations
+    // OKAY  50–79: some flags present but not severe
+    // RISKY < 50 : multiple or serious violations
     let rating: 'SAFE' | 'OKAY' | 'RISKY' = 'SAFE';
     if (score < 50) {
         rating = 'RISKY';
-    } else if (score < 90) {
+    } else if (score < 80) {
         rating = 'OKAY';
     } else {
         rating = 'SAFE';

@@ -38,7 +38,7 @@ import { applyConsistencyCrossCheck, sanitizeCitations, updatePillarConfidence }
 
 // Cache version gate: bump this string whenever the detection pipeline changes.
 // Any cached result missing this version is automatically rejected and re-scanned.
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 
 // Demo Data
 import demoResults from './shared/demo_results.json' with { type: 'json' };
