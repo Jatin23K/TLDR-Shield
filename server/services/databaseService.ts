@@ -50,8 +50,9 @@ export async function setSharedCache(
             expiresAt: Timestamp.fromMillis(Date.now() + ttl),
             scanCount: FieldValue.increment(1),
         }, { merge: true });
+        console.log(`[DatabaseService] shared_cache written: ${hash} (tier=${tier})`);
     } catch (err: any) {
-        console.warn(`[DatabaseService] Cache write failed: ${err?.message}`);
+        console.warn(`[DatabaseService] Cache write failed for hash=${hash}: ${err?.message}`);
     }
 }
 
