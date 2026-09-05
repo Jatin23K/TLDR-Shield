@@ -50,3 +50,5 @@ models.json
 TLDR_Admin.txt
 INTERVIEW.md
 interview.html
+preparation*.html
+scripts/push_keys_to_cloudrun.*
