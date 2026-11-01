@@ -1,5 +1,12 @@
-import nlp from 'compromise';
+﻿import nlp from 'compromise';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// WHAT: Sentence-Aware Sliding Window Chunking (via Compromise NLP)
+// WHY:  Standard token/character splitters slice legal conditionals in half
+//       (e.g. "Unless you opt out within 30 days, [BREAK] all disputes are arbitrated").
+//       Anchoring boundaries strictly to complete sentences preserves dependent
+//       clauses intact within at least one chunk, preventing artificial false positives.
+// ═══════════════════════════════════════════════════════════════════════════════
 export function chunkText(text: string, CHUNK_SIZE: number, CHUNK_OVERLAP: number, MAX_CHUNKS: number): string[] {
     if (text.length <= CHUNK_SIZE * 1.2) return [text];
 
@@ -45,6 +52,13 @@ export function findVerbatimInChunk(citation: string, chunkText: string): string
         return citation;
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WHAT: Typographic & Unicode Entity Normalization
+    // WHY:  Webpages use non-standard Unicode (smart quotes “”, apostrophes ’,
+    //       non-breaking spaces \u00A0). LLMs standardize these to ASCII quotes & spaces.
+    //       Bidirectional normalization ensures browser DOM highlighting (mark.js)
+    //       matches exact verbatim ranges without failing on character-code mismatches.
+    // ═══════════════════════════════════════════════════════════════════════════
     const normalizeString = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     const citNorm = normalizeString(citation);
     const srcNorm = normalizeString(chunkText);
