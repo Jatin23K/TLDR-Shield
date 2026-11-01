@@ -1,4 +1,4 @@
-// ── TLDR Shield Backend [Portfolio Architecture] ──
+﻿// ── TLDR Shield Backend [Portfolio Architecture] ──
 // DESIGN PHILOSOPHY:
 // This server implements a high-availability, cost-optimized LLM pipeline.
 // It uses a "Key Pool Lane" architecture to distribute load across 6 Gemini API keys,
@@ -38,6 +38,13 @@ import { applyConsistencyCrossCheck, sanitizeCitations, updatePillarConfidence }
 
 // Cache version gate: bump this string whenever the detection pipeline changes.
 // Any cached result missing this version is automatically rejected and re-scanned.
+// ═══════════════════════════════════════════════════════════════════════════════
+// WHAT: Global Cache Invalidation Gate (CACHE_VERSION = 'v7')
+// WHY:  When system prompts, D1-D7 post-processing rules, or pillar weights are updated,
+//       serving stale LLM classifications from cache produces conflicting ratings.
+//       Bumping this string instantly invalidates all legacy cached entries across Redis
+//       and Firestore globally without needing manual database flushes or downtime.
+// ═══════════════════════════════════════════════════════════════════════════════
 const CACHE_VERSION = 'v7';
 
 // Demo Data
