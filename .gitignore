@@ -52,3 +52,6 @@ INTERVIEW.md
 interview.html
 preparation*.html
 scripts/push_keys_to_cloudrun.*
+
+interview*.html
+*interview*prep*.html
