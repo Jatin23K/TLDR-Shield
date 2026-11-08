@@ -10,6 +10,16 @@
 ![Recall](https://img.shields.io/badge/recall-93%25-brightgreen)
 ![Precision](https://img.shields.io/badge/precision-94%25-brightgreen)
 
+## Executive Problem & Engineering Solution
+
+* **The Problem It Kills:** Unbounded Legal Liability & The "I Agree" Blindspot.
+  * **The Reality:** 99% of consumers and businesses click "I Agree" on 50-page Terms of Service without reading them. Companies hide predatory arbitration clauses, unilateral copyright transfers, and invasive tracking deep in legal jargon.
+  * **How Naive Engineers Fail:** They dump a 50-page contract into ChatGPT with a naive prompt: *"Summarize this."* The LLM produces vague, subjective bullet points, misses fine-print traps, and hallucinates.
+  * **The Architectural Solution:** A fine-tuned DeBERTa-v3 cross-encoder for token-level ambiguity classification ($F_1 = 0.884$), combined with a deterministic heuristic regex ensemble that eliminates false alarms.
+  * **The Impact:** Validated against the 25-contract `tosdr.org` golden benchmark: **94% Precision, 93% Recall (+14% lift)**, and a **6/6 True Negative Rate on benign clauses**, delivering instant risk scoring in milliseconds.
+
+---
+
 ---
 
 ## Project Navigation
