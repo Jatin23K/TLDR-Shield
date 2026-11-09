@@ -55,3 +55,6 @@ scripts/push_keys_to_cloudrun.*
 
 interview*.html
 *interview*prep*.html
+
+.git_backup*
+desktop.ini
