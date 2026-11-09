@@ -3,8 +3,8 @@
 **Date:** 2026-04-30  
 **Benchmark:** 25 real-world services against tosdr.org grades as ground truth  
 **Models:** `gemini-2.5-flash` (basic) | `gemini-2.5-flash` + `gemini-2.5-flash-lite` ensemble (deep)  
-**Eval script:** [`eval/scan_full_battery.py`](./eval/scan_full_battery.py)  
-**Raw output:** [`eval/results/battery_results.txt`](./eval/results/battery_results.txt)
+**Eval script:** [`eval/scan_full_battery.py`](../eval/scan_full_battery.py)  
+**Raw output:** [`eval/results/battery_results.txt`](../eval/results/battery_results.txt)
 
 ---
 
