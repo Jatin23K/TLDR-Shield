@@ -27,7 +27,7 @@
 | Document | What it shows |
 |----------|--------------|
 | [README.md](./README.md) | Problem framing, approach, eval results, architecture |
-| [EVAL_REPORT.md](./EVAL_REPORT.md) | Full benchmark report — per-service precision/recall, error analysis, post-processing rules |
+| [EVAL_REPORT.md](./docs/EVAL_REPORT.md) | Full benchmark report — per-service precision/recall, error analysis, post-processing rules |
 | [eval/results/battery_results.txt](./eval/results/battery_results.txt) | Raw terminal output for all 25 services — unedited, verifiable |
 | [eval/scan_full_battery.py](./eval/scan_full_battery.py) | Full 25-service evaluation script — reproduces all results with a Gemini API key |
 | [eval/generate_eval_charts.py](./eval/generate_eval_charts.py) | Chart generation script — produces all 5 evaluation charts |
@@ -125,7 +125,7 @@ Empirically verified across 6 production services using live browser extension s
 
 *Figure 5 — Per-service accuracy grid (green = correct, red = incorrect)*
 
-> Full per-service results with precision/recall breakdowns in [EVAL_REPORT.md](./EVAL_REPORT.md).
+> Full per-service results with precision/recall breakdowns in [EVAL_REPORT.md](./docs/EVAL_REPORT.md).
 
 ---
 
